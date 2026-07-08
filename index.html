@@ -711,7 +711,7 @@ async function renderSettlement(){
       <td class="right"><span id="vat_${ag.id}">${won(vat)}</span></td>
       <td class="right"><b id="pay_${ag.id}">${won(payout)}</b></td>
       <td>${!s?'<span class="muted">미정산</span>':(s.status==='paid'?'<span class="tag t-paid">지급완료</span>':(s.tax_issued?'<span class="tag t-confirmed">세금계산서 발행</span>':'<span class="tag t-unpaid">정산생성</span>'))}</td>
-      <td class="right">${!s?`<button class="btn sm" onclick="makeSettle('${ag.id}',${a.rev})">정산 생성</button>`:(s.status==='paid'?'':(s.tax_issued?'':`<button class="btn sm ghost" onclick="issueTax('${s.id}')">세금계산서</button> `)+`<button class="btn sm ok" onclick="paySettle('${s.id}')">지급완료</button>`)}</td></tr>`;}).join('');
+      <td class="right"><button class="btn sm ghost" onclick="stmtModal('${ag.id}')">명세서</button> ${!s?`<button class="btn sm" onclick="makeSettle('${ag.id}',${a.rev})">정산 생성</button>`:(s.status==='paid'?'':(s.tax_issued?'':`<button class="btn sm ghost" onclick="issueTax('${s.id}')">세금계산서</button> `)+`<button class="btn sm ok" onclick="paySettle('${s.id}')">지급완료</button>`)}</td></tr>`;}).join('');
   const totRev=Object.values(agg).reduce((s,a)=>s+a.rev,0);
   m.innerHTML=`<div class="page-head"><div><h2>에이전시 정산</h2><div class="sub">에이전시별 매출·수수료 · 소개 에이전시 기준</div></div>
      <input type="month" value="${setMonth}" onchange="setMonth=this.value;renderSettlement()" style="padding:8px 12px;border:1px solid var(--line);border-radius:9px"></div>
