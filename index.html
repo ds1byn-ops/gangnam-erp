@@ -48,6 +48,8 @@
   .btn.ok{background:#16a34a}
   .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow)}
+  .stat.clk{cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .stat.clk:hover{border-color:var(--brand);box-shadow:0 3px 10px rgba(15,118,110,.15)}
   .stat .k{color:var(--muted);font-size:13px;font-weight:600}
   .stat .v{font-size:23px;font-weight:800;margin-top:6px;letter-spacing:-.5px}
   .stat .v small{font-size:13px;color:var(--muted);font-weight:600}
@@ -199,7 +201,7 @@
 const SB_URL="https://fhuninzvrkzodhvwkxvo.supabase.co";
 const SB_KEY="sb_publishable_DqrHtdkvc-0VnN511-QdnQ_RuC-fbJ4";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.4.1 · 2026-07-08';
+const APP_VERSION='v1.4.2 · 2026-07-08';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -297,10 +299,10 @@ async function renderDashboard(){
    <div class="page-head"><div><h2>대시보드</h2>
      <div class="sub">${esc(state.hospital_name)} · ${now.toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'})}</div></div></div>
    <div class="cards">
-     <div class="stat"><div class="k">오늘 예약</div><div class="v">${appts.length}<small> 건</small></div></div>
-     <div class="stat"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
-     <div class="stat"><div class="k">미수금</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div>
-     <div class="stat"><div class="k">전체 환자</div><div class="v">${pat.count||0}<small> 명</small></div></div>
+     <div class="stat clk" onclick="navTo('reception')" title="접수 현황으로"><div class="k">오늘 예약</div><div class="v">${appts.length}<small> 건</small></div></div>
+     <div class="stat clk" onclick="navTo('billing')" title="수납·매출로"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
+     <div class="stat clk" onclick="billSort='unpaid';navTo('billing')" title="미수 먼저 보기"><div class="k">미수금</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div>
+     <div class="stat clk" onclick="navTo('patients')" title="환자 CRM으로"><div class="k">전체 환자</div><div class="v">${pat.count||0}<small> 명</small></div></div>
    </div>
    <div class="panel"><div class="ph">최근 6개월 매출 추이</div>${chart}</div>
    <div class="panel"><div class="ph">오늘 예약 <button class="btn sm" onclick="navTo('reception')">접수 →</button></div>
@@ -698,9 +700,9 @@ async function renderBilling(){
   m.innerHTML=`<div class="page-head"><div><h2>수납·매출</h2><div class="sub">${now.getFullYear()}년 ${now.getMonth()+1}월</div></div>
      <button class="btn" onclick="navTo('quote')">+ 견적 작성</button></div>
    <div class="cards" style="grid-template-columns:repeat(3,1fr)">
-     <div class="stat"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
-     <div class="stat"><div class="k">이번달 건수</div><div class="v">${mons.length}<small> 건</small></div></div>
-     <div class="stat"><div class="k">미수금(전체)</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div></div>
+     <div class="stat clk" onclick="billSort='amt';renderBilling()" title="금액순 정렬"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
+     <div class="stat clk" onclick="billSort='recent';renderBilling()" title="최신순 정렬"><div class="k">이번달 건수</div><div class="v">${mons.length}<small> 건</small></div></div>
+     <div class="stat clk" onclick="billSort='unpaid';renderBilling()" title="미수 먼저 정렬"><div class="k">미수금(전체)</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div></div>
    <div class="panel"><div class="ph">주문·수납 내역 <span style="display:flex;gap:6px;flex-wrap:wrap;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_bill" placeholder="환자/에이전시/번호" value="${esc(billSearch)}" oninput="billSearch=this.value;renderBilling()"></span><input type="date" value="${billFrom}" onchange="billFrom=this.value;renderBilling()"><input type="date" value="${billTo}" onchange="billTo=this.value;renderBilling()"><select onchange="billSort=this.value;renderBilling()"><option value="recent"${billSort==='recent'?' selected':''}>최신순</option><option value="amt"${billSort==='amt'?' selected':''}>금액순</option><option value="unpaid"${billSort==='unpaid'?' selected':''}>미수 먼저</option></select></span></div><div class="pb">${blist.length?`<table><thead><tr><th>No</th><th>일자</th><th>환자</th><th>에이전시</th><th class="right">합계</th><th>할인</th><th>수납</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">내역이 없습니다.</div>'}</div></div>`;keepFocus('srch_bill');
 }
 async function markPaid(id,method){const {data:o}=await db.from('orders').select('total').eq('id',id).single();
@@ -753,8 +755,8 @@ async function renderSettlement(){
   m.innerHTML=`<div class="page-head"><div><h2>에이전시 정산</h2><div class="sub">에이전시별 매출·수수료 · 소개 에이전시 기준</div></div>
      <input type="month" value="${setMonth}" onchange="setMonth=this.value;renderSettlement()" style="padding:8px 12px;border:1px solid var(--line);border-radius:9px"></div>
    <div class="cards" style="grid-template-columns:repeat(3,1fr)">
-     <div class="stat"><div class="k">에이전시 매출(당월)</div><div class="v">${won(totRev)}</div></div>
-     <div class="stat"><div class="k">에이전시 수</div><div class="v">${state.agencies.length}<small> 곳</small></div></div>
+     <div class="stat clk" onclick="setlSort='rev';renderSettlement()" title="매출순 정렬"><div class="k">에이전시 매출(당월)</div><div class="v">${won(totRev)}</div></div>
+     <div class="stat clk" onclick="navTo('agencies')" title="에이전시 관리로"><div class="k">에이전시 수</div><div class="v">${state.agencies.length}<small> 곳</small></div></div>
      <div class="stat"><div class="k">정산 대상 월</div><div class="v" style="font-size:19px">${setMonth}</div></div></div>
    <div class="panel"><div class="ph">에이전시별 정산 <span style="display:flex;gap:6px;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_setl" placeholder="에이전시 검색" value="${esc(setlSearch)}" oninput="setlSearch=this.value;renderSettlement()"></span><select onchange="setlSort=this.value;renderSettlement()"><option value="rev"${setlSort==='rev'?' selected':''}>매출순</option><option value="cnt"${setlSort==='cnt'?' selected':''}>건수순</option><option value="name"${setlSort==='name'?' selected':''}>이름순</option></select> <label style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" ${setlVat?'checked':''} onchange="setlVat=this.checked;renderSettlement()"> 부가세10%</label></span></div><div class="pb">
      <table><thead><tr><th>에이전시</th><th class="right">건수</th><th class="right">매출</th><th class="right">수수료율</th><th class="right">수수료</th><th class="right">부가세</th><th class="right">지급합계</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table>
@@ -950,8 +952,8 @@ async function renderRefSettle(){
   m.innerHTML=`<div class="page-head"><div><h2>소개자 정산</h2><div class="sub">왕홍·소개자별 소개 매출·수수료</div></div>
      <input type="month" value="${refMonth}" onchange="refMonth=this.value;renderRefSettle()" style="padding:8px 12px;border:1px solid var(--line);border-radius:9px"></div>
    <div class="cards" style="grid-template-columns:repeat(3,1fr)">
-     <div class="stat"><div class="k">소개 매출(당월)</div><div class="v">${won(totRev)}</div></div>
-     <div class="stat"><div class="k">소개자 수</div><div class="v">${state.referrers.length}<small> 명</small></div></div>
+     <div class="stat clk" onclick="rsSort='rev';renderRefSettle()" title="매출순 정렬"><div class="k">소개 매출(당월)</div><div class="v">${won(totRev)}</div></div>
+     <div class="stat clk" onclick="navTo('referrers')" title="왕홍·소개자로"><div class="k">소개자 수</div><div class="v">${state.referrers.length}<small> 명</small></div></div>
      <div class="stat"><div class="k">정산 대상 월</div><div class="v" style="font-size:19px">${refMonth}</div></div></div>
    <div class="panel"><div class="ph">소개자별 정산 <span style="display:flex;gap:6px;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_rs" placeholder="소개자 검색" value="${esc(rsSearch)}" oninput="rsSearch=this.value;renderRefSettle()"></span><select onchange="rsSort=this.value;renderRefSettle()"><option value="rev"${rsSort==='rev'?' selected':''}>매출순</option><option value="comm"${rsSort==='comm'?' selected':''}>수수료순</option><option value="cnt"${rsSort==='cnt'?' selected':''}>건수순</option><option value="name"${rsSort==='name'?' selected':''}>이름순</option></select> <label style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" ${rsVat?'checked':''} onchange="rsVat=this.checked;renderRefSettle()"> 부가세10%</label></span></div><div class="pb">
      <table><thead><tr><th>소개자</th><th class="right">건수</th><th class="right">소개 매출</th><th class="right">수수료율</th><th class="right">수수료</th><th class="right">부가세</th><th class="right">지급합계</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
@@ -1051,11 +1053,11 @@ async function renderStats(){
   const TABS=[['sales','매출'],['proc','시술'],['inflow','유입'],['appt','예약'],['pat','환자']];
   const tabbar='<div class="stat-tabs">'+TABS.map(([k,l])=>`<button class="${statTab===k?'on':''}" onclick="statTab='${k}';renderStats()">${l}</button>`).join('')+'</div>';
   const cards=`<div class="cards" style="grid-template-columns:repeat(5,1fr)">
-     <div class="stat"><div class="k">당월 매출</div><div class="v" style="font-size:19px">${won(total)}</div><div>${delta(total,ptotal)}</div></div>
-     <div class="stat"><div class="k">시술 건수</div><div class="v">${cnt}<small> 건</small></div><div>${delta(cnt,pcnt)}</div></div>
-     <div class="stat"><div class="k">객단가</div><div class="v" style="font-size:19px">${won(avg)}</div><div>${delta(avg,pavg)}</div></div>
-     <div class="stat"><div class="k">미수금</div><div class="v" style="font-size:18px;color:var(--danger)">${won(unpaid)}</div></div>
-     <div class="stat"><div class="k">신규 환자</div><div class="v">${newP}<small> 명</small></div></div></div>`;
+     <div class="stat clk" onclick="statTab='sales';renderStats()" title="매출 탭"><div class="k">당월 매출</div><div class="v" style="font-size:19px">${won(total)}</div><div>${delta(total,ptotal)}</div></div>
+     <div class="stat clk" onclick="statTab='proc';renderStats()" title="시술 탭"><div class="k">시술 건수</div><div class="v">${cnt}<small> 건</small></div><div>${delta(cnt,pcnt)}</div></div>
+     <div class="stat clk" onclick="statTab='sales';renderStats()" title="매출 탭"><div class="k">객단가</div><div class="v" style="font-size:19px">${won(avg)}</div><div>${delta(avg,pavg)}</div></div>
+     <div class="stat clk" onclick="billSort='unpaid';navTo('billing')" title="미수 먼저 보기"><div class="k">미수금</div><div class="v" style="font-size:18px;color:var(--danger)">${won(unpaid)}</div></div>
+     <div class="stat clk" onclick="statTab='pat';renderStats()" title="환자 탭"><div class="k">신규 환자</div><div class="v">${newP}<small> 명</small></div></div></div>`;
   m.innerHTML=`<div class="page-head"><div><h2>통계</h2><div class="sub">${periodLabel} · 매출·시술·유입·예약·환자 분석${useRange?' (직전 동일기간 대비)':''}</div></div>
      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input type="month" value="${statMonth}" onchange="statMonth=this.value;statFrom='';statTo='';renderStats()" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px"><span class="muted" style="font-size:12px">또는</span><input type="date" value="${statFrom}" onchange="statFrom=this.value;renderStats()" title="시작일" style="padding:7px 9px;border:1px solid var(--line);border-radius:9px"><span class="muted">~</span><input type="date" value="${statTo}" onchange="statTo=this.value;renderStats()" title="종료일" style="padding:7px 9px;border:1px solid var(--line);border-radius:9px">${useRange?'<button class="btn ghost sm" onclick="statFrom=&quot;&quot;;statTo=&quot;&quot;;renderStats()">월로</button>':''}<button class="btn ghost" onclick="exportStatsCSV()">CSV</button><button class="btn ghost" onclick="window.print()">인쇄/PDF</button></div></div>
    ${cards}${tabbar}${content}`;
