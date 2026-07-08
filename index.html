@@ -92,6 +92,10 @@
   .note-box{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:13.5px;line-height:1.6;white-space:pre-wrap}
   .loading{padding:40px;text-align:center;color:var(--muted)}
   .cny{color:var(--muted);font-size:12px}
+  .stat-tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .stat-tabs button{padding:8px 15px;border:1px solid var(--line);background:#fff;border-radius:9px;font-weight:600;color:var(--muted)}
+  .stat-tabs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  @media print{.side{display:none!important}.layout{grid-template-columns:1fr!important}.page-head button,.page-head input,.stat-tabs,.toolbar{display:none!important}.modal-bg{display:none!important}}
   /* quote */
   .quote-wrap{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;align-items:start}
   .pricelist{max-height:60vh;overflow:auto}
@@ -924,74 +928,93 @@ async function rfTax(id){await db.from('referrer_settlements').update({tax_issue
 async function rfPay(id){await db.from('referrer_settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
 
 /* ============ 통계 ============ */
-let statMonth=null;
+let statMonth=null,statTab='sales';
 function statBar(label,val,max,sub){const pct=max?Math.round(val/max*100):0;return `<tr><td style="white-space:nowrap">${esc(label)}</td><td style="width:50%"><div style="background:#eef2f6;border-radius:5px;height:9px"><div style="width:${pct}%;background:linear-gradient(90deg,#14b8a6,#0f766e);height:9px;border-radius:5px"></div></div></td><td class="right"><b>${sub}</b></td></tr>`;}
+function sbars(entries,fmt,keepOrder){let arr=entries.slice();if(!keepOrder)arr.sort((a,b)=>b[1]-a[1]);const mx=Math.max(1,...arr.map(x=>x[1]));return arr.length?arr.map(([k,v])=>statBar(k,v,mx,fmt(v))).join(''):'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';}
+function exportStatsCSV(){const rows=state._statExport||[];const head=['주문번호','일자','환자','에이전시','소개자','담당의','금액','할인','수납','결제수단'];const q=c=>`"${(c==null?'':String(c)).replace(/"/g,'""')}"`;const csv='﻿'+[head.map(q).join(',')].concat(rows.map(r=>r.map(q).join(','))).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='통계_'+statMonth+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);}
 async function renderStats(){
   const now=new Date();if(!statMonth)statMonth=now.toISOString().slice(0,7);
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const y=+statMonth.slice(0,4),mo=+statMonth.slice(5,7)-1;
-  const ms=new Date(y,mo,1).toISOString(),me=new Date(y,mo+1,1).toISOString();
-  const trendStart=new Date(y,mo-5,1).toISOString();
-  const [ordM,trendO,patsR]=await Promise.all([
-    db.from('orders').select('*').gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
-    db.from('orders').select('total,order_date,status').gte('order_date',trendStart).lt('order_date',me).neq('status','cancelled'),
+  const inM=(dt,yy,mm)=>{const d=new Date(dt);return d.getFullYear()===yy&&d.getMonth()===mm;};
+  const [ordR,apptR,patR]=await Promise.all([
+    db.from('orders').select('id,order_no,order_date,total,discount_amount,pay_status,pay_method,agency_id,referrer_id,patient_id,doctor,status'),
+    db.from('appointments').select('appointment_at,status,doctor,patient_id'),
     db.from('patients').select('*'),
   ]);
-  const orders=ordM.data||[];const ids=orders.map(o=>o.id);
-  let items=[];if(ids.length){const {data}=await db.from('order_items').select('*').in('order_id',ids);items=data||[];}
+  const allOrders=(ordR.data||[]).filter(o=>o.status!=='cancelled');
+  const orders=allOrders.filter(o=>inM(o.order_date,y,mo));
+  const pmn=mo===0?11:mo-1, pyr=mo===0?y-1:y;
+  const prev=allOrders.filter(o=>inM(o.order_date,pyr,pmn));
+  const ids=orders.map(o=>o.id);let items=[];if(ids.length){const {data}=await db.from('order_items').select('*').in('order_id',ids);items=data||[];}
+  const appts=(apptR.data||[]).filter(a=>inM(a.appointment_at,y,mo));
+  const patAll=patR.data||[];
   const procCat=Object.fromEntries(state.procedures.map(p=>[p.id,p.category]));
-  const AM=amap();const RM=Object.fromEntries(state.referrers.map(r=>[r.id,r.name]));
-  const patAll=patsR.data||[];
-  const total=orders.reduce((s,o)=>s+Number(o.total||0),0);
-  const cnt=orders.length;const avg=cnt?Math.round(total/cnt):0;
+  const AM=amap(),PMname=pmap();const RM=Object.fromEntries(state.referrers.map(r=>[r.id,r.name]));const RC=Object.fromEntries(state.referrers.map(r=>[r.id,r.channel||'기타']));
+  const sum=a=>a.reduce((s,o)=>s+Number(o.total||0),0);
+  const total=sum(orders),cnt=orders.length,avg=cnt?Math.round(total/cnt):0;
+  const ptotal=sum(prev),pcnt=prev.length,pavg=pcnt?Math.round(ptotal/pcnt):0;
   const unpaid=orders.filter(o=>o.pay_status!=='paid').reduce((s,o)=>s+Number(o.total||0),0);
-  const newP=patAll.filter(p=>{if(!p.first_visit)return false;const d=new Date(p.first_visit);return d>=new Date(y,mo,1)&&d<new Date(y,mo+1,1);}).length;
-  const byMethod={};orders.forEach(o=>{const k=o.pay_status==='paid'?(o.pay_method||'기타'):'미수';byMethod[k]=(byMethod[k]||0)+Number(o.total||0);});
-  const byCat={};items.forEach(i=>{const c=i.procedure_id?(procCat[i.procedure_id]||'기타'):'패키지';byCat[c]=(byCat[c]||0)+Number(i.amount||0);});
-  const procAgg={};items.forEach(i=>{const k=i.name;procAgg[k]=procAgg[k]||{amt:0,qty:0};procAgg[k].amt+=Number(i.amount||0);procAgg[k].qty+=i.qty||1;});
-  const topProc=Object.entries(procAgg).sort((a,b)=>b[1].amt-a[1].amt).slice(0,10);
-  const byAg={};orders.forEach(o=>{if(!o.agency_id)return;byAg[o.agency_id]=(byAg[o.agency_id]||0)+Number(o.total||0);});
-  const topAg=Object.entries(byAg).sort((a,b)=>b[1]-a[1]);
-  const byRf={};orders.forEach(o=>{if(!o.referrer_id)return;byRf[o.referrer_id]=(byRf[o.referrer_id]||0)+Number(o.total||0);});
-  const topRf=Object.entries(byRf).sort((a,b)=>b[1]-a[1]);
-  const byNat={};patAll.forEach(p=>{const n=p.nationality||'미상';byNat[n]=(byNat[n]||0)+1;});
-  const natArr=Object.entries(byNat).sort((a,b)=>b[1]-a[1]);
-  const months=[];for(let k=5;k>=0;k--){const d=new Date(y,mo-k,1);months.push({label:(d.getMonth()+1)+'월',key:d.getFullYear()+'-'+(d.getMonth()+1),sum:0});}
-  (trendO.data||[]).forEach(o=>{const d=new Date(o.order_date);const key=d.getFullYear()+'-'+(d.getMonth()+1);const mm=months.find(x=>x.key===key);if(mm)mm.sum+=Number(o.total||0);});
+  const newP=patAll.filter(p=>p.first_visit&&inM(p.first_visit,y,mo)).length;
+  const pctf=(a,b)=>b?Math.round((a-b)/b*100):(a?100:0);
+  const delta=(a,b)=>{const d=pctf(a,b);const c=d>0?'#16a34a':(d<0?'#dc2626':'#94a3b8');const ar=d>0?'▲':(d<0?'▼':'—');return `<span style="color:${c};font-size:12px">${ar} ${Math.abs(d)}% <span style="color:#94a3b8">전월</span></span>`;};
+  state._statExport=orders.map(o=>[o.order_no,fdate(o.order_date),PMname[o.patient_id]||'',AM[o.agency_id]||'',RM[o.referrer_id]||'',o.doctor||'',o.total,o.discount_amount||0,PAY_LABEL[o.pay_status]||o.pay_status,o.pay_method||'']);
+  const months=[];for(let k=5;k>=0;k--){const d=new Date(y,mo-k,1);months.push({label:(d.getMonth()+1)+'월',yy:d.getFullYear(),mm:d.getMonth(),sum:0});}
+  allOrders.forEach(o=>{const d=new Date(o.order_date);const mm=months.find(x=>x.yy===d.getFullYear()&&x.mm===d.getMonth());if(mm)mm.sum+=Number(o.total||0);});
   const maxT=Math.max(1,...months.map(x=>x.sum));
   const trendChart=`<div style="display:flex;align-items:flex-end;gap:14px;height:170px;padding:16px 12px 4px">${months.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">${x.sum?Math.round(x.sum/10000)+'만':''}</div><div style="width:56%;background:linear-gradient(180deg,#14b8a6,#0f766e);border-radius:6px 6px 0 0;height:${Math.round(x.sum/maxT*125)}px;min-height:${x.sum?4:0}px"></div><div style="font-size:12px;color:var(--muted);margin-top:6px">${x.label}</div></div>`).join('')}</div>`;
-  const catMax=Math.max(1,...Object.values(byCat));
-  const catRows=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>statBar(c,v,catMax,won(v))).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';
-  const mMax=Math.max(1,...Object.values(byMethod));
-  const methRows=Object.entries(byMethod).sort((a,b)=>b[1]-a[1]).map(([c,v])=>statBar(c,v,mMax,won(v))).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';
-  const pMax=Math.max(1,...topProc.map(x=>x[1].amt));
-  const procRows=topProc.map(([n,o],i)=>`<tr><td>${i+1}</td><td>${esc(n)}</td><td class="right">${o.qty}건</td><td class="right"><b>${won(o.amt)}</b></td></tr>`).join('')||'<tr><td colspan=4 class="muted">데이터 없음</td></tr>';
-  const agMax=Math.max(1,...topAg.map(x=>x[1]));
-  const agRows=topAg.map(([id,v])=>statBar(AM[id]||'-',v,agMax,won(v))).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';
-  const rfMax=Math.max(1,...topRf.map(x=>x[1]));
-  const rfRows=topRf.map(([id,v])=>statBar(RM[id]||'-',v,rfMax,won(v))).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';
-  const natMax=Math.max(1,...natArr.map(x=>x[1]));
-  const natRows=natArr.map(([n,v])=>statBar(n,v,natMax,v+'명')).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';
-  m.innerHTML=`<div class="page-head"><div><h2>통계</h2><div class="sub">${y}년 ${mo+1}월 · 매출·시술·유입 분석</div></div>
-     <input type="month" value="${statMonth}" onchange="statMonth=this.value;renderStats()" style="padding:8px 12px;border:1px solid var(--line);border-radius:9px"></div>
-   <div class="cards" style="grid-template-columns:repeat(5,1fr)">
-     <div class="stat"><div class="k">당월 매출</div><div class="v" style="font-size:20px">${won(total)}</div><div class="cny">${cny(total)}</div></div>
-     <div class="stat"><div class="k">시술 건수</div><div class="v">${cnt}<small> 건</small></div></div>
-     <div class="stat"><div class="k">객단가</div><div class="v" style="font-size:20px">${won(avg)}</div></div>
-     <div class="stat"><div class="k">미수금</div><div class="v" style="font-size:20px;color:var(--danger)">${won(unpaid)}</div></div>
-     <div class="stat"><div class="k">신규 환자</div><div class="v">${newP}<small> 명</small></div></div>
-   </div>
-   <div class="panel"><div class="ph">최근 6개월 매출 추이</div>${trendChart}</div>
-   <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
-     <div class="panel"><div class="ph">카테고리별 매출</div><div class="pb"><table>${catRows}</table></div></div>
-     <div class="panel"><div class="ph">결제수단별 매출</div><div class="pb"><table>${methRows}</table></div></div>
-   </div>
-   <div class="panel"><div class="ph">인기 시술 TOP 10</div><div class="pb"><table><thead><tr><th>#</th><th>시술명</th><th class="right">수량</th><th class="right">매출</th></tr></thead><tbody>${procRows}</tbody></table></div></div>
-   <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
-     <div class="panel"><div class="ph">에이전시별 매출</div><div class="pb"><table>${agRows}</table></div></div>
-     <div class="panel"><div class="ph">소개자별 매출</div><div class="pb"><table>${rfRows}</table></div></div>
-   </div>
-   <div class="panel"><div class="ph">국적별 환자 분포 (전체)</div><div class="pb"><table>${natRows}</table></div></div>`;
+  const byCat={};items.forEach(i=>{const c=i.procedure_id?(procCat[i.procedure_id]||'기타'):'패키지';byCat[c]=(byCat[c]||0)+Number(i.amount||0);});
+  const byMethod={};orders.forEach(o=>{const k=o.pay_status==='paid'?(o.pay_method||'기타'):'미수';byMethod[k]=(byMethod[k]||0)+Number(o.total||0);});
+  const totDisc=orders.reduce((s,o)=>s+Number(o.discount_amount||0),0);const discCnt=orders.filter(o=>Number(o.discount_amount||0)>0).length;const discRate=cnt?Math.round(discCnt/cnt*100):0;
+  const procAgg={};items.forEach(i=>{procAgg[i.name]=procAgg[i.name]||{amt:0,qty:0};procAgg[i.name].amt+=Number(i.amount||0);procAgg[i.name].qty+=i.qty||1;});
+  const topProc=Object.entries(procAgg).sort((a,b)=>b[1].amt-a[1].amt).slice(0,10);
+  const gA={};orders.forEach(o=>{if(!o.agency_id)return;const n=AM[o.agency_id]||'-';gA[n]=(gA[n]||0)+Number(o.total||0);});
+  const gR={};orders.forEach(o=>{if(!o.referrer_id)return;const n=RM[o.referrer_id]||'-';gR[n]=(gR[n]||0)+Number(o.total||0);});
+  const gC={};orders.forEach(o=>{if(!o.referrer_id)return;const c=RC[o.referrer_id]||'기타';gC[c]=(gC[c]||0)+Number(o.total||0);});
+  const gN={};patAll.forEach(p=>{const n=p.nationality||'미상';gN[n]=(gN[n]||0)+1;});
+  const stCnt={};appts.forEach(a=>{stCnt[a.status]=(stCnt[a.status]||0)+1;});
+  const totalAppt=appts.length,noshow=stCnt['no_show']||0,doneA=stCnt['done']||0;
+  const noshowRate=totalAppt?Math.round(noshow/totalAppt*100):0;const fulfill=totalAppt?Math.round(doneA/totalAppt*100):0;
+  const dows=['일','월','화','수','목','금','토'];const gDow={};appts.forEach(a=>{const d=dows[new Date(a.appointment_at).getDay()];gDow[d]=(gDow[d]||0)+1;});
+  const gHour={};appts.forEach(a=>{const h=new Date(a.appointment_at).getHours();gHour[h]=(gHour[h]||0)+1;});
+  const gDoc={};orders.forEach(o=>{const d=o.doctor||'미지정';gDoc[d]=gDoc[d]||{rev:0,cnt:0};gDoc[d].rev+=Number(o.total||0);gDoc[d].cnt++;});
+  const gGender={};patAll.forEach(p=>{const g=p.gender||'미상';gGender[g]=(gGender[g]||0)+1;});
+  const patOrders={};allOrders.forEach(o=>{if(!o.patient_id)return;patOrders[o.patient_id]=patOrders[o.patient_id]||{sum:0,cnt:0};patOrders[o.patient_id].sum+=Number(o.total||0);patOrders[o.patient_id].cnt++;});
+  const wo=Object.values(patOrders);const revisit=wo.filter(x=>x.cnt>=2).length;const revisitRate=wo.length?Math.round(revisit/wo.length*100):0;
+  const ltv=Object.entries(patOrders).map(([id,v])=>[PMname[id]||'-',v.sum]).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const P=(title,inner)=>`<div class="panel"><div class="ph">${title}</div><div class="pb">${inner}</div></div>`;
+  const T=rows=>`<table>${rows}</table>`;
+  let content='';
+  if(statTab==='sales'){
+    content=P('최근 6개월 매출 추이',trendChart)
+      +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('카테고리별 매출',T(sbars(Object.entries(byCat),won)))}${P('결제수단별 매출',T(sbars(Object.entries(byMethod),won)))}</div>`
+      +P('할인 분석',`<div class="kv" style="padding:10px 14px"><div class="k">총 할인액</div><div><b>${won(totDisc)}</b></div><div class="k">할인 적용</div><div>${discCnt}건 / 전체 ${cnt}건 (${discRate}%)</div></div>`);
+  } else if(statTab==='proc'){
+    content=P('인기 시술 TOP 10',`<table><thead><tr><th>#</th><th>시술명</th><th class="right">수량</th><th class="right">매출</th></tr></thead><tbody>${topProc.map(([n,o],i)=>`<tr><td>${i+1}</td><td>${esc(n)}</td><td class="right">${o.qty}건</td><td class="right"><b>${won(o.amt)}</b></td></tr>`).join('')||'<tr><td colspan=4 class="muted">데이터 없음</td></tr>'}</tbody></table>`)
+      +P('카테고리별 매출',T(sbars(Object.entries(byCat),won)));
+  } else if(statTab==='inflow'){
+    content=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('에이전시별 매출',T(sbars(Object.entries(gA),won)))}${P('소개자별 매출',T(sbars(Object.entries(gR),won)))}</div>`
+      +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('채널별 유입 매출',T(sbars(Object.entries(gC),won)))}${P('국적별 환자',T(sbars(Object.entries(gN),v=>v+'명')))}</div>`;
+  } else if(statTab==='appt'){
+    content=`<div class="cards" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><div class="k">총 예약</div><div class="v">${totalAppt}<small> 건</small></div></div><div class="stat"><div class="k">노쇼율</div><div class="v" style="color:var(--danger)">${noshowRate}%</div><div class="cny">${noshow}건</div></div><div class="stat"><div class="k">이행률(완료)</div><div class="v" style="color:var(--ok)">${fulfill}%</div><div class="cny">${doneA}건</div></div></div>`
+      +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('예약 상태 분포',T(sbars(Object.entries(stCnt).map(([k,v])=>[STATUS_LABEL[k]||k,v]),v=>v+'건')))}${P('요일별 예약',T(sbars(dows.map(d=>[d,gDow[d]||0]),v=>v+'건',true)))}</div>`
+      +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('시간대별 예약',T(sbars(Object.keys(gHour).map(Number).sort((a,b)=>a-b).map(h=>[h+'시',gHour[h]]),v=>v+'건',true)))}${P('담당의별 실적',`<table><thead><tr><th>담당</th><th class="right">건수</th><th class="right">매출</th></tr></thead><tbody>${Object.entries(gDoc).sort((a,b)=>b[1].rev-a[1].rev).map(([d,o])=>`<tr><td>${esc(d)}</td><td class="right">${o.cnt}</td><td class="right"><b>${won(o.rev)}</b></td></tr>`).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>'}</tbody></table>`)}</div>`;
+  } else {
+    content=`<div class="cards" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><div class="k">전체 환자</div><div class="v">${patAll.length}<small> 명</small></div></div><div class="stat"><div class="k">재방문율</div><div class="v">${revisitRate}%</div><div class="cny">2회+ ${revisit}명</div></div><div class="stat"><div class="k">당월 신규</div><div class="v">${newP}<small> 명</small></div></div></div>`
+      +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('국적별 환자',T(sbars(Object.entries(gN),v=>v+'명')))}${P('성별 분포',T(sbars(Object.entries(gGender),v=>v+'명')))}</div>`
+      +P('환자 LTV TOP 10 (누적 결제)',`<table><thead><tr><th>#</th><th>환자</th><th class="right">누적</th></tr></thead><tbody>${ltv.map(([n,v],i)=>`<tr><td>${i+1}</td><td>${esc(n)}</td><td class="right"><b>${won(v)}</b></td></tr>`).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>'}</tbody></table>`);
+  }
+  const TABS=[['sales','매출'],['proc','시술'],['inflow','유입'],['appt','예약'],['pat','환자']];
+  const tabbar='<div class="stat-tabs">'+TABS.map(([k,l])=>`<button class="${statTab===k?'on':''}" onclick="statTab='${k}';renderStats()">${l}</button>`).join('')+'</div>';
+  const cards=`<div class="cards" style="grid-template-columns:repeat(5,1fr)">
+     <div class="stat"><div class="k">당월 매출</div><div class="v" style="font-size:19px">${won(total)}</div><div>${delta(total,ptotal)}</div></div>
+     <div class="stat"><div class="k">시술 건수</div><div class="v">${cnt}<small> 건</small></div><div>${delta(cnt,pcnt)}</div></div>
+     <div class="stat"><div class="k">객단가</div><div class="v" style="font-size:19px">${won(avg)}</div><div>${delta(avg,pavg)}</div></div>
+     <div class="stat"><div class="k">미수금</div><div class="v" style="font-size:18px;color:var(--danger)">${won(unpaid)}</div></div>
+     <div class="stat"><div class="k">신규 환자</div><div class="v">${newP}<small> 명</small></div></div></div>`;
+  m.innerHTML=`<div class="page-head"><div><h2>통계</h2><div class="sub">${y}년 ${mo+1}월 · 매출·시술·유입·예약·환자 분석</div></div>
+     <div style="display:flex;gap:8px"><input type="month" value="${statMonth}" onchange="statMonth=this.value;renderStats()" style="padding:8px 12px;border:1px solid var(--line);border-radius:9px"><button class="btn ghost" onclick="exportStatsCSV()">CSV</button><button class="btn ghost" onclick="window.print()">인쇄/PDF</button></div></div>
+   ${cards}${tabbar}${content}`;
 }
 
 /* ============ 직원 계정·권한 ============ */
@@ -999,12 +1022,12 @@ const ROLE_LABEL={owner:'원장',manager:'매니저',desk:'데스크',viewer:'�
 const MENUS=[{k:'dashboard',label:'대시보드'},{k:'calendar',label:'예약 캘린더'},{k:'reception',label:'접수 현황'},{k:'patients',label:'환자 CRM'},{k:'quote',label:'상담·견적'},{k:'charts',label:'진료차트'},{k:'billing',label:'수납·매출'},{k:'stats',label:'통계'},{k:'settlement',label:'에이전시 정산'},{k:'agencies',label:'에이전시 관리'},{k:'packages',label:'패키지 관리'},{k:'referrers',label:'왕홍·소개자'},{k:'refsettle',label:'소개자 정산'},{k:'staff',label:'직원 관리'},{k:'settings',label:'병원 설정'}];
 const ROLE_DESC='원장: 모든 메뉴·병원설정·직원관리 접근(전권). 매니저: 직원관리·병원설정 제외 전체 접근·편집(정산·통계 포함). 데스크: 접수·예약·환자·상담견적·진료차트·수납 등 일선 업무. 열람: 조회 전용(데이터 편집 불가).';
 function roleMenus(role){const all=MENUS.map(x=>x.k);if(role==='owner')return all;const noAdmin=all.filter(k=>k!=='staff'&&k!=='settings');if(role==='desk')return ['dashboard','calendar','reception','patients','quote','charts','billing'];if(role==='viewer')return ['dashboard','stats','patients','billing'];return noAdmin;}
-function menuCheckboxes(sel){return MENUS.filter(x=>x.k!=='staff'&&x.k!=='settings').map(x=>`<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:13px"><input type="checkbox" value="${x.k}" ${sel.includes(x.k)?'checked':''}> ${x.label}</label>`).join('');}
+function menuCheckboxes(sel){return MENUS.filter(x=>x.k!=='staff'&&x.k!=='settings').map(x=>`<label style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:5px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px"><input type="checkbox" value="${x.k}" ${sel.includes(x.k)?'checked':''}> ${x.label}</label>`).join('');}
 function permModal(id){const s=(state._staff||[]).find(x=>x.id===id);if(!s)return;
   const sel=(Array.isArray(s.menu_perms)&&s.menu_perms.length)?s.menu_perms:roleMenus(s.role);
   openModal(`<div class="mh">${esc(s.name)} · 권한 설정<span onclick="closeModal()">✕</span></div><div class="mb">
     <div class="field"><label>권한(역할)</label><select id="pm_role">${Object.entries(ROLE_LABEL).map(([k,v])=>`<option value="${k}" ${s.role===k?'selected':''}>${v}</option>`).join('')}</select></div>
-    <div class="field"><label>노출 메뉴 (체크한 메뉴만 표시)</label><div id="pm_menus">${menuCheckboxes(sel)}</div>
+    <div class="field"><label>노출 메뉴 (체크한 메뉴만 표시)</label><div id="pm_menus" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${menuCheckboxes(sel)}</div>
       <div class="muted" style="font-size:12px;margin-top:4px">아무것도 선택하지 않으면 역할 기본값이 적용됩니다. (직원관리·병원설정은 원장 전용)</div></div></div>
     <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="savePerm('${id}')">저장</button></div>`,true);}
 async function savePerm(id){const role=el('pm_role').value;const menus=[...document.querySelectorAll('#pm_menus input:checked')].map(i=>i.value);
@@ -1034,7 +1057,7 @@ function staffModal(){
     <div class="field"><label>로그인 이메일 *</label><input id="s_email" type="email" placeholder="staff@gangnam.clinic"></div>
     <div class="field"><label>초기 비밀번호 * (6자 이상)</label><input id="s_pw" type="text" value="pulse1234"></div>
     <div class="field"><label>권한</label><select id="s_role"><option value="manager">매니저</option><option value="desk" selected>데스크</option><option value="viewer">열람</option><option value="owner">원장</option></select></div>
-    <div class="field"><label>노출 메뉴 (선택 안 하면 역할 기본값)</label><div id="s_menus">${menuCheckboxes([])}</div></div>
+    <div class="field"><label>노출 메뉴 (선택 안 하면 역할 기본값)</label><div id="s_menus" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${menuCheckboxes([])}</div></div>
     <div class="muted" style="font-size:12px">${ROLE_DESC}</div></div>
     <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="saveStaff()">계정 생성</button></div>`,true);
 }
