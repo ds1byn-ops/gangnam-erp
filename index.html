@@ -182,7 +182,7 @@ const MAG='<svg viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2
 function keepFocus(id){setTimeout(function(){const i=el(id);if(i){const v=i.value;i.focus();try{i.setSelectionRange(v.length,v.length);}catch(e){}}},0);}
 const pmap=()=>Object.fromEntries(state.patients.map(p=>[p.id,p.name]));
 const amap=()=>Object.fromEntries(state.agencies.map(a=>[a.id,a.name]));
-let billSearch='',billSort='recent',billFrom='',billTo='';let setlSearch='',setlSort='rev';let rsSearch='',rsSort='rev';let agmSearch='',agmSort='name';let refmSearch='',refmSort='name';let chSearch='',chSort='date';
+let billSearch='',billSort='recent',billFrom='',billTo='';let setlSearch='',setlSort='rev';let rsSearch='',rsSort='rev';let agmSearch='',agmSort='name';let refmSearch='',refmSort='name';let chSearch='',chSort='date';let setlVat=true,rsVat=true;
 
 async function doLogin(e){e.preventDefault();const b=el('loginBtn');b.disabled=true;el('loginErr').textContent='';
   const {error}=await db.auth.signInWithPassword({email:el('email').value.trim(),password:el('pw').value});
@@ -695,11 +695,13 @@ async function renderSettlement(){
   const gA=id=>agg[id]||{rev:0,cnt:0};
   let alist=state.agencies.filter(ag=>!setlSearch||ag.name.toLowerCase().includes(setlSearch.toLowerCase()));
   alist.sort((x,y)=>setlSort==='name'?x.name.localeCompare(y.name):setlSort==='cnt'?gA(y.id).cnt-gA(x.id).cnt:gA(y.id).rev-gA(x.id).rev);
-  const rows=alist.map(ag=>{const a=agg[ag.id]||{rev:0,cnt:0};const rate=ag.commission_rate!=null?Number(ag.commission_rate):(ag.is_followkorea?15:10);const comm=Math.round(a.rev*rate/100);const s=setlMap[ag.id];
+  const rows=alist.map(ag=>{const a=agg[ag.id]||{rev:0,cnt:0};const rate=ag.commission_rate!=null?Number(ag.commission_rate):(ag.is_followkorea?15:10);const comm=Math.round(a.rev*rate/100);const vat=setlVat?Math.round(comm*0.1):0;const payout=comm+vat;const s=setlMap[ag.id];
     return `<tr><td><b style="cursor:pointer;color:var(--brand)" onclick="stmtModal('${ag.id}')" title="거래명세서 출력">${esc(ag.name)}</b>${ag.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}</td>
       <td class="right">${a.cnt}건</td><td class="right">${won(a.rev)}</td>
       <td class="right"><input type="number" value="${rate}" id="rate_${ag.id}" style="width:60px;padding:5px;border:1px solid var(--line);border-radius:6px;text-align:right" oninput="recomm('${ag.id}',${a.rev})">%</td>
       <td class="right"><b id="comm_${ag.id}">${won(comm)}</b></td>
+      <td class="right"><span id="vat_${ag.id}">${won(vat)}</span></td>
+      <td class="right"><b id="pay_${ag.id}">${won(payout)}</b></td>
       <td>${!s?'<span class="muted">미정산</span>':(s.status==='paid'?'<span class="tag t-paid">지급완료</span>':(s.tax_issued?'<span class="tag t-confirmed">세금계산서 발행</span>':'<span class="tag t-unpaid">정산생성</span>'))}</td>
       <td class="right">${!s?`<button class="btn sm" onclick="makeSettle('${ag.id}',${a.rev})">정산 생성</button>`:(s.status==='paid'?'':(s.tax_issued?'':`<button class="btn sm ghost" onclick="issueTax('${s.id}')">세금계산서</button> `)+`<button class="btn sm ok" onclick="paySettle('${s.id}')">지급완료</button>`)}</td></tr>`;}).join('');
   const totRev=Object.values(agg).reduce((s,a)=>s+a.rev,0);
@@ -709,14 +711,14 @@ async function renderSettlement(){
      <div class="stat"><div class="k">에이전시 매출(당월)</div><div class="v">${won(totRev)}</div></div>
      <div class="stat"><div class="k">에이전시 수</div><div class="v">${state.agencies.length}<small> 곳</small></div></div>
      <div class="stat"><div class="k">정산 대상 월</div><div class="v" style="font-size:19px">${setMonth}</div></div></div>
-   <div class="panel"><div class="ph">에이전시별 정산 <span style="display:flex;gap:6px;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_setl" placeholder="에이전시 검색" value="${esc(setlSearch)}" oninput="setlSearch=this.value;renderSettlement()"></span><select onchange="setlSort=this.value;renderSettlement()"><option value="rev"${setlSort==='rev'?' selected':''}>매출순</option><option value="cnt"${setlSort==='cnt'?' selected':''}>건수순</option><option value="name"${setlSort==='name'?' selected':''}>이름순</option></select></span></div><div class="pb">
-     <table><thead><tr><th>에이전시</th><th class="right">건수</th><th class="right">매출</th><th class="right">수수료율</th><th class="right">수수료</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+   <div class="panel"><div class="ph">에이전시별 정산 <span style="display:flex;gap:6px;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_setl" placeholder="에이전시 검색" value="${esc(setlSearch)}" oninput="setlSearch=this.value;renderSettlement()"></span><select onchange="setlSort=this.value;renderSettlement()"><option value="rev"${setlSort==='rev'?' selected':''}>매출순</option><option value="cnt"${setlSort==='cnt'?' selected':''}>건수순</option><option value="name"${setlSort==='name'?' selected':''}>이름순</option></select> <label style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" ${setlVat?'checked':''} onchange="setlVat=this.checked;renderSettlement()"> 부가세10%</label></span></div><div class="pb">
+     <table><thead><tr><th>에이전시</th><th class="right">건수</th><th class="right">매출</th><th class="right">수수료율</th><th class="right">수수료</th><th class="right">부가세</th><th class="right">지급합계</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table>
    </div></div>
    <div class="muted" style="font-size:12px">※ 수수료율 기본값: 팔로우코리아 15%, 일반 에이전시 10% (수정 가능). '정산 생성'을 누르면 해당 월 정산 내역이 저장됩니다.</div>`;keepFocus('srch_setl');
 }
-function recomm(agId,rev){const r=Number(el('rate_'+agId).value||0);el('comm_'+agId).textContent=won(Math.round(rev*r/100));}
-async function makeSettle(agId,rev){const r=Number(el('rate_'+agId).value||0);const comm=Math.round(rev*r/100);
-  const {error}=await db.from('settlements').insert({hospital_id:state.hospital_id,agency_id:agId,period:setMonth,total_amount:comm,status:'unpaid'});
+function recomm(agId,rev){const r=Number(el('rate_'+agId).value||0);const comm=Math.round(rev*r/100);const vat=setlVat?Math.round(comm*0.1):0;el('comm_'+agId).textContent=won(comm);if(el('vat_'+agId))el('vat_'+agId).textContent=won(vat);if(el('pay_'+agId))el('pay_'+agId).textContent=won(comm+vat);}
+async function makeSettle(agId,rev){const r=Number(el('rate_'+agId).value||0);const comm=Math.round(rev*r/100);const vat=setlVat?Math.round(comm*0.1):0;
+  const {error}=await db.from('settlements').insert({hospital_id:state.hospital_id,agency_id:agId,period:setMonth,total_amount:comm,vat_amount:vat,payout:comm+vat,status:'unpaid'});
   if(error){alert('실패: '+error.message);return;}renderSettlement();}
 async function issueTax(id){await db.from('settlements').update({tax_issued:true,tax_issued_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderSettlement();}
 async function paySettle(id){await db.from('settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderSettlement();}
@@ -890,11 +892,13 @@ async function renderRefSettle(){
   const rA=id=>agg[id]||{rev:0,cnt:0};
   let rlist=state.referrers.filter(r=>!rsSearch||r.name.toLowerCase().includes(rsSearch.toLowerCase())||(r.channel||'').toLowerCase().includes(rsSearch.toLowerCase())||(r.rtype||'').toLowerCase().includes(rsSearch.toLowerCase()));
   rlist.sort((x,y)=>rsSort==='name'?x.name.localeCompare(y.name):rsSort==='cnt'?rA(y.id).cnt-rA(x.id).cnt:rsSort==='comm'?(rA(y.id).rev*(y.rate||0))-(rA(x.id).rev*(x.rate||0)):rA(y.id).rev-rA(x.id).rev);
-  const rows=rlist.map(r=>{const a=agg[r.id]||{rev:0,cnt:0};const rate=Number(r.rate)||0;const comm=Math.round(a.rev*rate/100);const s=setlMap[r.id];
+  const rows=rlist.map(r=>{const a=agg[r.id]||{rev:0,cnt:0};const rate=Number(r.rate)||0;const comm=Math.round(a.rev*rate/100);const vat=rsVat?Math.round(comm*0.1):0;const payout=comm+vat;const s=setlMap[r.id];
     return `<tr><td><b>${esc(r.name)}</b> <span class="muted">${esc(r.rtype||'')}${r.channel?'·'+esc(r.channel):''}</span></td>
       <td class="right">${a.cnt}건</td><td class="right">${won(a.rev)}</td>
       <td class="right"><input type="number" value="${rate}" id="rr_${r.id}" style="width:56px;padding:5px;border:1px solid var(--line);border-radius:6px;text-align:right" oninput="rfRecomm('${r.id}',${a.rev})">%</td>
       <td class="right"><b id="rfc_${r.id}">${won(comm)}</b></td>
+      <td class="right"><span id="rfv_${r.id}">${won(vat)}</span></td>
+      <td class="right"><b id="rfp_${r.id}">${won(payout)}</b></td>
       <td>${!s?'<span class="muted">미정산</span>':(s.status==='paid'?'<span class="tag t-paid">지급완료</span>':(s.tax_issued?'<span class="tag t-confirmed">세금계산서 발행</span>':'<span class="tag t-unpaid">정산생성</span>'))}</td>
       <td class="right">${!s?`<button class="btn sm" onclick="makeRefSettle('${r.id}',${a.rev})">정산 생성</button>`:(s.status==='paid'?'':(s.tax_issued?'':`<button class="btn sm ghost" onclick="rfTax('${s.id}')">세금계산서</button> `)+`<button class="btn sm ok" onclick="rfPay('${s.id}')">지급완료</button>`)}</td></tr>`;}).join('');
   const totRev=Object.values(agg).reduce((s,a)=>s+a.rev,0);
@@ -904,13 +908,13 @@ async function renderRefSettle(){
      <div class="stat"><div class="k">소개 매출(당월)</div><div class="v">${won(totRev)}</div></div>
      <div class="stat"><div class="k">소개자 수</div><div class="v">${state.referrers.length}<small> 명</small></div></div>
      <div class="stat"><div class="k">정산 대상 월</div><div class="v" style="font-size:19px">${refMonth}</div></div></div>
-   <div class="panel"><div class="ph">소개자별 정산 <span style="display:flex;gap:6px;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_rs" placeholder="소개자 검색" value="${esc(rsSearch)}" oninput="rsSearch=this.value;renderRefSettle()"></span><select onchange="rsSort=this.value;renderRefSettle()"><option value="rev"${rsSort==='rev'?' selected':''}>매출순</option><option value="comm"${rsSort==='comm'?' selected':''}>수수료순</option><option value="cnt"${rsSort==='cnt'?' selected':''}>건수순</option><option value="name"${rsSort==='name'?' selected':''}>이름순</option></select></span></div><div class="pb">
-     <table><thead><tr><th>소개자</th><th class="right">건수</th><th class="right">소개 매출</th><th class="right">수수료율</th><th class="right">수수료</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
+   <div class="panel"><div class="ph">소개자별 정산 <span style="display:flex;gap:6px;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_rs" placeholder="소개자 검색" value="${esc(rsSearch)}" oninput="rsSearch=this.value;renderRefSettle()"></span><select onchange="rsSort=this.value;renderRefSettle()"><option value="rev"${rsSort==='rev'?' selected':''}>매출순</option><option value="comm"${rsSort==='comm'?' selected':''}>수수료순</option><option value="cnt"${rsSort==='cnt'?' selected':''}>건수순</option><option value="name"${rsSort==='name'?' selected':''}>이름순</option></select> <label style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" ${rsVat?'checked':''} onchange="rsVat=this.checked;renderRefSettle()"> 부가세10%</label></span></div><div class="pb">
+     <table><thead><tr><th>소개자</th><th class="right">건수</th><th class="right">소개 매출</th><th class="right">수수료율</th><th class="right">수수료</th><th class="right">부가세</th><th class="right">지급합계</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
    <div class="muted" style="font-size:12px">※ 소개자별 담당 견적의 매출을 집계해 수수료율(소개자 기본값)로 계산합니다. 정산 생성 → 세금계산서 → 지급완료 순으로 처리하세요.</div>`;keepFocus('srch_rs');
 }
-function rfRecomm(id,rev){const r=Number(el('rr_'+id).value||0);el('rfc_'+id).textContent=won(Math.round(rev*r/100));}
-async function makeRefSettle(id,rev){const r=Number(el('rr_'+id).value||0);const comm=Math.round(rev*r/100);
-  const {error}=await db.from('referrer_settlements').insert({hospital_id:state.hospital_id,referrer_id:id,period:refMonth,total_amount:comm,status:'unpaid'});
+function rfRecomm(id,rev){const r=Number(el('rr_'+id).value||0);const comm=Math.round(rev*r/100);const vat=rsVat?Math.round(comm*0.1):0;el('rfc_'+id).textContent=won(comm);if(el('rfv_'+id))el('rfv_'+id).textContent=won(vat);if(el('rfp_'+id))el('rfp_'+id).textContent=won(comm+vat);}
+async function makeRefSettle(id,rev){const r=Number(el('rr_'+id).value||0);const comm=Math.round(rev*r/100);const vat=rsVat?Math.round(comm*0.1):0;
+  const {error}=await db.from('referrer_settlements').insert({hospital_id:state.hospital_id,referrer_id:id,period:refMonth,total_amount:comm,vat_amount:vat,payout:comm+vat,status:'unpaid'});
   if(error){alert('실패: '+error.message);return;}renderRefSettle();}
 async function rfTax(id){await db.from('referrer_settlements').update({tax_issued:true,updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
 async function rfPay(id){await db.from('referrer_settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
