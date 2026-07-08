@@ -142,6 +142,7 @@
         <a data-view="billing"><span class="ico">₩</span> 수납·매출</a>
         <a data-view="settlement"><span class="ico">🤝</span> 에이전시 정산</a>
         <a data-view="agencies"><span class="ico">🏢</span> 에이전시 관리</a>
+        <a data-view="packages"><span class="ico">📦</span> 패키지 관리</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
         <button onclick="doLogout()">로그아웃</button></div>
@@ -204,7 +205,7 @@ async function loadPatients(){const {data}=await db.from('patients').select('*')
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages}[v])();}
 function openModal(html,lg){el('modal').className='modal'+(lg?' lg':'');el('modal').innerHTML=html;el('modalBg').style.display='flex';}
 function closeModal(){el('modalBg').style.display='none';}
 el('modalBg').addEventListener('click',e=>{if(e.target===el('modalBg'))closeModal();});
@@ -626,7 +627,70 @@ async function saveAgency(id){const name=el('ag_name').value.trim();if(!name){al
   const {data}=await db.from('agencies').select('*').order('name');state.agencies=data||[];
   closeModal();renderAgencies();}
 
-boot(); /* build: v3 lineDiscount+taxInvoice+agencyMgmt */
+/* ============ PACKAGES / 패키지 관리 ============ */
+let pkgRows=[];
+async function loadPackages(){
+  const [{data:pkgs},{data:items}]=await Promise.all([
+    db.from('packages').select('*').eq('is_active',true).order('ptype').order('name'),
+    db.from('package_items').select('*').order('sort')]);
+  state.packages=(pkgs||[]).map(p=>({...p,items:(items||[]).filter(i=>i.package_id===p.id)}));
+}
+async function renderPackages(){
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  await loadPackages();
+  const rows=state.packages.map(p=>`<tr>
+    <td><b>${esc(p.name)}</b></td><td>${esc(p.ptype||'-')}</td>
+    <td>${p.items.length}개</td><td class="right"><b>${won(p.total_price)}</b><div class="cny">${cny(p.total_price)}</div></td>
+    <td class="right"><button class="btn sm ghost" onclick="pkgView('${p.id}')">구성</button>
+      <button class="btn sm ghost" onclick="packageModal('${p.id}')">수정</button>
+      <button class="btn sm danger" onclick="delPackage('${p.id}')">삭제</button></td></tr>`).join('');
+  m.innerHTML=`<div class="page-head"><div><h2>패키지 관리</h2><div class="sub">전체 ${state.packages.length}개 · 이름·구성 항목·가격 직접 편집</div></div>
+     <button class="btn" onclick="packageModal()">+ 패키지 등록</button></div>
+   <div class="panel"><div class="pb">${state.packages.length?`<table><thead><tr><th>패키지명</th><th>구분</th><th>구성</th><th class="right">합계</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">패키지가 없습니다. 상단 버튼으로 등록하세요.</div>'}</div></div>`;
+}
+function packageModal(id){const p=id?state.packages.find(x=>x.id===id):null;
+  pkgRows=p&&p.items.length?p.items.map(i=>({name:i.name,price:Number(i.price),qty:i.qty||1})):[{name:'',price:0,qty:1}];
+  openModal(`<div class="mh">${p?'패키지 수정':'패키지 등록'}<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div class="grid2"><div class="field"><label>패키지명 *</label><input id="pk_name" value="${p?esc(p.name):''}"></div>
+      <div class="field"><label>구분 (혈액/지방/골수 등)</label><input id="pk_type" value="${p?esc(p.ptype||''):''}" placeholder="예: 혈액"></div></div>
+    <div class="field"><label>구성 항목 (시술명 / 가격 / 수량)</label><div id="pk_items"></div>
+      <button class="btn sm ghost" onclick="pkgAddRow()">+ 항목 추가</button></div>
+    <div class="totrow big"><span>합계</span><span id="pk_total">₩0</span></div>
+    <div class="field"><label>메모</label><input id="pk_memo" value="${p?esc(p.memo||''):''}"></div></div>
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="savePackage('${id||''}')">저장</button></div>`,true);
+  drawPkgRows();
+}
+function drawPkgRows(){
+  el('pk_items').innerHTML=pkgRows.map((r,i)=>`<div style="display:grid;grid-template-columns:1fr 130px 60px 32px;gap:6px;margin-bottom:6px">
+    <input placeholder="시술명" value="${esc(r.name)}" oninput="pkgSet(${i},'name',this.value)">
+    <input type="number" placeholder="가격(원)" value="${r.price}" oninput="pkgSet(${i},'price',this.value)">
+    <input type="number" placeholder="수량" value="${r.qty}" oninput="pkgSet(${i},'qty',this.value)">
+    <button class="btn sm danger" onclick="pkgDelRow(${i})">×</button></div>`).join('');
+  pkgTotal();
+}
+function pkgSet(i,k,v){pkgRows[i][k]=k==='name'?v:(Number(v)||0);pkgTotal();}
+function pkgAddRow(){pkgRows.push({name:'',price:0,qty:1});drawPkgRows();}
+function pkgDelRow(i){pkgRows.splice(i,1);if(!pkgRows.length)pkgRows.push({name:'',price:0,qty:1});drawPkgRows();}
+function pkgTotal(){const t=pkgRows.reduce((s,r)=>s+r.price*r.qty,0);el('pk_total').innerHTML=won(t)+' <span class="cny" style="font-size:13px">'+cny(t)+'</span>';return t;}
+async function savePackage(id){
+  const name=el('pk_name').value.trim();if(!name){alert('패키지명을 입력하세요');return;}
+  const items=pkgRows.filter(r=>r.name.trim());if(!items.length){alert('구성 항목을 최소 1개 입력하세요');return;}
+  const total=items.reduce((s,r)=>s+r.price*r.qty,0);
+  const prow={hospital_id:state.hospital_id,name,ptype:el('pk_type').value||null,total_price:total,memo:el('pk_memo').value||null};
+  let pkgId=id;
+  if(id){const {error}=await db.from('packages').update(prow).eq('id',id);if(error){alert('저장 실패: '+error.message);return;}
+    await db.from('package_items').delete().eq('package_id',id);}
+  else{const {data,error}=await db.from('packages').insert(prow).select().single();if(error){alert('저장 실패: '+error.message);return;}pkgId=data.id;}
+  const irows=items.map((r,idx)=>({hospital_id:state.hospital_id,package_id:pkgId,name:r.name,price:r.price,qty:r.qty,sort:idx+1}));
+  const {error:e2}=await db.from('package_items').insert(irows);if(e2){alert('항목 저장 실패: '+e2.message);return;}
+  closeModal();renderPackages();
+}
+async function delPackage(id){if(!confirm('이 패키지를 삭제할까요?'))return;
+  await db.from('package_items').delete().eq('package_id',id);
+  const {error}=await db.from('packages').delete().eq('id',id);
+  if(error){alert('삭제 실패: '+error.message);return;}renderPackages();}
+
+boot(); /* build: v4 packageMgmt */
 </script>
 </body>
 </html>
