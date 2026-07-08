@@ -155,9 +155,10 @@
         <a data-view="refsettle">소개자 정산</a>
         <a data-view="staff" class="owner-only">직원 관리</a>
         <a data-view="settings" class="owner-only">병원 설정</a>
+        <a data-view="audit" class="owner-only">관리자 로그</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
-        <button onclick="doLogout()">로그아웃</button></div>
+        <button onclick="doLogout()">로그아웃</button><div id="appVer" style="margin-top:10px;font-size:11px;color:#475569;text-align:center"></div></div>
     </aside>
     <main class="main" id="main"></main>
   </div>
@@ -168,6 +169,8 @@
 const SB_URL="https://fhuninzvrkzodhvwkxvo.supabase.co";
 const SB_KEY="sb_publishable_DqrHtdkvc-0VnN511-QdnQ_RuC-fbJ4";
 const db=supabase.createClient(SB_URL,SB_KEY);
+const APP_VERSION='v1.3.0 · 2026-07-08';
+let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
 const STATUS_LABEL={booked:'예약',confirmed:'확정',checked_in:'접수완료',in_progress:'진료중',done:'완료',no_show:'노쇼',cancelled:'취소'};
@@ -200,6 +203,7 @@ async function boot(){
   const {data:staff}=await db.from('staff_accounts').select('id,name,role,hospital_id').eq('id',user.id).single();
   if(!staff){el('loginErr').textContent='스태프 계정이 없습니다.';return;}
   state.staff=staff;state.hospital_id=staff.hospital_id;
+  fetch('https://api.ipify.org?format=json').then(r=>r.json()).then(j=>{state.ip=j.ip;}).catch(()=>{});
   const [{data:hosp},{data:procs},{data:ags},{data:dcs},{data:pkgs},{data:pkgItems}]=await Promise.all([
     db.from('hospitals').select('name').eq('id',staff.hospital_id).single(),
     db.from('procedures').select('*').eq('is_active',true).order('category').order('name'),
@@ -213,20 +217,21 @@ async function boot(){
   state.packages=(pkgs||[]).map(p=>({...p,items:(pkgItems||[]).filter(i=>i.package_id===p.id)}));
   const {data:refs}=await db.from('referrers').select('*').eq('is_active',true).order('name');state.referrers=refs||[];
   el('hospName').textContent=state.hospital_name;
+  el('appVer').textContent=APP_VERSION;
   el('whoName').textContent=staff.name;
   el('whoRole').textContent=({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[staff.role]||staff.role;
-  const _allm=['dashboard','calendar','reception','patients','quote','charts','billing','stats','settlement','agencies','packages','referrers','refsettle','staff','settings'];
+  const _allm=['dashboard','calendar','reception','patients','quote','charts','billing','stats','settlement','agencies','packages','referrers','refsettle','staff','settings','audit'];
   let _allowed=(staff.role==='owner')?_allm:((Array.isArray(staff.menu_perms)&&staff.menu_perms.length)?staff.menu_perms.slice():roleMenus(staff.role));
-  if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings');
+  if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings'&&k!=='audit');
   document.querySelectorAll('#nav a').forEach(a=>{a.style.display=_allowed.includes(a.dataset.view)?'':'none';});
   el('login').style.display='none';el('app').style.display='block';
-  await loadPatients();navTo('dashboard');
+  await loadPatients();navTo('dashboard');setTimeout(()=>logAudit('로그인'),800);
 }
 async function loadPatients(){const {data}=await db.from('patients').select('*').order('name');state.patients=data||[];}
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
-function navTo(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats}[v])();}
+function navTo(v){curView=v;document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit}[v])();}
 function openModal(html,lg){el('modal').className='modal'+(lg?' lg':'');el('modal').innerHTML=html;el('modalBg').style.display='flex';}
 function closeModal(){el('modalBg').style.display='none';}
 el('modalBg').addEventListener('click',e=>{if(e.target===el('modalBg'))closeModal();});
@@ -347,7 +352,7 @@ function apptModal(dateStr){
     <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="saveAppt()">저장</button></div>`);
 }
 async function saveAppt(){const row={hospital_id:state.hospital_id,patient_id:el('f_pat').value,appointment_at:new Date(el('f_at').value).toISOString(),doctor:el('f_doc').value||null,procedure_id:el('f_proc').value||null,memo:el('f_memo').value||null,status:'booked'};
-  const {error}=await db.from('appointments').insert(row);if(error){alert('저장 실패: '+error.message);return;}closeModal();navTo('calendar');}
+  const {error}=await db.from('appointments').insert(row);if(error){alert('저장 실패: '+error.message);return;}logAudit('예약 등록');closeModal();navTo('calendar');}
 
 /* ============ PATIENTS ============ */
 let patAgg={};
@@ -400,7 +405,7 @@ async function savePatient(id){const name=el('p_name').value.trim();if(!name){al
   if(id){({error}=await db.from('patients').update(row).eq('id',id));}
   else{row.first_visit=new Date().toISOString().slice(0,10);({error}=await db.from('patients').insert(row));}
   if(error){alert('저장 실패: '+error.message);return;}
-  await loadPatients();closeModal();if(id){patientDetail(id);}else{renderPatients();}}
+  logAudit('환자 '+(id?'수정':'등록'),name);await loadPatients();closeModal();if(id){patientDetail(id);}else{renderPatients();}}
 async function patientDetail(id){
   openModal('<div class="mb loading">불러오는 중…</div>',true);const p=state.patients.find(x=>x.id===id);const AM=amap();
   const [ord,ch,ap,nt]=await Promise.all([
@@ -445,7 +450,7 @@ async function patientDetail(id){
 }
 async function addNote(id){const note=(el('pn_note').value||'').trim();if(!note)return;
   const {error}=await db.from('patient_notes').insert({hospital_id:state.hospital_id,patient_id:id,category:el('pn_cat').value,note,author:state.staff?state.staff.name:null});
-  if(error){alert('저장 실패: '+error.message);return;}patientDetail(id);}
+  if(error){alert('저장 실패: '+error.message);return;}logAudit('상담메모 추가');patientDetail(id);}
 
 /* ============ QUOTE / 상담 견적 ============ */
 let cart=[];let quoteCtx={patient_id:'',agency_id:'',doctor:'',discount_kind:'none',discount_value:0,discount_code:'',memo:''};
@@ -563,7 +568,7 @@ async function saveQuote(){
   const items=cart.map(c=>({hospital_id:state.hospital_id,order_id:o.id,procedure_id:c.procedure_id,name:c.name,unit_price:c.unit_price,qty:c.qty,line_discount:(c.unit_price*c.qty-lineNet(c)),amount:lineNet(c)}));
   const {error:e2}=await db.from('order_items').insert(items);
   if(e2){alert('항목 저장 실패: '+e2.message);return;}
-  alert(`견적 #${o.order_no} 저장 완료 · 합계 ${won(o.total)}`);navTo('billing');
+  logAudit('견적 저장 #'+o.order_no,won(o.total));alert(`견적 #${o.order_no} 저장 완료 · 합계 ${won(o.total)}`);navTo('billing');
 }
 
 function printQuote(){
@@ -629,7 +634,7 @@ function chartModal(patientId){const pOpt=state.patients.map(p=>`<option value="
     <div class="field"><label>시술기록/특이사항</label><textarea id="c_note"></textarea></div></div>
     <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="saveChart()">저장</button></div>`);}
 async function saveChart(){const row={hospital_id:state.hospital_id,patient_id:el('c_pat').value,doctor:el('c_doc').value||null,skin_type:el('c_skin').value||null,visit_at:new Date(el('c_at').value).toISOString(),chief_complaint:el('c_cc').value||null,assessment:el('c_as').value||null,plan:el('c_pl').value||null,note:el('c_note').value||null};
-  const {error}=await db.from('charts').insert(row);if(error){alert('저장 실패: '+error.message);return;}closeModal();renderCharts();}
+  const {error}=await db.from('charts').insert(row);if(error){alert('저장 실패: '+error.message);return;}logAudit('진료차트 작성');closeModal();renderCharts();}
 function chartView(id){const c=(state._charts||[]).find(x=>x.id===id);if(!c)return;const p=state.patients.find(x=>x.id===c.patient_id);
   const sec=(t,v)=>`<div class="detail-sec"><h4>${t}</h4><div class="note-box">${esc(v||'—')}</div></div>`;
   openModal(`<div class="mh">${esc(p?p.name:'환자')} · ${fdate(c.visit_at)}<span onclick="closeModal()">✕</span></div><div class="mb">
@@ -667,7 +672,7 @@ async function renderBilling(){
    <div class="panel"><div class="ph">주문·수납 내역 <span style="display:flex;gap:6px;flex-wrap:wrap;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_bill" placeholder="환자/에이전시/번호" value="${esc(billSearch)}" oninput="billSearch=this.value;renderBilling()"></span><input type="date" value="${billFrom}" onchange="billFrom=this.value;renderBilling()"><input type="date" value="${billTo}" onchange="billTo=this.value;renderBilling()"><select onchange="billSort=this.value;renderBilling()"><option value="recent"${billSort==='recent'?' selected':''}>최신순</option><option value="amt"${billSort==='amt'?' selected':''}>금액순</option><option value="unpaid"${billSort==='unpaid'?' selected':''}>미수 먼저</option></select></span></div><div class="pb">${blist.length?`<table><thead><tr><th>No</th><th>일자</th><th>환자</th><th>에이전시</th><th class="right">합계</th><th>할인</th><th>수납</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">내역이 없습니다.</div>'}</div></div>`;keepFocus('srch_bill');
 }
 async function markPaid(id,method){const {data:o}=await db.from('orders').select('total').eq('id',id).single();
-  await db.from('orders').update({pay_status:'paid',paid_amount:o.total,pay_method:method||null,updated_at:new Date().toISOString()}).eq('id',id);renderBilling();}
+  await db.from('orders').update({pay_status:'paid',paid_amount:o.total,pay_method:method||null,updated_at:new Date().toISOString()}).eq('id',id);logAudit('수납('+(method||'')+')',won(o.total));renderBilling();}
 async function orderDetail(id){
   openModal('<div class="mb loading">불러오는 중…</div>');
   const [{data:o},{data:items}]=await Promise.all([db.from('orders').select('*').eq('id',id).single(),db.from('order_items').select('*').eq('order_id',id)]);
@@ -727,9 +732,9 @@ async function renderSettlement(){
 function recomm(agId,rev){const r=Number(el('rate_'+agId).value||0);const comm=Math.round(rev*r/100);const vat=setlVat?Math.round(comm*0.1):0;el('comm_'+agId).textContent=won(comm);if(el('vat_'+agId))el('vat_'+agId).textContent=won(vat);if(el('pay_'+agId))el('pay_'+agId).textContent=won(comm+vat);}
 async function makeSettle(agId,rev){const r=Number(el('rate_'+agId).value||0);const comm=Math.round(rev*r/100);const vat=setlVat?Math.round(comm*0.1):0;
   const {error}=await db.from('settlements').insert({hospital_id:state.hospital_id,agency_id:agId,period:setMonth,total_amount:comm,vat_amount:vat,payout:comm+vat,status:'unpaid'});
-  if(error){alert('실패: '+error.message);return;}renderSettlement();}
-async function issueTax(id){await db.from('settlements').update({tax_issued:true,tax_issued_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderSettlement();}
-async function paySettle(id){await db.from('settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderSettlement();}
+  if(error){alert('실패: '+error.message);return;}logAudit('에이전시 정산생성',won(comm));renderSettlement();}
+async function issueTax(id){await db.from('settlements').update({tax_issued:true,tax_issued_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);logAudit('세금계산서 발행(에이전시)');renderSettlement();}
+async function paySettle(id){await db.from('settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);logAudit('에이전시 정산 지급완료');renderSettlement();}
 
 /* ============ AGENCIES / 에이전시 등록 ============ */
 async function renderAgencies(){
@@ -782,7 +787,7 @@ async function saveAgency(id){const name=el('ag_name').value.trim();if(!name){al
   else{({error}=await db.from('agencies').insert(row));}
   if(error){alert('저장 실패: '+error.message);return;}
   const {data}=await db.from('agencies').select('*').order('name');state.agencies=data||[];
-  closeModal();renderAgencies();}
+  logAudit('에이전시 '+(id?'수정':'등록'),name);closeModal();renderAgencies();}
 
 /* ============ PACKAGES / 패키지 관리 ============ */
 let pkgRows=[];
@@ -840,12 +845,12 @@ async function savePackage(id){
   else{const {data,error}=await db.from('packages').insert(prow).select().single();if(error){alert('저장 실패: '+error.message);return;}pkgId=data.id;}
   const irows=items.map((r,idx)=>({hospital_id:state.hospital_id,package_id:pkgId,name:r.name,price:r.price,qty:r.qty,sort:idx+1}));
   const {error:e2}=await db.from('package_items').insert(irows);if(e2){alert('항목 저장 실패: '+e2.message);return;}
-  closeModal();renderPackages();
+  logAudit('패키지 저장',name);closeModal();renderPackages();
 }
 async function delPackage(id){if(!confirm('이 패키지를 삭제할까요?'))return;
   await db.from('package_items').delete().eq('package_id',id);
   const {error}=await db.from('packages').delete().eq('id',id);
-  if(error){alert('삭제 실패: '+error.message);return;}renderPackages();}
+  if(error){alert('삭제 실패: '+error.message);return;}logAudit('패키지 삭제');renderPackages();}
 
 /* ============ REFERRERS / 왕홍·소개자 ============ */
 async function renderReferrers(){
@@ -877,7 +882,7 @@ async function saveReferrer(id){const name=el('rf_name').value.trim();if(!name){
   else{({error}=await db.from('referrers').insert(row));}
   if(error){alert('저장 실패: '+error.message);return;}
   const {data}=await db.from('referrers').select('*').eq('is_active',true).order('name');state.referrers=data||[];
-  closeModal();renderReferrers();}
+  logAudit('소개자 '+(id?'수정':'등록'),name);closeModal();renderReferrers();}
 async function delReferrer(id){if(!confirm('이 소개자를 삭제할까요?'))return;
   const {error}=await db.from('referrers').update({is_active:false}).eq('id',id);
   if(error){alert('삭제 실패: '+error.message);return;}
@@ -923,9 +928,9 @@ async function renderRefSettle(){
 function rfRecomm(id,rev){const r=Number(el('rr_'+id).value||0);const comm=Math.round(rev*r/100);const vat=rsVat?Math.round(comm*0.1):0;el('rfc_'+id).textContent=won(comm);if(el('rfv_'+id))el('rfv_'+id).textContent=won(vat);if(el('rfp_'+id))el('rfp_'+id).textContent=won(comm+vat);}
 async function makeRefSettle(id,rev){const r=Number(el('rr_'+id).value||0);const comm=Math.round(rev*r/100);const vat=rsVat?Math.round(comm*0.1):0;
   const {error}=await db.from('referrer_settlements').insert({hospital_id:state.hospital_id,referrer_id:id,period:refMonth,total_amount:comm,vat_amount:vat,payout:comm+vat,status:'unpaid'});
-  if(error){alert('실패: '+error.message);return;}renderRefSettle();}
-async function rfTax(id){await db.from('referrer_settlements').update({tax_issued:true,updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
-async function rfPay(id){await db.from('referrer_settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
+  if(error){alert('실패: '+error.message);return;}logAudit('소개자 정산생성',won(comm));renderRefSettle();}
+async function rfTax(id){await db.from('referrer_settlements').update({tax_issued:true,updated_at:new Date().toISOString()}).eq('id',id);logAudit('세금계산서 발행(소개자)');renderRefSettle();}
+async function rfPay(id){await db.from('referrer_settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);logAudit('소개자 정산 지급완료');renderRefSettle();}
 
 /* ============ 통계 ============ */
 let statMonth=null,statTab='sales',statFrom='',statTo='';
@@ -1024,12 +1029,29 @@ async function renderStats(){
    ${cards}${tabbar}${content}`;
 }
 
+/* ============ 감사 로그 ============ */
+async function logAudit(action,detail){try{await db.from('audit_logs').insert({hospital_id:state.hospital_id,staff_id:state.staff?state.staff.id:null,staff_name:state.staff?state.staff.name:null,menu:curView,action:action,detail:detail?String(detail):null,ip:state.ip||null});}catch(e){}}
+function menuLabel(k){const x=(typeof MENUS!=='undefined')?MENUS.find(y=>y.k===k):null;return x?x.label:(k||'-');}
+async function renderAudit(){
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const {data}=await db.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(500);
+  state._audit=data||[];
+  m.innerHTML=`<div class="page-head"><div><h2>관리자 로그</h2><div class="sub">직원 활동 감사 로그 · 누가·메뉴·IP·시각·행위 (최근 500건)</div></div>
+     <button class="btn ghost" onclick="exportAuditCSV()">CSV</button></div>
+   <div class="toolbar"><div class="srch">${MAG}<input id="alSrch" placeholder="직원/행위/메뉴 검색" oninput="filterAudit()"></div></div>
+   <div class="panel"><div class="pb" id="alTable"></div></div>`;
+  drawAudit(state._audit);
+}
+function drawAudit(list){const t=el('alTable');t.innerHTML=list.length?`<table><thead><tr><th>시각</th><th>직원</th><th>메뉴</th><th>행위</th><th>상세</th><th>IP</th></tr></thead><tbody>${list.map(l=>`<tr><td style="white-space:nowrap">${new Date(l.created_at).toLocaleString('ko-KR')}</td><td><b>${esc(l.staff_name||'-')}</b></td><td>${esc(menuLabel(l.menu))}</td><td>${esc(l.action)}</td><td class="muted">${esc(l.detail||'')}</td><td class="muted">${esc(l.ip||'-')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">로그가 없습니다.</div>';}
+function filterAudit(){const q=(el('alSrch').value||'').toLowerCase();drawAudit((state._audit||[]).filter(l=>!q||(l.staff_name||'').toLowerCase().includes(q)||(l.action||'').toLowerCase().includes(q)||menuLabel(l.menu).toLowerCase().includes(q)||(l.detail||'').toLowerCase().includes(q)));}
+function exportAuditCSV(){const rows=(state._audit||[]).map(l=>[new Date(l.created_at).toLocaleString('ko-KR'),l.staff_name||'',menuLabel(l.menu),l.action,l.detail||'',l.ip||'']);const head=['시각','직원','메뉴','행위','상세','IP'];const q=c=>`"${(c==null?'':String(c)).replace(/"/g,'""')}"`;const csv='﻿'+[head.map(q).join(',')].concat(rows.map(r=>r.map(q).join(','))).join('\n');const b=new Blob([csv],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='감사로그.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);}
+
 /* ============ 직원 계정·권한 ============ */
 const ROLE_LABEL={owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'};
-const MENUS=[{k:'dashboard',label:'대시보드'},{k:'calendar',label:'예약 캘린더'},{k:'reception',label:'접수 현황'},{k:'patients',label:'환자 CRM'},{k:'quote',label:'상담·견적'},{k:'charts',label:'진료차트'},{k:'billing',label:'수납·매출'},{k:'stats',label:'통계'},{k:'settlement',label:'에이전시 정산'},{k:'agencies',label:'에이전시 관리'},{k:'packages',label:'패키지 관리'},{k:'referrers',label:'왕홍·소개자'},{k:'refsettle',label:'소개자 정산'},{k:'staff',label:'직원 관리'},{k:'settings',label:'병원 설정'}];
+const MENUS=[{k:'dashboard',label:'대시보드'},{k:'calendar',label:'예약 캘린더'},{k:'reception',label:'접수 현황'},{k:'patients',label:'환자 CRM'},{k:'quote',label:'상담·견적'},{k:'charts',label:'진료차트'},{k:'billing',label:'수납·매출'},{k:'stats',label:'통계'},{k:'settlement',label:'에이전시 정산'},{k:'agencies',label:'에이전시 관리'},{k:'packages',label:'패키지 관리'},{k:'referrers',label:'왕홍·소개자'},{k:'refsettle',label:'소개자 정산'},{k:'staff',label:'직원 관리'},{k:'settings',label:'병원 설정'},{k:'audit',label:'관리자 로그'}];
 const ROLE_DESC='원장: 모든 메뉴·병원설정·직원관리 접근(전권). 매니저: 직원관리·병원설정 제외 전체 접근·편집(정산·통계 포함). 데스크: 접수·예약·환자·상담견적·진료차트·수납 등 일선 업무. 열람: 조회 전용(데이터 편집 불가).';
 function roleMenus(role){const all=MENUS.map(x=>x.k);if(role==='owner')return all;const noAdmin=all.filter(k=>k!=='staff'&&k!=='settings');if(role==='desk')return ['dashboard','calendar','reception','patients','quote','charts','billing'];if(role==='viewer')return ['dashboard','stats','patients','billing'];return noAdmin;}
-function menuCheckboxes(sel){return MENUS.filter(x=>x.k!=='staff'&&x.k!=='settings').map(x=>`<label style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:5px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px"><input type="checkbox" value="${x.k}" ${sel.includes(x.k)?'checked':''}> ${x.label}</label>`).join('');}
+function menuCheckboxes(sel){return MENUS.filter(x=>x.k!=='staff'&&x.k!=='settings'&&x.k!=='audit').map(x=>`<label style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:5px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px"><input type="checkbox" value="${x.k}" ${sel.includes(x.k)?'checked':''}> ${x.label}</label>`).join('');}
 function permModal(id){const s=(state._staff||[]).find(x=>x.id===id);if(!s)return;
   const sel=(Array.isArray(s.menu_perms)&&s.menu_perms.length)?s.menu_perms:roleMenus(s.role);
   openModal(`<div class="mh">${esc(s.name)} · 권한 설정<span onclick="closeModal()">✕</span></div><div class="mb">
@@ -1039,7 +1061,7 @@ function permModal(id){const s=(state._staff||[]).find(x=>x.id===id);if(!s)retur
     <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="savePerm('${id}')">저장</button></div>`,true);}
 async function savePerm(id){const role=el('pm_role').value;const menus=[...document.querySelectorAll('#pm_menus input:checked')].map(i=>i.value);
   const {error}=await db.from('staff_accounts').update({role,menu_perms:menus.length?menus:null,updated_at:new Date().toISOString()}).eq('id',id);
-  if(error){alert('저장 실패: '+error.message);return;}closeModal();renderStaff();}
+  if(error){alert('저장 실패: '+error.message);return;}logAudit('직원 권한변경',role);closeModal();renderStaff();}
 async function renderStaff(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const {data}=await db.from('staff_accounts').select('*').order('created_at');state._staff=data||[];
@@ -1076,10 +1098,10 @@ async function saveStaff(){
   if(data&&data.error){alert('생성 실패: '+data.error);return;}
   const menus=[...document.querySelectorAll('#s_menus input:checked')].map(i=>i.value);
   if(menus.length&&data&&data.id){await db.from('staff_accounts').update({menu_perms:menus}).eq('id',data.id);}
-  closeModal();renderStaff();alert('직원 계정이 생성되었습니다. ('+email+')');
+  logAudit('직원 추가',email+' ('+role+')');closeModal();renderStaff();alert('직원 계정이 생성되었습니다. ('+email+')');
 }
-async function setStaffRole(id,role){const {error}=await db.from('staff_accounts').update({role,updated_at:new Date().toISOString()}).eq('id',id);if(error)alert('실패: '+error.message);renderStaff();}
-async function toggleStaff(id,active){await db.from('staff_accounts').update({is_active:active,updated_at:new Date().toISOString()}).eq('id',id);renderStaff();}
+async function setStaffRole(id,role){const {error}=await db.from('staff_accounts').update({role,updated_at:new Date().toISOString()}).eq('id',id);if(error)alert('실패: '+error.message);logAudit('직원 역할변경',role);renderStaff();}
+async function toggleStaff(id,active){await db.from('staff_accounts').update({is_active:active,updated_at:new Date().toISOString()}).eq('id',id);logAudit('직원 '+(active?'활성화':'비활성화'));renderStaff();}
 
 /* ============ 병원 설정 ============ */
 async function renderSettings(){
@@ -1102,7 +1124,7 @@ async function saveSettings(){
   const contact={ceo:el('h_ceo').value||'',phone:el('h_phone').value||'',email:el('h_email').value||'',address:el('h_addr').value||''};
   const {error}=await db.from('hospitals').update({name,biz_no:el('h_biz').value||null,contact,updated_at:new Date().toISOString()}).eq('id',state.hospital_id);
   if(error){alert('저장 실패: '+error.message);return;}
-  state.hospital_name=name;el('hospName').textContent=name;el('main').querySelector('h2').insertAdjacentHTML('afterend','');alert('저장되었습니다.');
+  state.hospital_name=name;el('hospName').textContent=name;logAudit('병원설정 저장',name);alert('저장되었습니다.');
 }
 
 /* ============ 거래명세서 ============ */
@@ -1155,7 +1177,7 @@ async function genStatement(){
    </body></html>`;
   const w=window.open('','_blank','width=820,height=920');
   if(!w){alert('팝업이 차단되었습니다. 팝업을 허용해주세요.');return;}
-  w.document.write(html);w.document.close();w.focus();setTimeout(function(){w.print();},350);closeModal();
+  w.document.write(html);w.document.close();w.focus();setTimeout(function(){w.print();},350);logAudit('거래명세서 출력',a.name);closeModal();
 }
 
 boot(); /* build: v6 statement */
