@@ -654,7 +654,7 @@ async function renderAgencies(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const {data}=await db.from('agencies').select('*').order('name');state.agencies=data||[];
   const rows=state.agencies.map(a=>{const pm=a.payout_method||{};const rate=a.commission_rate!=null?a.commission_rate:(a.is_followkorea?15:10);return `<tr>
-    <td><b>${esc(a.name)}</b>${a.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}</td>
+    <td><b>${esc(a.name)}</b>${a.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}${a.biz_no?'<div class="cny">사업자 '+esc(a.biz_no)+'</div>':''}</td>
     <td>${esc(a.contact_name||'-')}</td>
     <td>${a.phone?esc(a.phone):'-'}${a.email?'<div class="cny">'+esc(a.email)+'</div>':''}</td>
     <td class="right">${rate}%</td>
@@ -677,6 +677,12 @@ function agencyModal(id){const a=id?state.agencies.find(x=>x.id===id):null;const
     <div class="grid2"><div class="field"><label>은행</label><input id="ag_bank" value="${esc(pm.bank||'')}"></div>
       <div class="field"><label>계좌번호</label><input id="ag_acc" value="${esc(pm.account||'')}"></div></div>
     <div class="field"><label>예금주</label><input id="ag_holder" value="${esc(pm.holder||'')}"></div>
+    <div class="field" style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px;margin-bottom:2px"><label style="color:var(--brand)">사업자등록 정보 (세금계산서용)</label></div>
+    <div class="grid2"><div class="field"><label>사업자등록번호</label><input id="ag_bizno" value="${a?esc(a.biz_no||''):''}" placeholder="000-00-00000"></div>
+      <div class="field"><label>상호/법인명</label><input id="ag_bizco" value="${a?esc(a.biz_company||''):''}"></div></div>
+    <div class="grid2"><div class="field"><label>대표자</label><input id="ag_bizceo" value="${a?esc(a.biz_ceo||''):''}"></div>
+      <div class="field"><label>업태/종목</label><input id="ag_biztype" value="${a?esc(a.biz_type||''):''}"></div></div>
+    <div class="field"><label>사업장 주소</label><input id="ag_bizaddr" value="${a?esc(a.biz_address||''):''}"></div>
     <div class="field"><label>메모</label><textarea id="ag_memo">${a?esc(a.memo||''):''}</textarea></div></div>
     <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="saveAgency('${id||''}')">저장</button></div>`);}
 async function saveAgency(id){const name=el('ag_name').value.trim();if(!name){alert('에이전시명을 입력하세요');return;}
@@ -685,6 +691,7 @@ async function saveAgency(id){const name=el('ag_name').value.trim();if(!name){al
     contact_name:el('ag_contact').value||null,phone:el('ag_phone').value||null,email:el('ag_email').value||null,
     commission_rate:rv===''?null:Number(rv),
     payout_method:{bank:el('ag_bank').value||'',account:el('ag_acc').value||'',holder:el('ag_holder').value||''},
+    biz_no:el('ag_bizno').value||null,biz_company:el('ag_bizco').value||null,biz_ceo:el('ag_bizceo').value||null,biz_type:el('ag_biztype').value||null,biz_address:el('ag_bizaddr').value||null,
     memo:el('ag_memo').value||null};
   let error;
   if(id){({error}=await db.from('agencies').update(row).eq('id',id));}
