@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>강남클리닉 ERP</title>
+<title>강남펄스 ERP</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
@@ -121,7 +121,7 @@
 <body>
 <div id="login">
   <form class="login-card" onsubmit="doLogin(event)">
-    <h1>강남클리닉 <span style="color:#0f766e">ERP</span></h1>
+    <h1>강남펄스 <span style="color:#0f766e">ERP</span></h1>
     <p>의료관광 상담·시술·정산 통합 시스템</p>
     <label>이메일</label><input id="email" type="email" value="admin@gangnam.clinic" autocomplete="username" />
     <label>비밀번호</label><input id="pw" type="password" value="gangnam1234" autocomplete="current-password" />
@@ -134,7 +134,7 @@
 <div id="app">
   <div class="layout">
     <aside class="side">
-      <div class="brand" style="cursor:pointer" onclick="location.reload()" title="새로고침">강남클리닉<small id="hospName">ERP</small></div>
+      <div class="brand" style="cursor:pointer" onclick="location.reload()" title="새로고침">강남펄스<small id="hospName">ERP</small></div>
       <nav class="nav" id="nav">
         <a data-view="dashboard" class="active">대시보드</a>
         <a data-view="calendar">예약 캘린더</a>
@@ -148,6 +148,7 @@
         <a data-view="packages">패키지 관리</a>
         <a data-view="referrers">왕홍·소개자</a>
         <a data-view="refsettle">소개자 정산</a>
+        <a data-view="settings" class="owner-only">병원 설정</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
         <button onclick="doLogout()">로그아웃</button></div>
@@ -166,7 +167,7 @@ const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 const STATUS_LABEL={booked:'예약',confirmed:'확정',checked_in:'접수완료',in_progress:'진료중',done:'완료',no_show:'노쇼',cancelled:'취소'};
 const PAY_LABEL={unpaid:'미수납',partial:'부분납',paid:'완납',refunded:'환불'};
 const ORD_LABEL={quote:'견적',confirmed:'확정',done:'완료',cancelled:'취소'};
-const state={hospital_id:null,hospital_name:'강남클리닉',staff:null,procedures:[],patients:[],agencies:[],discounts:[],packages:[],referrers:[]};
+const state={hospital_id:null,hospital_name:'강남펄스',staff:null,procedures:[],patients:[],agencies:[],discounts:[],packages:[],referrers:[]};
 
 const won=n=>'₩'+Number(n||0).toLocaleString('ko-KR');
 const cny=n=>'¥'+Math.round(Number(n||0)/KRW_PER_CNY).toLocaleString('ko-KR');
@@ -207,6 +208,7 @@ async function boot(){
   el('hospName').textContent=state.hospital_name;
   el('whoName').textContent=staff.name;
   el('whoRole').textContent=({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[staff.role]||staff.role;
+  if(staff.role!=='owner')document.querySelectorAll('.owner-only').forEach(e=>e.style.display='none');
   el('login').style.display='none';el('app').style.display='block';
   await loadPatients();navTo('dashboard');
 }
@@ -214,7 +216,7 @@ async function loadPatients(){const {data}=await db.from('patients').select('*')
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings}[v])();}
 function openModal(html,lg){el('modal').className='modal'+(lg?' lg':'');el('modal').innerHTML=html;el('modalBg').style.display='flex';}
 function closeModal(){el('modalBg').style.display='none';}
 el('modalBg').addEventListener('click',e=>{if(e.target===el('modalBg'))closeModal();});
@@ -225,16 +227,25 @@ async function renderDashboard(){
   const now=new Date(),y=now.getFullYear(),mo=now.getMonth();
   const ds=new Date(y,mo,now.getDate()).toISOString(),de=new Date(y,mo,now.getDate()+1).toISOString();
   const ms=new Date(y,mo,1).toISOString(),me=new Date(y,mo+1,1).toISOString();
-  const [appt,monOrders,pat,recent]=await Promise.all([
+  const trendStart=new Date(y,mo-5,1).toISOString();
+  const [appt,monOrders,pat,recent,trend]=await Promise.all([
     db.from('appointments').select('*').gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at'),
     db.from('orders').select('total,pay_status,order_date,status').gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
     db.from('patients').select('id',{count:'exact',head:true}),
     db.from('orders').select('*').order('order_date',{ascending:false}).limit(6),
+    db.from('orders').select('total,order_date,status').gte('order_date',trendStart).neq('status','cancelled'),
   ]);
   const appts=appt.data||[],mons=monOrders.data||[];
   const monSales=mons.reduce((s,o)=>s+Number(o.total||0),0);
   const unpaid=mons.filter(o=>o.pay_status!=='paid').reduce((s,o)=>s+Number(o.total||0),0);
   const PM=pmap(),AM=amap();
+  const months=[];for(let k=5;k>=0;k--){const d=new Date(y,mo-k,1);months.push({key:d.getFullYear()+'-'+(d.getMonth()+1),label:(d.getMonth()+1)+'월',sum:0});}
+  (trend.data||[]).forEach(o=>{const d=new Date(o.order_date);const key=d.getFullYear()+'-'+(d.getMonth()+1);const mm=months.find(x=>x.key===key);if(mm)mm.sum+=Number(o.total||0);});
+  const maxSum=Math.max(1,...months.map(x=>x.sum));
+  const chart=`<div style="display:flex;align-items:flex-end;gap:14px;height:180px;padding:16px 12px 4px">${months.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">
+     <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${x.sum?(Math.round(x.sum/10000)+'만'):''}</div>
+     <div style="width:58%;background:linear-gradient(180deg,#14b8a6,#0f766e);border-radius:6px 6px 0 0;height:${Math.round(x.sum/maxSum*130)}px;min-height:${x.sum?4:0}px"></div>
+     <div style="font-size:12px;color:var(--muted);margin-top:6px">${x.label}</div></div>`).join('')}</div>`;
   m.innerHTML=`
    <div class="page-head"><div><h2>대시보드</h2>
      <div class="sub">${esc(state.hospital_name)} · ${now.toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'})}</div></div></div>
@@ -244,6 +255,7 @@ async function renderDashboard(){
      <div class="stat"><div class="k">미수금</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div>
      <div class="stat"><div class="k">전체 환자</div><div class="v">${pat.count||0}<small> 명</small></div></div>
    </div>
+   <div class="panel"><div class="ph">최근 6개월 매출 추이</div>${chart}</div>
    <div class="panel"><div class="ph">오늘 예약 <button class="btn sm" onclick="navTo('reception')">접수 →</button></div>
      <div class="pb">${appts.length?`<table><thead><tr><th>시간</th><th>환자</th><th>담당</th><th>상태</th></tr></thead><tbody>${
        appts.map(a=>`<tr><td>${ftime(a.appointment_at)}</td><td>${esc(PM[a.patient_id]||'환자')}</td><td>${esc(a.doctor||'-')}</td><td><span class="tag t-${a.status}">${STATUS_LABEL[a.status]}</span></td></tr>`).join('')
@@ -898,6 +910,30 @@ async function makeRefSettle(id,rev){const r=Number(el('rr_'+id).value||0);const
   if(error){alert('실패: '+error.message);return;}renderRefSettle();}
 async function rfTax(id){await db.from('referrer_settlements').update({tax_issued:true,updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
 async function rfPay(id){await db.from('referrer_settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
+
+/* ============ 병원 설정 ============ */
+async function renderSettings(){
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const {data:h}=await db.from('hospitals').select('*').eq('id',state.hospital_id).single();
+  const c=(h&&h.contact)||{};
+  m.innerHTML=`<div class="page-head"><div><h2>병원 설정</h2><div class="sub">병원 기본정보 · 세금계산서/거래명세서에 사용됩니다</div></div></div>
+   <div class="panel" style="max-width:640px"><div class="pb" style="padding:18px">
+     <div class="field"><label>병원명 *</label><input id="h_name" value="${esc(h?h.name:'')}"></div>
+     <div class="grid2"><div class="field"><label>사업자등록번호</label><input id="h_biz" value="${esc((h&&h.biz_no)||'')}" placeholder="000-00-00000"></div>
+       <div class="field"><label>대표자</label><input id="h_ceo" value="${esc(c.ceo||'')}"></div></div>
+     <div class="grid2"><div class="field"><label>전화</label><input id="h_phone" value="${esc(c.phone||'')}"></div>
+       <div class="field"><label>이메일</label><input id="h_email" value="${esc(c.email||'')}"></div></div>
+     <div class="field"><label>주소</label><input id="h_addr" value="${esc(c.address||'')}"></div>
+     <div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
+   </div></div>`;
+}
+async function saveSettings(){
+  const name=el('h_name').value.trim();if(!name){alert('병원명을 입력하세요');return;}
+  const contact={ceo:el('h_ceo').value||'',phone:el('h_phone').value||'',email:el('h_email').value||'',address:el('h_addr').value||''};
+  const {error}=await db.from('hospitals').update({name,biz_no:el('h_biz').value||null,contact,updated_at:new Date().toISOString()}).eq('id',state.hospital_id);
+  if(error){alert('저장 실패: '+error.message);return;}
+  state.hospital_name=name;el('hospName').textContent=name;el('main').querySelector('h2').insertAdjacentHTML('afterend','');alert('저장되었습니다.');
+}
 
 /* ============ 거래명세서 ============ */
 let stmtCtx={agencyId:null};
