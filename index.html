@@ -33,6 +33,7 @@
   .nav a:hover{background:#1e293b;color:#fff}
   .nav a.active{background:var(--brand);color:#fff}
   .nav .ico{width:16px;text-align:center}
+  .nav .grp{font-size:10px;color:#64748b;padding:14px 12px 4px;font-weight:700;letter-spacing:.6px}
   .side .who{margin-top:16px;font-size:12px;color:#94a3b8;border-top:1px solid #1e293b;padding-top:12px}
   .side .who b{color:#e2e8f0;display:block;font-size:13px}
   .side .who button{margin-top:8px;width:100%;background:#1e293b;color:#cbd5e1;border:none;padding:7px;border-radius:7px;font-size:12px}
@@ -141,18 +142,22 @@
       <div class="brand" style="cursor:pointer" onclick="location.reload()" title="새로고침">강남펄스<small id="hospName">ERP</small></div>
       <nav class="nav" id="nav">
         <a data-view="dashboard" class="active">대시보드</a>
+        <div class="grp">진료 · 접수</div>
         <a data-view="calendar">예약 캘린더</a>
         <a data-view="reception">접수 현황</a>
         <a data-view="patients">환자 CRM</a>
-        <a data-view="quote">상담·견적</a>
+        <a data-view="quote">상담 · 견적</a>
         <a data-view="charts">진료차트</a>
-        <a data-view="billing">수납·매출</a>
+        <a data-view="billing">수납 · 매출</a>
+        <div class="grp">매출 · 정산</div>
         <a data-view="stats">통계</a>
         <a data-view="settlement">에이전시 정산</a>
-        <a data-view="agencies">에이전시 관리</a>
-        <a data-view="packages">패키지 관리</a>
-        <a data-view="referrers">왕홍·소개자</a>
         <a data-view="refsettle">소개자 정산</a>
+        <div class="grp">거래처 · 상품</div>
+        <a data-view="agencies">에이전시 관리</a>
+        <a data-view="referrers">왕홍 · 소개자</a>
+        <a data-view="packages">패키지 관리</a>
+        <div class="grp owner-only">관리자</div>
         <a data-view="staff" class="owner-only">직원 관리</a>
         <a data-view="settings" class="owner-only">병원 설정</a>
         <a data-view="audit" class="owner-only">관리자 로그</a>
@@ -169,7 +174,7 @@
 const SB_URL="https://fhuninzvrkzodhvwkxvo.supabase.co";
 const SB_KEY="sb_publishable_DqrHtdkvc-0VnN511-QdnQ_RuC-fbJ4";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.3.0 · 2026-07-08';
+const APP_VERSION='v1.3.1 · 2026-07-08';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -224,6 +229,7 @@ async function boot(){
   let _allowed=(staff.role==='owner')?_allm:((Array.isArray(staff.menu_perms)&&staff.menu_perms.length)?staff.menu_perms.slice():roleMenus(staff.role));
   if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings'&&k!=='audit');
   document.querySelectorAll('#nav a').forEach(a=>{a.style.display=_allowed.includes(a.dataset.view)?'':'none';});
+  if(staff.role!=='owner')document.querySelectorAll('.nav .grp.owner-only').forEach(e=>e.style.display='none');
   el('login').style.display='none';el('app').style.display='block';
   await loadPatients();navTo('dashboard');setTimeout(()=>logAudit('로그인'),800);
 }
