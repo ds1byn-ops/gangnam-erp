@@ -131,7 +131,7 @@
 <div id="app">
   <div class="layout">
     <aside class="side">
-      <div class="brand">강남클리닉<small id="hospName">ERP</small></div>
+      <div class="brand" style="cursor:pointer" onclick="location.reload()" title="새로고침">강남클리닉<small id="hospName">ERP</small></div>
       <nav class="nav" id="nav">
         <a data-view="dashboard" class="active"><span class="ico">▤</span> 대시보드</a>
         <a data-view="calendar"><span class="ico">📅</span> 예약 캘린더</a>
@@ -143,6 +143,8 @@
         <a data-view="settlement"><span class="ico">🤝</span> 에이전시 정산</a>
         <a data-view="agencies"><span class="ico">🏢</span> 에이전시 관리</a>
         <a data-view="packages"><span class="ico">📦</span> 패키지 관리</a>
+        <a data-view="referrers"><span class="ico">🌟</span> 왕홍·소개자</a>
+        <a data-view="refsettle"><span class="ico">💸</span> 소개자 정산</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
         <button onclick="doLogout()">로그아웃</button></div>
@@ -161,7 +163,7 @@ const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 const STATUS_LABEL={booked:'예약',confirmed:'확정',checked_in:'접수완료',in_progress:'진료중',done:'완료',no_show:'노쇼',cancelled:'취소'};
 const PAY_LABEL={unpaid:'미수납',partial:'부분납',paid:'완납',refunded:'환불'};
 const ORD_LABEL={quote:'견적',confirmed:'확정',done:'완료',cancelled:'취소'};
-const state={hospital_id:null,hospital_name:'강남클리닉',staff:null,procedures:[],patients:[],agencies:[],discounts:[],packages:[]};
+const state={hospital_id:null,hospital_name:'강남클리닉',staff:null,procedures:[],patients:[],agencies:[],discounts:[],packages:[],referrers:[]};
 
 const won=n=>'₩'+Number(n||0).toLocaleString('ko-KR');
 const cny=n=>'¥'+Math.round(Number(n||0)/KRW_PER_CNY).toLocaleString('ko-KR');
@@ -195,6 +197,7 @@ async function boot(){
   if(hosp)state.hospital_name=hosp.name;
   state.procedures=procs||[];state.agencies=ags||[];state.discounts=dcs||[];
   state.packages=(pkgs||[]).map(p=>({...p,items:(pkgItems||[]).filter(i=>i.package_id===p.id)}));
+  const {data:refs}=await db.from('referrers').select('*').eq('is_active',true).order('name');state.referrers=refs||[];
   el('hospName').textContent=state.hospital_name;
   el('whoName').textContent=staff.name;
   el('whoRole').textContent=({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[staff.role]||staff.role;
@@ -205,7 +208,7 @@ async function loadPatients(){const {data}=await db.from('patients').select('*')
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle}[v])();}
 function openModal(html,lg){el('modal').className='modal'+(lg?' lg':'');el('modal').innerHTML=html;el('modalBg').style.display='flex';}
 function closeModal(){el('modalBg').style.display='none';}
 el('modalBg').addEventListener('click',e=>{if(e.target===el('modalBg'))closeModal();});
@@ -370,6 +373,7 @@ function renderQuote(){
   const cats=[...(state.packages.length?['패키지']:[]),...new Set(state.procedures.map(p=>p.category))];
   const pOpt='<option value="">환자 선택</option>'+state.patients.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
   const aOpt='<option value="">에이전시(선택)</option>'+state.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+  const rOpt='<option value="">소개자(선택)</option>'+state.referrers.map(r=>`<option value="${r.id}">${esc(r.name)}${r.channel?' ('+esc(r.channel)+')':''}</option>`).join('');
   el('main').innerHTML=`
    <div class="page-head"><div><h2>상담·견적</h2><div class="sub">가격표에서 시술을 담고 할인을 적용해 견적을 만듭니다 (₩ / 대략 ¥)</div></div></div>
    <div class="quote-wrap">
@@ -385,8 +389,9 @@ function renderQuote(){
          <div class="field"><label>환자 *</label><select id="q_pat" onchange="onQuotePatient()">${pOpt}</select></div>
          <div class="field"><label>에이전시</label><select id="q_ag">${aOpt}</select></div></div>
        <div class="grid2" style="padding:0 8px">
-         <div class="field"><label>담당의</label><input id="q_doc" placeholder="예: 박성형"></div>
-         <div class="field"><label>메모</label><input id="q_memo"></div></div>
+         <div class="field"><label>소개자(왕홍)</label><select id="q_ref">${rOpt}</select></div>
+         <div class="field"><label>담당의</label><input id="q_doc" placeholder="예: 박성형"></div></div>
+       <div style="padding:0 8px"><div class="field"><label>메모</label><input id="q_memo"></div></div>
        <div id="q_cart" style="border-top:1px solid var(--line);margin-top:6px"></div>
        <div style="padding:10px 8px;border-top:1px solid var(--line);margin-top:6px">
          <label style="font-weight:600;font-size:13px">할인</label>
@@ -467,7 +472,7 @@ function applyCode(){const code=(el('q_dcode').value||'').trim();if(!code){retur
 async function saveQuote(){
   const pid=el('q_pat').value;if(!pid){alert('환자를 선택하세요');return;}if(!cart.length){alert('시술을 담아주세요');return;}
   calcQuote();
-  const row={hospital_id:state.hospital_id,patient_id:pid,agency_id:el('q_ag').value||null,doctor:el('q_doc').value||null,
+  const row={hospital_id:state.hospital_id,patient_id:pid,agency_id:el('q_ag').value||null,referrer_id:el('q_ref').value||null,doctor:el('q_doc').value||null,
     status:'confirmed',subtotal:quoteCtx.subtotal,discount_kind:quoteCtx.discount_kind,discount_value:quoteCtx.discount_value||0,
     discount_code:quoteCtx.discount_code||null,discount_amount:quoteCtx.discount_amount,total:quoteCtx.total,
     pay_status:'unpaid',paid_amount:0,memo:el('q_memo').value||null};
@@ -690,7 +695,80 @@ async function delPackage(id){if(!confirm('이 패키지를 삭제할까요?'))r
   const {error}=await db.from('packages').delete().eq('id',id);
   if(error){alert('삭제 실패: '+error.message);return;}renderPackages();}
 
-boot(); /* build: v4 packageMgmt */
+/* ============ REFERRERS / 왕홍·소개자 ============ */
+async function renderReferrers(){
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const {data}=await db.from('referrers').select('*').eq('is_active',true).order('name');state.referrers=data||[];
+  const rows=state.referrers.map(r=>`<tr>
+    <td><b>${esc(r.name)}</b></td><td>${esc(r.rtype||'-')}</td><td>${esc(r.channel||'-')}</td>
+    <td class="right">${r.rate}%</td><td class="muted">${esc(r.memo||'')}</td>
+    <td class="right"><button class="btn sm ghost" onclick="referrerModal('${r.id}')">수정</button>
+      <button class="btn sm danger" onclick="delReferrer('${r.id}')">삭제</button></td></tr>`).join('');
+  m.innerHTML=`<div class="page-head"><div><h2>왕홍·소개자 관리</h2><div class="sub">전체 ${state.referrers.length}명 · 유형·채널·수수료율</div></div>
+     <button class="btn" onclick="referrerModal()">+ 소개자 등록</button></div>
+   <div class="panel"><div class="pb">${state.referrers.length?`<table><thead><tr><th>이름</th><th>유형</th><th>채널</th><th class="right">수수료율</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">등록된 소개자가 없습니다.</div>'}</div></div>`;
+}
+function referrerModal(id){const r=id?state.referrers.find(x=>x.id===id):null;
+  openModal(`<div class="mh">${r?'소개자 수정':'소개자 등록'}<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div class="grid2"><div class="field"><label>이름 *</label><input id="rf_name" value="${r?esc(r.name):''}"></div>
+      <div class="field"><label>유형</label><select id="rf_type">${['왕홍','재한교포','가이드','업체','기타'].map(x=>`<option ${r&&r.rtype===x?'selected':''}>${x}</option>`).join('')}</select></div></div>
+    <div class="grid2"><div class="field"><label>채널</label><input id="rf_ch" value="${r?esc(r.channel||''):''}" placeholder="웨이보/샤오홍슈/더우인"></div>
+      <div class="field"><label>수수료율(%)</label><input id="rf_rate" type="number" value="${r?r.rate:10}"></div></div>
+    <div class="field"><label>메모</label><input id="rf_memo" value="${r?esc(r.memo||''):''}"></div></div>
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="saveReferrer('${id||''}')">저장</button></div>`);}
+async function saveReferrer(id){const name=el('rf_name').value.trim();if(!name){alert('이름을 입력하세요');return;}
+  const row={hospital_id:state.hospital_id,name,rtype:el('rf_type').value,channel:el('rf_ch').value||null,rate:Number(el('rf_rate').value)||0,memo:el('rf_memo').value||null};
+  let error;
+  if(id){({error}=await db.from('referrers').update(row).eq('id',id));}
+  else{({error}=await db.from('referrers').insert(row));}
+  if(error){alert('저장 실패: '+error.message);return;}
+  const {data}=await db.from('referrers').select('*').eq('is_active',true).order('name');state.referrers=data||[];
+  closeModal();renderReferrers();}
+async function delReferrer(id){if(!confirm('이 소개자를 삭제할까요?'))return;
+  const {error}=await db.from('referrers').update({is_active:false}).eq('id',id);
+  if(error){alert('삭제 실패: '+error.message);return;}
+  const {data}=await db.from('referrers').select('*').eq('is_active',true).order('name');state.referrers=data||[];renderReferrers();}
+
+/* ============ REFERRER SETTLEMENT / 소개자 정산 ============ */
+let refMonth=null;
+async function renderRefSettle(){
+  const now=new Date();if(!refMonth)refMonth=now.toISOString().slice(0,7);
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const y=+refMonth.slice(0,4),mo=+refMonth.slice(5,7)-1;
+  const ms=new Date(y,mo,1).toISOString(),me=new Date(y,mo+1,1).toISOString();
+  const [{data:orders},{data:setl},{data:refs}]=await Promise.all([
+    db.from('orders').select('*').gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
+    db.from('referrer_settlements').select('*').eq('period',refMonth),
+    db.from('referrers').select('*').eq('is_active',true).order('name')]);
+  state.referrers=refs||[];
+  const agg={};(orders||[]).forEach(o=>{if(!o.referrer_id)return;const a=agg[o.referrer_id]=agg[o.referrer_id]||{rev:0,cnt:0};a.rev+=Number(o.total||0);a.cnt++;});
+  const setlMap=Object.fromEntries((setl||[]).map(s=>[s.referrer_id,s]));
+  const rows=state.referrers.map(r=>{const a=agg[r.id]||{rev:0,cnt:0};const rate=Number(r.rate)||0;const comm=Math.round(a.rev*rate/100);const s=setlMap[r.id];
+    return `<tr><td><b>${esc(r.name)}</b> <span class="muted">${esc(r.rtype||'')}${r.channel?'·'+esc(r.channel):''}</span></td>
+      <td class="right">${a.cnt}건</td><td class="right">${won(a.rev)}</td>
+      <td class="right"><input type="number" value="${rate}" id="rr_${r.id}" style="width:56px;padding:5px;border:1px solid var(--line);border-radius:6px;text-align:right" oninput="rfRecomm('${r.id}',${a.rev})">%</td>
+      <td class="right"><b id="rfc_${r.id}">${won(comm)}</b></td>
+      <td>${!s?'<span class="muted">미정산</span>':(s.status==='paid'?'<span class="tag t-paid">지급완료</span>':(s.tax_issued?'<span class="tag t-confirmed">세금계산서 발행</span>':'<span class="tag t-unpaid">정산생성</span>'))}</td>
+      <td class="right">${!s?`<button class="btn sm" onclick="makeRefSettle('${r.id}',${a.rev})">정산 생성</button>`:(s.status==='paid'?'':(s.tax_issued?'':`<button class="btn sm ghost" onclick="rfTax('${s.id}')">세금계산서</button> `)+`<button class="btn sm ok" onclick="rfPay('${s.id}')">지급완료</button>`)}</td></tr>`;}).join('');
+  const totRev=Object.values(agg).reduce((s,a)=>s+a.rev,0);
+  m.innerHTML=`<div class="page-head"><div><h2>소개자 정산</h2><div class="sub">왕홍·소개자별 소개 매출·수수료</div></div>
+     <input type="month" value="${refMonth}" onchange="refMonth=this.value;renderRefSettle()" style="padding:8px 12px;border:1px solid var(--line);border-radius:9px"></div>
+   <div class="cards" style="grid-template-columns:repeat(3,1fr)">
+     <div class="stat"><div class="k">소개 매출(당월)</div><div class="v">${won(totRev)}</div></div>
+     <div class="stat"><div class="k">소개자 수</div><div class="v">${state.referrers.length}<small> 명</small></div></div>
+     <div class="stat"><div class="k">정산 대상 월</div><div class="v" style="font-size:19px">${refMonth}</div></div></div>
+   <div class="panel"><div class="ph">소개자별 정산 (수수료율 수정 가능)</div><div class="pb">
+     <table><thead><tr><th>소개자</th><th class="right">건수</th><th class="right">소개 매출</th><th class="right">수수료율</th><th class="right">수수료</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
+   <div class="muted" style="font-size:12px">※ 소개자별 담당 견적의 매출을 집계해 수수료율(소개자 기본값)로 계산합니다. 정산 생성 → 세금계산서 → 지급완료 순으로 처리하세요.</div>`;
+}
+function rfRecomm(id,rev){const r=Number(el('rr_'+id).value||0);el('rfc_'+id).textContent=won(Math.round(rev*r/100));}
+async function makeRefSettle(id,rev){const r=Number(el('rr_'+id).value||0);const comm=Math.round(rev*r/100);
+  const {error}=await db.from('referrer_settlements').insert({hospital_id:state.hospital_id,referrer_id:id,period:refMonth,total_amount:comm,status:'unpaid'});
+  if(error){alert('실패: '+error.message);return;}renderRefSettle();}
+async function rfTax(id){await db.from('referrer_settlements').update({tax_issued:true,updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
+async function rfPay(id){await db.from('referrer_settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
+
+boot(); /* build: v5 referrers+logoReload */
 </script>
 </body>
 </html>
