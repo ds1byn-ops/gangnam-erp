@@ -349,9 +349,11 @@ async function renderPatients(){
   m.innerHTML=`<div class="page-head"><div><h2>환자 CRM</h2><div class="sub">전체 ${state.patients.length}명 · 클릭하면 상세 프로필</div></div>
      <button class="btn" onclick="patientModal()">+ 환자 등록</button></div>
    <div class="toolbar"><div class="srch">${MAG}<input id="patSearch" placeholder="이름/영문명 검색…" oninput="filterPatients()"></div>
+     <select id="patNat" onchange="filterPatients()"><option value="">국적 전체</option>${[...new Set(state.patients.map(p=>p.nationality).filter(Boolean))].map(n=>`<option>${esc(n)}</option>`).join('')}</select>
+     <select id="patYear" onchange="filterPatients()"><option value="">생년 전체</option>${[...new Set(state.patients.map(p=>p.birth_date&&p.birth_date.slice(0,4)).filter(Boolean))].sort().reverse().map(y=>`<option>${y}</option>`).join('')}</select>
      <select id="patSort" onchange="filterPatients()"><option value="name">이름순</option><option value="sum">누적 많은순</option><option value="cnt">방문 많은순</option></select></div>
    <div class="panel"><div class="pb" id="patTable"></div></div>`;
-  drawPatients(state.patients);
+  filterPatients();
 }
 function drawPatients(list){const AM=amap();const t=el('patTable');
   if(!list.length){t.innerHTML='<div class="empty">환자가 없습니다.</div>';return;}
@@ -363,8 +365,8 @@ function drawPatients(list){const AM=amap();const t=el('patTable');
       <td>${esc(AM[p.source_agency_id]||'-')}</td>
       <td class="right">${won(a.sum)}</td>
       <td class="right"><button class="btn sm ghost" onclick="patientDetail('${p.id}')">상세</button></td></tr>`;}).join('')}</tbody></table>`;}
-function filterPatients(){const q=(el('patSearch').value||'').trim().toLowerCase();const s=el('patSort')?el('patSort').value:'name';const g=id=>patAgg[id]||{cnt:0,sum:0};
-  let l=state.patients.filter(p=>!q||p.name.toLowerCase().includes(q)||(p.eng_name||'').toLowerCase().includes(q));
+function filterPatients(){const q=(el('patSearch').value||'').trim().toLowerCase();const s=el('patSort')?el('patSort').value:'name';const nat=el('patNat')?el('patNat').value:'';const yr=el('patYear')?el('patYear').value:'';const g=id=>patAgg[id]||{cnt:0,sum:0};
+  let l=state.patients.filter(p=>(!q||p.name.toLowerCase().includes(q)||(p.eng_name||'').toLowerCase().includes(q))&&(!nat||p.nationality===nat)&&(!yr||(p.birth_date&&p.birth_date.slice(0,4)===yr)));
   l.sort((a,b)=>s==='sum'?g(b.id).sum-g(a.id).sum:s==='cnt'?g(b.id).cnt-g(a.id).cnt:a.name.localeCompare(b.name));drawPatients(l);}
 function patientModal(id){const p=id?state.patients.find(x=>x.id===id):null;const pm=(p&&p.contact)||{};
   const aOpt='<option value="">(없음)</option>'+state.agencies.map(a=>`<option value="${a.id}" ${p&&p.source_agency_id===a.id?'selected':''}>${esc(a.name)}</option>`).join('');
