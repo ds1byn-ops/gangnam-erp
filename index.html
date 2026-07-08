@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>강남클리닉 ERP</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --brand:#0f766e; --brand-2:#14b8a6; --ink:#0f172a; --muted:#64748b;
+    --line:#e2e8f0; --bg:#f1f5f9; --card:#fff; --danger:#dc2626; --ok:#16a34a; --warn:#d97706;
+    --shadow:0 1px 3px rgba(15,23,42,.08),0 1px 2px rgba(15,23,42,.04);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Pretendard','Malgun Gothic',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit;font-size:14px}
+  #login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0f766e,#0d9488 60%,#0891b2)}
+  .login-card{background:#fff;width:360px;padding:36px 32px;border-radius:16px;box-shadow:0 20px 45px rgba(0,0,0,.25)}
+  .login-card h1{margin:0 0 4px;font-size:22px}
+  .login-card p{margin:0 0 24px;color:var(--muted);font-size:13px}
+  .login-card label{display:block;font-weight:600;margin:14px 0 6px;font-size:13px}
+  .login-card input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px}
+  .login-card button{width:100%;margin-top:22px;padding:12px;background:var(--brand);color:#fff;border:none;border-radius:9px;font-weight:700;font-size:15px}
+  .hint{margin-top:16px;font-size:12px;color:var(--muted);background:#f8fafc;padding:10px;border-radius:8px;border:1px solid var(--line);line-height:1.6}
+  .err{color:var(--danger);font-size:13px;margin-top:12px;min-height:16px}
+  #app{display:none;min-height:100vh}
+  .layout{display:grid;grid-template-columns:210px 1fr;min-height:100vh}
+  .side{background:#0f172a;color:#cbd5e1;padding:20px 12px;position:sticky;top:0;height:100vh;overflow:auto}
+  .brand{font-size:18px;font-weight:800;color:#fff;padding:4px 10px 16px;letter-spacing:-.5px}
+  .brand small{display:block;font-size:11px;color:#5eead4;font-weight:600;margin-top:3px}
+  .nav a{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:9px;color:#cbd5e1;text-decoration:none;font-weight:600;margin-bottom:2px;font-size:13.5px}
+  .nav a:hover{background:#1e293b;color:#fff}
+  .nav a.active{background:var(--brand);color:#fff}
+  .nav .ico{width:16px;text-align:center}
+  .side .who{margin-top:16px;font-size:12px;color:#94a3b8;border-top:1px solid #1e293b;padding-top:12px}
+  .side .who b{color:#e2e8f0;display:block;font-size:13px}
+  .side .who button{margin-top:8px;width:100%;background:#1e293b;color:#cbd5e1;border:none;padding:7px;border-radius:7px;font-size:12px}
+  .main{padding:24px 28px;overflow:auto}
+  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px}
+  .page-head h2{margin:0;font-size:20px}
+  .page-head .sub{color:var(--muted);font-size:13px;margin-top:2px}
+  .btn{background:var(--brand);color:#fff;border:none;padding:9px 16px;border-radius:9px;font-weight:700}
+  .btn.sm{padding:6px 11px;font-size:12px;border-radius:7px}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .btn.danger{background:#fee2e2;color:var(--danger)}
+  .btn.ok{background:#16a34a}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow)}
+  .stat .k{color:var(--muted);font-size:13px;font-weight:600}
+  .stat .v{font-size:23px;font-weight:800;margin-top:6px;letter-spacing:-.5px}
+  .stat .v small{font-size:13px;color:var(--muted);font-weight:600}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);margin-bottom:18px}
+  .panel .ph{padding:13px 16px;border-bottom:1px solid var(--line);font-weight:700;display:flex;justify-content:space-between;align-items:center}
+  .panel .pb{padding:4px 2px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:10px 14px;font-size:13.5px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#f8fafc}
+  .empty{padding:34px;text-align:center;color:var(--muted)}
+  .tag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:12px;font-weight:700}
+  .t-booked{background:#e0e7ff;color:#4338ca}.t-confirmed{background:#dbeafe;color:#1d4ed8}
+  .t-checked_in{background:#fef9c3;color:#a16207}.t-in_progress{background:#ffedd5;color:#c2410c}
+  .t-done{background:#dcfce7;color:#15803d}.t-no_show{background:#f1f5f9;color:#64748b}.t-cancelled{background:#fee2e2;color:#b91c1c}
+  .t-paid{background:#dcfce7;color:#15803d}.t-partial{background:#fef9c3;color:#a16207}
+  .t-unpaid{background:#fee2e2;color:#b91c1c}.t-refunded{background:#f1f5f9;color:#64748b}.t-quote{background:#e0e7ff;color:#4338ca}
+  .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .toolbar input,.toolbar select{padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:#fff}
+  .search{flex:1;min-width:160px}
+  .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .modal{background:#fff;border-radius:16px;width:540px;max-width:100%;max-height:92vh;overflow:auto}
+  .modal.lg{width:920px}
+  .modal .mh{padding:16px 20px;border-bottom:1px solid var(--line);font-weight:800;font-size:17px;display:flex;justify-content:space-between}
+  .modal .mh span{cursor:pointer;color:var(--muted)}
+  .modal .mb{padding:18px 20px}
+  .modal .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-weight:600;margin-bottom:6px;font-size:13px}
+  .field input,.field select,.field textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px}
+  .field textarea{min-height:56px;resize:vertical}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px}
+  .muted{color:var(--muted)}.right{text-align:right}
+  .detail-sec{margin-bottom:16px}
+  .detail-sec h4{margin:0 0 8px;font-size:13px;color:var(--brand)}
+  .kv{display:grid;grid-template-columns:96px 1fr;gap:6px 10px;font-size:13.5px}
+  .kv .k{color:var(--muted)}
+  .note-box{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:13.5px;line-height:1.6;white-space:pre-wrap}
+  .loading{padding:40px;text-align:center;color:var(--muted)}
+  .cny{color:var(--muted);font-size:12px}
+  /* quote */
+  .quote-wrap{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;align-items:start}
+  .pricelist{max-height:60vh;overflow:auto}
+  .pl-row{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+  .pl-row:hover{background:#f0fdfa}
+  .pl-row .nm{font-weight:600}.pl-row .zh{color:var(--muted);font-size:12px}
+  .cart-item{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line)}
+  .qty{display:flex;align-items:center;gap:6px}
+  .qty button{width:24px;height:24px;border:1px solid var(--line);background:#fff;border-radius:6px;font-weight:700}
+  .totrow{display:flex;justify-content:space-between;padding:6px 12px;font-size:14px}
+  .totrow.big{font-size:20px;font-weight:800;padding:12px;border-top:2px solid var(--ink);margin-top:4px}
+  .chip{display:inline-block;background:#f1f5f9;border:1px solid var(--line);border-radius:20px;padding:3px 10px;font-size:12px;margin:2px;cursor:pointer}
+  .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  /* calendar */
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .cal .dow{text-align:center;font-size:12px;color:var(--muted);font-weight:700;padding:4px}
+  .cal .cell{min-height:78px;border:1px solid var(--line);border-radius:9px;padding:6px;background:#fff;cursor:pointer;position:relative}
+  .cal .cell:hover{border-color:var(--brand)}
+  .cal .cell.other{background:#f8fafc;color:#cbd5e1}
+  .cal .cell.today{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+  .cal .dnum{font-size:12px;font-weight:700}
+  .cal .ev{font-size:11px;background:#e0f2f1;color:#0f766e;border-radius:5px;padding:1px 5px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cal .more{font-size:11px;color:var(--muted);margin-top:2px}
+</style>
+</head>
+<body>
+<div id="login">
+  <form class="login-card" onsubmit="doLogin(event)">
+    <h1>강남클리닉 <span style="color:#0f766e">ERP</span></h1>
+    <p>의료관광 상담·시술·정산 통합 시스템</p>
+    <label>이메일</label><input id="email" type="email" value="admin@gangnam.clinic" autocomplete="username" />
+    <label>비밀번호</label><input id="pw" type="password" value="gangnam1234" autocomplete="current-password" />
+    <button id="loginBtn" type="submit">로그인</button>
+    <div class="err" id="loginErr"></div>
+    <div class="hint">데모 계정 · <b>admin@gangnam.clinic</b> / <b>gangnam1234</b></div>
+  </form>
+</div>
+
+<div id="app">
+  <div class="layout">
+    <aside class="side">
+      <div class="brand">강남클리닉<small id="hospName">ERP</small></div>
+      <nav class="nav" id="nav">
+        <a data-view="dashboard" class="active"><span class="ico">▤</span> 대시보드</a>
+        <a data-view="calendar"><span class="ico">📅</span> 예약 캘린더</a>
+        <a data-view="reception"><span class="ico">◷</span> 접수 현황</a>
+        <a data-view="patients"><span class="ico">☺</span> 환자관리</a>
+        <a data-view="quote"><span class="ico">🧾</span> 상담·견적</a>
+        <a data-view="charts"><span class="ico">✎</span> 진료차트</a>
+        <a data-view="billing"><span class="ico">₩</span> 수납·매출</a>
+        <a data-view="settlement"><span class="ico">🤝</span> 에이전시 정산</a>
+      </nav>
+      <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
+        <button onclick="doLogout()">로그아웃</button></div>
+    </aside>
+    <main class="main" id="main"></main>
+  </div>
+</div>
+<div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
+
+<script>
+const SB_URL="https://fhuninzvrkzodhvwkxvo.supabase.co";
+const SB_KEY="sb_publishable_DqrHtdkvc-0VnN511-QdnQ_RuC-fbJ4";
+const db=supabase.createClient(SB_URL,SB_KEY);
+const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
+
+const STATUS_LABEL={booked:'예약',confirmed:'확정',checked_in:'접수완료',in_progress:'진료중',done:'완료',no_show:'노쇼',cancelled:'취소'};
+const PAY_LABEL={unpaid:'미수납',partial:'부분납',paid:'완납',refunded:'환불'};
+const ORD_LABEL={quote:'견적',confirmed:'확정',done:'완료',cancelled:'취소'};
+const state={hospital_id:null,hospital_name:'강남클리닉',staff:null,procedures:[],patients:[],agencies:[],discounts:[],packages:[]};
+
+const won=n=>'₩'+Number(n||0).toLocaleString('ko-KR');
+const cny=n=>'¥'+Math.round(Number(n||0)/KRW_PER_CNY).toLocaleString('ko-KR');
+const fdate=s=>s?new Date(s).toLocaleDateString('ko-KR',{month:'2-digit',day:'2-digit'}):'-';
+const ftime=s=>s?new Date(s).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false}):'';
+const fdt=s=>s?`${fdate(s)} ${ftime(s)}`:'-';
+const esc=s=>(s??'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const el=id=>document.getElementById(id);
+const pmap=()=>Object.fromEntries(state.patients.map(p=>[p.id,p.name]));
+const amap=()=>Object.fromEntries(state.agencies.map(a=>[a.id,a.name]));
+
+async function doLogin(e){e.preventDefault();const b=el('loginBtn');b.disabled=true;el('loginErr').textContent='';
+  const {error}=await db.auth.signInWithPassword({email:el('email').value.trim(),password:el('pw').value});
+  if(error){el('loginErr').textContent='로그인 실패: '+(error.message||error);b.disabled=false;return;}await boot();}
+async function doLogout(){await db.auth.signOut();location.reload();}
+
+async function boot(){
+  const {data:{user}}=await db.auth.getUser();
+  if(!user){el('login').style.display='flex';el('app').style.display='none';return;}
+  const {data:staff}=await db.from('staff_accounts').select('id,name,role,hospital_id').eq('id',user.id).single();
+  if(!staff){el('loginErr').textContent='스태프 계정이 없습니다.';return;}
+  state.staff=staff;state.hospital_id=staff.hospital_id;
+  const [{data:hosp},{data:procs},{data:ags},{data:dcs},{data:pkgs},{data:pkgItems}]=await Promise.all([
+    db.from('hospitals').select('name').eq('id',staff.hospital_id).single(),
+    db.from('procedures').select('*').eq('is_active',true).order('category').order('name'),
+    db.from('agencies').select('*').order('name'),
+    db.from('discount_codes').select('*').eq('is_active',true),
+    db.from('packages').select('*').eq('is_active',true).order('ptype').order('name'),
+    db.from('package_items').select('*').order('sort'),
+  ]);
+  if(hosp)state.hospital_name=hosp.name;
+  state.procedures=procs||[];state.agencies=ags||[];state.discounts=dcs||[];
+  state.packages=(pkgs||[]).map(p=>({...p,items:(pkgItems||[]).filter(i=>i.package_id===p.id)}));
+  el('hospName').textContent=state.hospital_name;
+  el('whoName').textContent=staff.name;
+  el('whoRole').textContent=({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[staff.role]||staff.role;
+  el('login').style.display='none';el('app').style.display='block';
+  await loadPatients();navTo('dashboard');
+}
+async function loadPatients(){const {data}=await db.from('patients').select('*').order('name');state.patients=data||[];}
+
+el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
+function navTo(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement}[v])();}
+function openModal(html,lg){el('modal').className='modal'+(lg?' lg':'');el('modal').innerHTML=html;el('modalBg').style.display='flex';}
+function closeModal(){el('modalBg').style.display='none';}
+el('modalBg').addEventListener('click',e=>{if(e.target===el('modalBg'))closeModal();});
+
+/* ============ DASHBOARD ============ */
+async function renderDashboard(){
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const now=new Date(),y=now.getFullYear(),mo=now.getMonth();
+  const ds=new Date(y,mo,now.getDate()).toISOString(),de=new Date(y,mo,now.getDate()+1).toISOString();
+  const ms=new Date(y,mo,1).toISOString(),me=new Date(y,mo+1,1).toISOString();
+  const [appt,monOrders,pat,recent]=await Promise.all([
+    db.from('appointments').select('*').gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at'),
+    db.from('orders').select('total,pay_status,order_date,status').gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
+    db.from('patients').select('id',{count:'exact',head:true}),
+    db.from('orders').select('*').order('order_date',{ascending:false}).limit(6),
+  ]);
+  const appts=appt.data||[],mons=monOrders.data||[];
+  const monSales=mons.reduce((s,o)=>s+Number(o.total||0),0);
+  const unpaid=mons.filter(o=>o.pay_status!=='paid').reduce((s,o)=>s+Number(o.total||0),0);
+  const PM=pmap(),AM=amap();
+  m.innerHTML=`
+   <div class="page-head"><div><h2>대시보드</h2>
+     <div class="sub">${esc(state.hospital_name)} · ${now.toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'})}</div></div></div>
+   <div class="cards">
+     <div class="stat"><div class="k">오늘 예약</div><div class="v">${appts.length}<small> 건</small></div></div>
+     <div class="stat"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
+     <div class="stat"><div class="k">미수금</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div>
+     <div class="stat"><div class="k">전체 환자</div><div class="v">${pat.count||0}<small> 명</small></div></div>
+   </div>
+   <div class="panel"><div class="ph">오늘 예약 <button class="btn sm" onclick="navTo('reception')">접수 →</button></div>
+     <div class="pb">${appts.length?`<table><thead><tr><th>시간</th><th>환자</th><th>담당</th><th>상태</th></tr></thead><tbody>${
+       appts.map(a=>`<tr><td>${ftime(a.appointment_at)}</td><td>${esc(PM[a.patient_id]||'환자')}</td><td>${esc(a.doctor||'-')}</td><td><span class="tag t-${a.status}">${STATUS_LABEL[a.status]}</span></td></tr>`).join('')
+     }</tbody></table>`:'<div class="empty">오늘 예약이 없습니다.</div>'}</div></div>
+   <div class="panel"><div class="ph">최근 상담·견적 <button class="btn sm" onclick="navTo('billing')">수납 →</button></div>
+     <div class="pb">${(recent.data||[]).length?`<table><thead><tr><th>No</th><th>환자</th><th>에이전시</th><th class="right">금액</th><th>수납</th></tr></thead><tbody>${
+       recent.data.map(o=>`<tr><td>#${o.order_no}</td><td>${esc(PM[o.patient_id]||'-')}</td><td>${esc(AM[o.agency_id]||'-')}</td><td class="right">${won(o.total)}</td><td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span></td></tr>`).join('')
+     }</tbody></table>`:'<div class="empty">견적이 없습니다.</div>'}</div></div>`;
+}
+
+/* ============ CALENDAR ============ */
+let calYM=null;
+async function renderCalendar(){
+  const now=new Date();if(!calYM)calYM={y:now.getFullYear(),m:now.getMonth()};
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const {y,m:mo}=calYM;
+  const start=new Date(y,mo,1),end=new Date(y,mo+1,1);
+  const {data}=await db.from('appointments').select('*').gte('appointment_at',start.toISOString()).lt('appointment_at',end.toISOString()).order('appointment_at');
+  const PM=pmap();const byDay={};(data||[]).forEach(a=>{const d=new Date(a.appointment_at).getDate();(byDay[d]=byDay[d]||[]).push(a);});
+  const firstDow=start.getDay(),days=new Date(y,mo+1,0).getDate();
+  const todayD=(now.getFullYear()===y&&now.getMonth()===mo)?now.getDate():-1;
+  let cells='';for(let i=0;i<firstDow;i++)cells+='<div class="cell other"></div>';
+  for(let d=1;d<=days;d++){const evs=byDay[d]||[];
+    cells+=`<div class="cell${d===todayD?' today':''}" onclick="dayModal(${y},${mo},${d})"><div class="dnum">${d}</div>${
+      evs.slice(0,3).map(a=>`<div class="ev">${ftime(a.appointment_at)} ${esc(PM[a.patient_id]||'')}</div>`).join('')}${
+      evs.length>3?`<div class="more">+${evs.length-3}</div>`:''}</div>`;}
+  m.innerHTML=`
+   <div class="page-head"><div><h2>예약 캘린더</h2><div class="sub">날짜를 클릭하면 예약을 보고 추가할 수 있어요</div></div>
+     <div><button class="btn ghost sm" onclick="calMove(-1)">◀</button>
+       <b style="margin:0 12px">${y}년 ${mo+1}월</b>
+       <button class="btn ghost sm" onclick="calMove(1)">▶</button>
+       <button class="btn sm" style="margin-left:10px" onclick="apptModal()">+ 예약</button></div></div>
+   <div class="panel"><div class="pb" style="padding:14px">
+     <div class="cal">${['일','월','화','수','목','금','토'].map(d=>`<div class="dow">${d}</div>`).join('')}${cells}</div>
+   </div></div>`;
+}
+function calMove(d){calYM.m+=d;if(calYM.m<0){calYM.m=11;calYM.y--;}if(calYM.m>11){calYM.m=0;calYM.y++;}renderCalendar();}
+async function dayModal(y,mo,d){
+  const ds=new Date(y,mo,d).toISOString(),de=new Date(y,mo,d+1).toISOString();
+  const {data}=await db.from('appointments').select('*').gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at');
+  const PM=pmap(),PR=Object.fromEntries(state.procedures.map(p=>[p.id,p.name]));
+  openModal(`<div class="mh">${y}.${mo+1}.${d} 예약<span onclick="closeModal()">✕</span></div>
+   <div class="mb">${(data||[]).length?`<table><tbody>${data.map(a=>`<tr><td>${ftime(a.appointment_at)}</td><td><b>${esc(PM[a.patient_id]||'-')}</b></td><td>${esc(PR[a.procedure_id]||'')}</td><td>${esc(a.doctor||'')}</td><td><span class="tag t-${a.status}">${STATUS_LABEL[a.status]}</span></td></tr>`).join('')}</tbody></table>`:'<div class="empty">예약 없음</div>'}</div>
+   <div class="mf"><button class="btn ghost" onclick="closeModal()">닫기</button>
+     <button class="btn" onclick="apptModal('${y}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}')">+ 이 날짜에 예약</button></div>`);
+}
+
+/* ============ RECEPTION ============ */
+async function renderReception(){
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const now=new Date();const ds=new Date(now.getFullYear(),now.getMonth(),now.getDate()).toISOString();
+  const de=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1).toISOString();
+  const {data}=await db.from('appointments').select('*').gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at');
+  const PM=pmap(),PR=Object.fromEntries(state.procedures.map(p=>[p.id,p.name]));
+  const rows=(data||[]).map(a=>`<tr><td>${ftime(a.appointment_at)}</td><td><b>${esc(PM[a.patient_id]||'-')}</b></td>
+    <td>${esc(PR[a.procedure_id]||'-')}</td><td>${esc(a.doctor||'-')}</td>
+    <td><span class="tag t-${a.status}">${STATUS_LABEL[a.status]}</span></td><td class="muted">${esc(a.memo||'')}</td>
+    <td class="right">${nextBtns(a)}</td></tr>`).join('');
+  m.innerHTML=`<div class="page-head"><div><h2>접수 현황</h2><div class="sub">오늘 ${now.toLocaleDateString('ko-KR')}</div></div>
+     <button class="btn" onclick="apptModal()">+ 예약 등록</button></div>
+   <div class="panel"><div class="pb">${(data||[]).length?`<table><thead><tr><th>시간</th><th>환자</th><th>시술</th><th>담당</th><th>상태</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">오늘 예약이 없습니다.</div>'}</div></div>`;
+}
+function nextBtns(a){const flow={booked:'checked_in',confirmed:'checked_in',checked_in:'in_progress',in_progress:'done'};let o='';
+  if(flow[a.status])o+=`<button class="btn sm" onclick="setAppt('${a.id}','${flow[a.status]}')">${STATUS_LABEL[flow[a.status]]}</button> `;
+  if(a.status!=='cancelled'&&a.status!=='done')o+=`<button class="btn sm ghost" onclick="setAppt('${a.id}','no_show')">노쇼</button>`;return o;}
+async function setAppt(id,s){await db.from('appointments').update({status:s,updated_at:new Date().toISOString()}).eq('id',id);renderReception();}
+function apptModal(dateStr){
+  const pOpt=state.patients.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const prOpt='<option value="">(미정)</option>'+state.procedures.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const base=dateStr?dateStr+'T10:00':new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,16);
+  openModal(`<div class="mh">예약 등록<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div class="field"><label>환자 *</label><select id="f_pat">${pOpt}</select></div>
+    <div class="grid2"><div class="field"><label>예약일시 *</label><input id="f_at" type="datetime-local" value="${base}"></div>
+      <div class="field"><label>담당의</label><input id="f_doc" placeholder="예: 박성형"></div></div>
+    <div class="field"><label>예정 시술</label><select id="f_proc">${prOpt}</select></div>
+    <div class="field"><label>메모</label><textarea id="f_memo"></textarea></div></div>
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="saveAppt()">저장</button></div>`);
+}
+async function saveAppt(){const row={hospital_id:state.hospital_id,patient_id:el('f_pat').value,appointment_at:new Date(el('f_at').value).toISOString(),doctor:el('f_doc').value||null,procedure_id:el('f_proc').value||null,memo:el('f_memo').value||null,status:'booked'};
+  const {error}=await db.from('appointments').insert(row);if(error){alert('저장 실패: '+error.message);return;}closeModal();navTo('calendar');}
+
+/* ============ PATIENTS ============ */
+async function renderPatients(){
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';await loadPatients();
+  m.innerHTML=`<div class="page-head"><div><h2>환자관리</h2><div class="sub">전체 ${state.patients.length}명</div></div>
+     <button class="btn" onclick="patientModal()">+ 환자 등록</button></div>
+   <div class="toolbar"><input class="search" id="patSearch" placeholder="이름 검색…" oninput="filterPatients()"></div>
+   <div class="panel"><div class="pb" id="patTable"></div></div>`;
+  drawPatients(state.patients);
+}
+function drawPatients(list){const AM=amap();const t=el('patTable');
+  if(!list.length){t.innerHTML='<div class="empty">환자가 없습니다.</div>';return;}
+  t.innerHTML=`<table><thead><tr><th>이름</th><th>국적</th><th>연락처</th><th>소개 에이전시</th><th>유입</th><th></th></tr></thead><tbody>${
+    list.map(p=>`<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.nationality||'-')}</td><td>${esc((p.contact&&p.contact.phone)||'-')}</td>
+      <td>${esc(AM[p.source_agency_id]||'-')}</td><td>${esc(p.source_channel||'-')}</td>
+      <td class="right"><button class="btn sm ghost" onclick="patientDetail('${p.id}')">상세</button></td></tr>`).join('')}</tbody></table>`;}
+function filterPatients(){const q=el('patSearch').value.trim().toLowerCase();drawPatients(state.patients.filter(p=>p.name.toLowerCase().includes(q)));}
+function patientModal(){const aOpt='<option value="">(없음)</option>'+state.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+  openModal(`<div class="mh">환자 등록<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div class="grid2"><div class="field"><label>이름 *</label><input id="p_name"></div><div class="field"><label>국적</label><input id="p_nat" value="중국"></div></div>
+    <div class="grid2"><div class="field"><label>연락처</label><input id="p_phone"></div><div class="field"><label>소개 에이전시</label><select id="p_ag">${aOpt}</select></div></div>
+    <div class="field"><label>유입경로</label><input id="p_src" placeholder="예: 왕홍소개, 샤오홍슈"></div></div>
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="savePatient()">저장</button></div>`);}
+async function savePatient(){const name=el('p_name').value.trim();if(!name){alert('이름 입력');return;}
+  const row={hospital_id:state.hospital_id,name,nationality:el('p_nat').value||null,contact:{phone:el('p_phone').value||''},source_agency_id:el('p_ag').value||null,source_channel:el('p_src').value||null,first_visit:new Date().toISOString().slice(0,10)};
+  const {error}=await db.from('patients').insert(row);if(error){alert('저장 실패: '+error.message);return;}closeModal();renderPatients();}
+async function patientDetail(id){
+  openModal('<div class="mb loading">불러오는 중…</div>');const p=state.patients.find(x=>x.id===id);const AM=amap();
+  const [ord,ch]=await Promise.all([
+    db.from('orders').select('*').eq('patient_id',id).order('order_date',{ascending:false}),
+    db.from('charts').select('*').eq('patient_id',id).order('visit_at',{ascending:false}),
+  ]);
+  const spent=(ord.data||[]).filter(o=>o.status!=='cancelled').reduce((s,o)=>s+Number(o.total||0),0);
+  const ordRows=(ord.data||[]).map(o=>`<tr><td>#${o.order_no}</td><td>${fdate(o.order_date)}</td><td class="right">${won(o.total)}</td><td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span></td></tr>`).join('');
+  const chRows=(ch.data||[]).map(c=>`<tr><td>${fdate(c.visit_at)}</td><td>${esc(c.doctor||'-')}</td><td class="muted">${esc((c.chief_complaint||'').slice(0,26))}</td></tr>`).join('');
+  openModal(`<div class="mh">${esc(p.name)}<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div class="detail-sec"><h4>기본정보</h4><div class="kv">
+      <div class="k">국적</div><div>${esc(p.nationality||'-')}</div>
+      <div class="k">연락처</div><div>${esc((p.contact&&p.contact.phone)||'-')}</div>
+      <div class="k">소개 에이전시</div><div>${esc(AM[p.source_agency_id]||'-')}</div>
+      <div class="k">누적 결제</div><div><b>${won(spent)}</b> <span class="cny">(${cny(spent)})</span></div></div></div>
+    <div class="detail-sec"><h4>상담·견적 (${(ord.data||[]).length})</h4>${(ord.data||[]).length?`<table>${ordRows}</table>`:'<div class="muted">없음</div>'}</div>
+    <div class="detail-sec"><h4>진료차트 (${(ch.data||[]).length})</h4>${(ch.data||[]).length?`<table>${chRows}</table>`:'<div class="muted">없음</div>'}</div></div>
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="closeModal();startQuote('${id}')">견적 작성</button></div>`);
+}
+
+/* ============ QUOTE / 상담 견적 ============ */
+let cart=[];let quoteCtx={patient_id:'',agency_id:'',doctor:'',discount_kind:'none',discount_value:0,discount_code:'',memo:''};
+function startQuote(patientId){navTo('quote');if(patientId)setTimeout(()=>{el('q_pat').value=patientId;onQuotePatient();},60);}
+function renderQuote(){
+  cart=[];quoteCtx={patient_id:'',agency_id:'',doctor:'',discount_kind:'none',discount_value:0,discount_code:'',memo:''};
+  const cats=[...(state.packages.length?['패키지']:[]),...new Set(state.procedures.map(p=>p.category))];
+  const pOpt='<option value="">환자 선택</option>'+state.patients.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const aOpt='<option value="">에이전시(선택)</option>'+state.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+  el('main').innerHTML=`
+   <div class="page-head"><div><h2>상담·견적</h2><div class="sub">가격표에서 시술을 담고 할인을 적용해 견적을 만듭니다 (₩ / 대략 ¥)</div></div></div>
+   <div class="quote-wrap">
+     <div class="panel"><div class="ph">가격표 <span class="muted" style="font-weight:400">클릭해서 담기</span></div>
+       <div style="padding:10px 12px 4px">
+         <input class="search" id="q_search" placeholder="시술명/중문 검색…" oninput="drawPrice()" style="width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:9px">
+         <div style="margin-top:8px" id="q_cats">${['전체',...cats].map((c,i)=>`<span class="chip${i===0?' on':''}" data-cat="${c==='전체'?'':esc(c)}" onclick="pickCat(this)">${esc(c)}</span>`).join('')}</div>
+       </div>
+       <div class="pricelist" id="q_price"></div>
+     </div>
+     <div class="panel"><div class="ph">견적서</div><div class="pb" style="padding:10px 8px">
+       <div class="grid2" style="padding:0 8px">
+         <div class="field"><label>환자 *</label><select id="q_pat" onchange="onQuotePatient()">${pOpt}</select></div>
+         <div class="field"><label>에이전시</label><select id="q_ag">${aOpt}</select></div></div>
+       <div class="grid2" style="padding:0 8px">
+         <div class="field"><label>담당의</label><input id="q_doc" placeholder="예: 박성형"></div>
+         <div class="field"><label>메모</label><input id="q_memo"></div></div>
+       <div id="q_cart" style="border-top:1px solid var(--line);margin-top:6px"></div>
+       <div style="padding:10px 8px;border-top:1px solid var(--line);margin-top:6px">
+         <label style="font-weight:600;font-size:13px">할인</label>
+         <div class="grid3" style="margin-top:6px">
+           <select id="q_dkind" onchange="calcQuote()"><option value="none">할인 없음</option><option value="percent">% 할인</option><option value="fixed">금액 할인</option></select>
+           <input id="q_dval" type="number" placeholder="값" oninput="calcQuote()">
+           <div style="display:flex;gap:4px"><input id="q_dcode" placeholder="할인코드" style="min-width:0"><button class="btn sm" onclick="applyCode()">적용</button></div>
+         </div>
+         <div class="muted" id="q_codemsg" style="font-size:12px;margin-top:4px"></div>
+       </div>
+       <div id="q_tot" style="padding:4px 8px 8px"></div>
+       <div style="padding:0 8px 8px"><button class="btn" style="width:100%" onclick="saveQuote()">견적 저장</button></div>
+     </div></div>
+   </div>`;
+  drawPrice();drawCart();
+}
+let curCat='';
+function pickCat(elx){document.querySelectorAll('#q_cats .chip').forEach(c=>c.classList.remove('on'));elx.classList.add('on');curCat=elx.dataset.cat;drawPrice();}
+function drawPrice(){
+  const q=(el('q_search').value||'').trim().toLowerCase();
+  if(curCat==='패키지'){
+    let pk=state.packages.filter(p=>!q||p.name.toLowerCase().includes(q)||(p.ptype||'').toLowerCase().includes(q));
+    el('q_price').innerHTML=pk.map(p=>`<div class="pl-row" onclick="addPkg('${p.id}')">
+       <div><div class="nm">${esc(p.name)}</div><div class="zh">${esc(p.ptype||'')} 줄기세포 · ${p.items.length}개 구성 · <a onclick="event.stopPropagation();pkgView('${p.id}')" style="color:var(--brand);cursor:pointer">구성보기</a></div></div>
+       <div class="right"><div><b>${won(p.total_price)}</b></div><div class="cny">${cny(p.total_price)}</div></div>
+     </div>`).join('')||'<div class="empty">패키지 없음</div>';
+    return;
+  }
+  let list=state.procedures.filter(p=>(!curCat||p.category===curCat)&&(!q||p.name.toLowerCase().includes(q)||(p.name_zh||'').toLowerCase().incl
