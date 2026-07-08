@@ -642,7 +642,7 @@ async function renderSettlement(){
   let alist=state.agencies.filter(ag=>!setlSearch||ag.name.toLowerCase().includes(setlSearch.toLowerCase()));
   alist.sort((x,y)=>setlSort==='name'?x.name.localeCompare(y.name):setlSort==='cnt'?gA(y.id).cnt-gA(x.id).cnt:gA(y.id).rev-gA(x.id).rev);
   const rows=alist.map(ag=>{const a=agg[ag.id]||{rev:0,cnt:0};const rate=ag.commission_rate!=null?Number(ag.commission_rate):(ag.is_followkorea?15:10);const comm=Math.round(a.rev*rate/100);const s=setlMap[ag.id];
-    return `<tr><td><b>${esc(ag.name)}</b>${ag.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}</td>
+    return `<tr><td><b style="cursor:pointer;color:var(--brand)" onclick="stmtModal('${ag.id}')" title="거래명세서 출력">${esc(ag.name)}</b>${ag.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}</td>
       <td class="right">${a.cnt}건</td><td class="right">${won(a.rev)}</td>
       <td class="right"><input type="number" value="${rate}" id="rate_${ag.id}" style="width:60px;padding:5px;border:1px solid var(--line);border-radius:6px;text-align:right" oninput="recomm('${ag.id}',${a.rev})">%</td>
       <td class="right"><b id="comm_${ag.id}">${won(comm)}</b></td>
@@ -674,13 +674,13 @@ async function renderAgencies(){
   let aglist=state.agencies.filter(a=>!agmSearch||a.name.toLowerCase().includes(agmSearch.toLowerCase())||(a.contact_name||'').toLowerCase().includes(agmSearch.toLowerCase()));
   aglist.sort((x,y)=>agmSort==='rate'?((y.commission_rate!=null?y.commission_rate:(y.is_followkorea?15:10))-(x.commission_rate!=null?x.commission_rate:(x.is_followkorea?15:10))):x.name.localeCompare(y.name));
   const rows=aglist.map(a=>{const pm=a.payout_method||{};const rate=a.commission_rate!=null?a.commission_rate:(a.is_followkorea?15:10);return `<tr>
-    <td><b>${esc(a.name)}</b>${a.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}${a.biz_no?'<div class="cny">사업자 '+esc(a.biz_no)+'</div>':''}</td>
+    <td><b style="cursor:pointer;color:var(--brand)" onclick="stmtModal('${a.id}')" title="거래명세서 출력">${esc(a.name)}</b>${a.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}${a.biz_no?'<div class="cny">사업자 '+esc(a.biz_no)+'</div>':''}</td>
     <td>${esc(a.contact_name||'-')}</td>
     <td>${a.phone?esc(a.phone):'-'}${a.email?'<div class="cny">'+esc(a.email)+'</div>':''}</td>
     <td class="right">${rate}%</td>
     <td>${esc(pm.bank||'-')} ${esc(pm.account||'')}</td>
     <td class="muted">${esc(a.memo||'')}</td>
-    <td class="right"><button class="btn sm ghost" onclick="agencyModal('${a.id}')">수정</button></td></tr>`;}).join('');
+    <td class="right"><button class="btn sm ghost" onclick="stmtModal('${a.id}')">명세서</button> <button class="btn sm ghost" onclick="agencyModal('${a.id}')">수정</button></td></tr>`;}).join('');
   m.innerHTML=`<div class="page-head"><div><h2>에이전시 관리</h2><div class="sub">전체 ${state.agencies.length}곳</div></div>
      <button class="btn" onclick="agencyModal()">+ 에이전시 등록</button></div>
    <div class="toolbar"><div class="srch">${MAG}<input id="srch_agm" placeholder="이름/담당자 검색" value="${esc(agmSearch)}" oninput="agmSearch=this.value;renderAgencies()"></div><select onchange="agmSort=this.value;renderAgencies()"><option value="name"${agmSort==='name'?' selected':''}>이름순</option><option value="rate"${agmSort==='rate'?' selected':''}>수수료 높은순</option></select></div>\n   <div class="panel"><div class="pb">${aglist.length?`<table><thead><tr><th>이름</th><th>담당자</th><th>연락처</th><th class="right">수수료율</th><th>계좌</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">등록된 에이전시가 없습니다.</div>'}</div></div>`;keepFocus('srch_agm');
@@ -861,7 +861,60 @@ async function makeRefSettle(id,rev){const r=Number(el('rr_'+id).value||0);const
 async function rfTax(id){await db.from('referrer_settlements').update({tax_issued:true,updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
 async function rfPay(id){await db.from('referrer_settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
 
-boot(); /* build: v5 referrers+logoReload */
+/* ============ 거래명세서 ============ */
+let stmtCtx={agencyId:null};
+function stmtModal(agencyId){stmtCtx.agencyId=agencyId;const a=state.agencies.find(x=>x.id===agencyId);
+  const now=new Date();const from=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);const to=now.toISOString().slice(0,10);
+  openModal(`<div class="mh">거래명세서 · ${esc(a?a.name:'')}<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div class="grid2"><div class="field"><label>시작일</label><input id="st_from" type="date" value="${from}"></div>
+      <div class="field"><label>종료일</label><input id="st_to" type="date" value="${to}"></div></div>
+    <div class="field"><label><input type="checkbox" id="st_vat" checked> 금액에 부가세 포함(VAT 포함)으로 표기</label></div>
+    <div class="muted" style="font-size:12px">해당 에이전시가 소개한 환자의 시술 내역을 기간별로 모아 거래명세서를 생성합니다.</div></div>
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="genStatement()">명세서 출력</button></div>`);}
+async function genStatement(){
+  const a=state.agencies.find(x=>x.id===stmtCtx.agencyId);if(!a)return;
+  const from=el('st_from').value,to=el('st_to').value,vat=el('st_vat').checked;
+  let q=db.from('orders').select('id,order_no,order_date,patient_id').eq('agency_id',a.id).neq('status','cancelled');
+  if(from)q=q.gte('order_date',from);
+  if(to)q=q.lte('order_date',to+'T23:59:59');
+  const {data:orders}=await q.order('order_date');
+  const ids=(orders||[]).map(o=>o.id);let items=[];
+  if(ids.length){const {data:it}=await db.from('order_items').select('*').in('order_id',ids);items=it||[];}
+  const {data:hosp}=await db.from('hospitals').select('name,biz_no,contact').eq('id',state.hospital_id).single();
+  const PM=pmap();const oMap=Object.fromEntries((orders||[]).map(o=>[o.id,o]));
+  let lines=items.map(i=>{const o=oMap[i.order_id];return {date:o?o.order_date:null,patient:o?(PM[o.patient_id]||''):'',name:i.name,amount:Number(i.amount)};});
+  lines.sort((x,y)=>new Date(x.date)-new Date(y.date));
+  const total=lines.reduce((s,l)=>s+l.amount,0);
+  const supply=vat?Math.round(total/1.1):total;const tax=vat?total-supply:0;
+  const hc=(hosp&&hosp.contact)||{};
+  const lineRows=lines.length?lines.map(l=>`<tr><td>${fdate(l.date)}</td><td>${esc(l.patient)}</td><td>${esc(l.name)}</td><td class="r">${won(l.amount)}</td></tr>`).join(''):'<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:20px">해당 기간 거래 내역이 없습니다.</td></tr>';
+  const html=`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>거래명세서 - ${esc(a.name)}</title>
+   <style>body{font-family:'Malgun Gothic','Pretendard',sans-serif;color:#0f172a;padding:30px;max-width:760px;margin:auto}
+   h1{font-size:24px;text-align:center;margin:0 0 4px;letter-spacing:8px}.period{text-align:center;color:#64748b;font-size:13px;margin-bottom:18px}
+   .party{display:flex;gap:14px;margin-bottom:14px}.party>div{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.7}
+   .party h3{margin:0 0 6px;font-size:12px;color:#0f766e}
+   table{width:100%;border-collapse:collapse;margin-top:6px}th,td{border:1px solid #e2e8f0;padding:8px;font-size:12.5px;text-align:left}
+   th{background:#0f766e;color:#fff}.r{text-align:right}
+   .sum{margin-top:12px;margin-left:auto;width:300px}.sum div{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}
+   .sum .big{font-size:18px;font-weight:800;border-top:2px solid #0f172a;padding-top:8px;margin-top:4px}
+   .note{margin-top:14px;color:#64748b;font-size:12px}.foot{margin-top:28px;text-align:center;color:#94a3b8;font-size:12px}
+   @media print{body{padding:0}}</style></head><body>
+   <h1>거 래 명 세 서</h1><div class="period">${from||''} ~ ${to||''}</div>
+   <div class="party">
+     <div><h3>공급자 (병원)</h3><b>${esc((hosp&&hosp.name)||state.hospital_name)}</b><br>사업자번호: ${esc((hosp&&hosp.biz_no)||'-')}<br>연락처: ${esc(hc.phone||hc.tel||'-')}</div>
+     <div><h3>공급받는자 (에이전시)</h3><b>${esc(a.biz_company||a.name)}</b><br>사업자번호: ${esc(a.biz_no||'-')} / 대표: ${esc(a.biz_ceo||'-')}<br>${a.biz_type?'업태/종목: '+esc(a.biz_type)+'<br>':''}${a.biz_address?'주소: '+esc(a.biz_address)+'<br>':''}담당: ${esc(a.contact_name||'-')} ${a.phone?'('+esc(a.phone)+')':''}</div>
+   </div>
+   <table><thead><tr><th>일자</th><th>환자</th><th>시술명</th><th class="r">금액</th></tr></thead><tbody>${lineRows}</tbody></table>
+   <div class="sum">${vat?`<div><span>공급가액</span><span>${won(supply)}</span></div><div><span>부가세(10%)</span><span>${won(tax)}</span></div>`:''}<div class="big"><span>합계 ${vat?'(VAT 포함)':'(VAT 별도)'}</span><span>${won(total)}</span></div></div>
+   <div class="note">※ 상기 금액은 ${vat?'부가가치세가 포함된':'부가가치세 별도의'} 금액입니다. 본 명세서는 ${esc(a.name)}가 소개한 환자의 시술 거래 내역입니다.</div>
+   <div class="foot">${esc((hosp&&hosp.name)||state.hospital_name)} · 발행일 ${new Date().toLocaleDateString('ko-KR')}</div>
+   </body></html>`;
+  const w=window.open('','_blank','width=820,height=920');
+  if(!w){alert('팝업이 차단되었습니다. 팝업을 허용해주세요.');return;}
+  w.document.write(html);w.document.close();w.focus();setTimeout(function(){w.print();},350);closeModal();
+}
+
+boot(); /* build: v6 statement */
 </script>
 </body>
 </html>
