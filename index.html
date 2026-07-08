@@ -68,6 +68,9 @@
   .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
   .toolbar input,.toolbar select{padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:#fff}
   .search{flex:1;min-width:160px}
+  .srch{position:relative;display:inline-block}
+  .srch svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:15px;height:15px;pointer-events:none}
+  .srch input{padding:9px 12px 9px 32px;border:1px solid var(--line);border-radius:9px;background:#fff;min-width:180px}
   .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
   .modal{background:#fff;border-radius:16px;width:540px;max-width:100%;max-height:92vh;overflow:auto}
   .modal.lg{width:920px}
@@ -172,8 +175,11 @@ const ftime=s=>s?new Date(s).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'
 const fdt=s=>s?`${fdate(s)} ${ftime(s)}`:'-';
 const esc=s=>(s??'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const el=id=>document.getElementById(id);
+const MAG='<svg viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg>';
+function keepFocus(id){setTimeout(function(){const i=el(id);if(i){const v=i.value;i.focus();try{i.setSelectionRange(v.length,v.length);}catch(e){}}},0);}
 const pmap=()=>Object.fromEntries(state.patients.map(p=>[p.id,p.name]));
 const amap=()=>Object.fromEntries(state.agencies.map(a=>[a.id,a.name]));
+let billSearch='',billSort='recent',billFrom='',billTo='';let setlSearch='',setlSort='rev';let rsSearch='',rsSort='rev';let agmSearch='',agmSort='name';let refmSearch='',refmSort='name';
 
 async function doLogin(e){e.preventDefault();const b=el('loginBtn');b.disabled=true;el('loginErr').textContent='';
   const {error}=await db.auth.signInWithPassword({email:el('email').value.trim(),password:el('pw').value});
@@ -330,7 +336,8 @@ async function renderPatients(){
   patAgg={};(ords||[]).forEach(o=>{const a=patAgg[o.patient_id]=patAgg[o.patient_id]||{cnt:0,sum:0};a.cnt++;a.sum+=Number(o.total||0);});
   m.innerHTML=`<div class="page-head"><div><h2>환자관리</h2><div class="sub">전체 ${state.patients.length}명</div></div>
      <button class="btn" onclick="patientModal()">+ 환자 등록</button></div>
-   <div class="toolbar"><input class="search" id="patSearch" placeholder="이름 검색…" oninput="filterPatients()"></div>
+   <div class="toolbar"><div class="srch">${MAG}<input id="patSearch" placeholder="이름/영문명 검색…" oninput="filterPatients()"></div>
+     <select id="patSort" onchange="filterPatients()"><option value="name">이름순</option><option value="sum">누적 많은순</option><option value="cnt">방문 많은순</option></select></div>
    <div class="panel"><div class="pb" id="patTable"></div></div>`;
   drawPatients(state.patients);
 }
@@ -344,7 +351,9 @@ function drawPatients(list){const AM=amap();const t=el('patTable');
       <td>${esc(AM[p.source_agency_id]||'-')}</td>
       <td class="right">${won(a.sum)}</td>
       <td class="right"><button class="btn sm ghost" onclick="patientDetail('${p.id}')">상세</button></td></tr>`;}).join('')}</tbody></table>`;}
-function filterPatients(){const q=el('patSearch').value.trim().toLowerCase();drawPatients(state.patients.filter(p=>p.name.toLowerCase().includes(q)));}
+function filterPatients(){const q=(el('patSearch').value||'').trim().toLowerCase();const s=el('patSort')?el('patSort').value:'name';const g=id=>patAgg[id]||{cnt:0,sum:0};
+  let l=state.patients.filter(p=>!q||p.name.toLowerCase().includes(q)||(p.eng_name||'').toLowerCase().includes(q));
+  l.sort((a,b)=>s==='sum'?g(b.id).sum-g(a.id).sum:s==='cnt'?g(b.id).cnt-g(a.id).cnt:a.name.localeCompare(b.name));drawPatients(l);}
 function patientModal(){const aOpt='<option value="">(없음)</option>'+state.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
   openModal(`<div class="mh">환자 등록<span onclick="closeModal()">✕</span></div><div class="mb">
     <div class="grid2"><div class="field"><label>이름 *</label><input id="p_name"></div><div class="field"><label>국적</label><input id="p_nat" value="중국"></div></div>
@@ -575,7 +584,13 @@ async function renderBilling(){
   const mons=(data||[]).filter(o=>o.order_date>=ms&&o.order_date<me&&o.status!=='cancelled');
   const monSales=mons.reduce((s,o)=>s+Number(o.total||0),0);
   const unpaid=(data||[]).filter(o=>o.pay_status!=='paid'&&o.status!=='cancelled').reduce((s,o)=>s+Number(o.total||0),0);
-  const rows=(data||[]).map(o=>`<tr><td>#${o.order_no}</td><td>${fdate(o.order_date)}</td><td><b>${esc(PM[o.patient_id]||'-')}</b></td>
+  let blist=(data||[]).filter(o=>{
+    if(billFrom&&new Date(o.order_date)<new Date(billFrom))return false;
+    if(billTo&&new Date(o.order_date)>new Date(billTo+'T23:59:59'))return false;
+    if(billSearch){const q=billSearch.toLowerCase();if(!((PM[o.patient_id]||'').toLowerCase().includes(q)||(AM[o.agency_id]||'').toLowerCase().includes(q)||('#'+o.order_no).includes(q)))return false;}
+    return true;});
+  blist.sort((a,b)=>billSort==='amt'?Number(b.total)-Number(a.total):billSort==='unpaid'?((b.pay_status!=='paid')-(a.pay_status!=='paid')):new Date(b.order_date)-new Date(a.order_date));
+  const rows=blist.map(o=>`<tr><td>#${o.order_no}</td><td>${fdate(o.order_date)}</td><td><b>${esc(PM[o.patient_id]||'-')}</b></td>
     <td>${esc(AM[o.agency_id]||'-')}</td><td class="right">${won(o.total)}</td>
     <td>${o.discount_amount>0?`<span style="color:var(--danger)">-${won(o.discount_amount)}</span>`:'-'}</td>
     <td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span></td>
@@ -587,7 +602,7 @@ async function renderBilling(){
      <div class="stat"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
      <div class="stat"><div class="k">이번달 건수</div><div class="v">${mons.length}<small> 건</small></div></div>
      <div class="stat"><div class="k">미수금(전체)</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div></div>
-   <div class="panel"><div class="ph">주문·수납 내역</div><div class="pb">${(data||[]).length?`<table><thead><tr><th>No</th><th>일자</th><th>환자</th><th>에이전시</th><th class="right">합계</th><th>할인</th><th>수납</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">내역이 없습니다.</div>'}</div></div>`;
+   <div class="panel"><div class="ph">주문·수납 내역 <span style="display:flex;gap:6px;flex-wrap:wrap;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_bill" placeholder="환자/에이전시/번호" value="${esc(billSearch)}" oninput="billSearch=this.value;renderBilling()"></span><input type="date" value="${billFrom}" onchange="billFrom=this.value;renderBilling()"><input type="date" value="${billTo}" onchange="billTo=this.value;renderBilling()"><select onchange="billSort=this.value;renderBilling()"><option value="recent"${billSort==='recent'?' selected':''}>최신순</option><option value="amt"${billSort==='amt'?' selected':''}>금액순</option><option value="unpaid"${billSort==='unpaid'?' selected':''}>미수 먼저</option></select></span></div><div class="pb">${blist.length?`<table><thead><tr><th>No</th><th>일자</th><th>환자</th><th>에이전시</th><th class="right">합계</th><th>할인</th><th>수납</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">내역이 없습니다.</div>'}</div></div>`;keepFocus('srch_bill');
 }
 async function markPaid(id){const {data:o}=await db.from('orders').select('total').eq('id',id).single();
   await db.from('orders').update({pay_status:'paid',paid_amount:o.total,updated_at:new Date().toISOString()}).eq('id',id);renderBilling();}
@@ -623,7 +638,10 @@ async function renderSettlement(){
   const AM=amap();const agg={};
   (orders||[]).forEach(o=>{if(!o.agency_id)return;const a=agg[o.agency_id]=agg[o.agency_id]||{rev:0,cnt:0};a.rev+=Number(o.total||0);a.cnt++;});
   const setlMap=Object.fromEntries((setl||[]).map(s=>[s.agency_id,s]));
-  const rows=state.agencies.map(ag=>{const a=agg[ag.id]||{rev:0,cnt:0};const rate=ag.commission_rate!=null?Number(ag.commission_rate):(ag.is_followkorea?15:10);const comm=Math.round(a.rev*rate/100);const s=setlMap[ag.id];
+  const gA=id=>agg[id]||{rev:0,cnt:0};
+  let alist=state.agencies.filter(ag=>!setlSearch||ag.name.toLowerCase().includes(setlSearch.toLowerCase()));
+  alist.sort((x,y)=>setlSort==='name'?x.name.localeCompare(y.name):setlSort==='cnt'?gA(y.id).cnt-gA(x.id).cnt:gA(y.id).rev-gA(x.id).rev);
+  const rows=alist.map(ag=>{const a=agg[ag.id]||{rev:0,cnt:0};const rate=ag.commission_rate!=null?Number(ag.commission_rate):(ag.is_followkorea?15:10);const comm=Math.round(a.rev*rate/100);const s=setlMap[ag.id];
     return `<tr><td><b>${esc(ag.name)}</b>${ag.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}</td>
       <td class="right">${a.cnt}건</td><td class="right">${won(a.rev)}</td>
       <td class="right"><input type="number" value="${rate}" id="rate_${ag.id}" style="width:60px;padding:5px;border:1px solid var(--line);border-radius:6px;text-align:right" oninput="recomm('${ag.id}',${a.rev})">%</td>
@@ -637,10 +655,10 @@ async function renderSettlement(){
      <div class="stat"><div class="k">에이전시 매출(당월)</div><div class="v">${won(totRev)}</div></div>
      <div class="stat"><div class="k">에이전시 수</div><div class="v">${state.agencies.length}<small> 곳</small></div></div>
      <div class="stat"><div class="k">정산 대상 월</div><div class="v" style="font-size:19px">${setMonth}</div></div></div>
-   <div class="panel"><div class="ph">에이전시별 정산 (수수료율 수정 가능)</div><div class="pb">
+   <div class="panel"><div class="ph">에이전시별 정산 <span style="display:flex;gap:6px;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_setl" placeholder="에이전시 검색" value="${esc(setlSearch)}" oninput="setlSearch=this.value;renderSettlement()"></span><select onchange="setlSort=this.value;renderSettlement()"><option value="rev"${setlSort==='rev'?' selected':''}>매출순</option><option value="cnt"${setlSort==='cnt'?' selected':''}>건수순</option><option value="name"${setlSort==='name'?' selected':''}>이름순</option></select></span></div><div class="pb">
      <table><thead><tr><th>에이전시</th><th class="right">건수</th><th class="right">매출</th><th class="right">수수료율</th><th class="right">수수료</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table>
    </div></div>
-   <div class="muted" style="font-size:12px">※ 수수료율 기본값: 팔로우코리아 15%, 일반 에이전시 10% (수정 가능). '정산 생성'을 누르면 해당 월 정산 내역이 저장됩니다.</div>`;
+   <div class="muted" style="font-size:12px">※ 수수료율 기본값: 팔로우코리아 15%, 일반 에이전시 10% (수정 가능). '정산 생성'을 누르면 해당 월 정산 내역이 저장됩니다.</div>`;keepFocus('srch_setl');
 }
 function recomm(agId,rev){const r=Number(el('rate_'+agId).value||0);el('comm_'+agId).textContent=won(Math.round(rev*r/100));}
 async function makeSettle(agId,rev){const r=Number(el('rate_'+agId).value||0);const comm=Math.round(rev*r/100);
@@ -653,7 +671,9 @@ async function paySettle(id){await db.from('settlements').update({status:'paid',
 async function renderAgencies(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const {data}=await db.from('agencies').select('*').order('name');state.agencies=data||[];
-  const rows=state.agencies.map(a=>{const pm=a.payout_method||{};const rate=a.commission_rate!=null?a.commission_rate:(a.is_followkorea?15:10);return `<tr>
+  let aglist=state.agencies.filter(a=>!agmSearch||a.name.toLowerCase().includes(agmSearch.toLowerCase())||(a.contact_name||'').toLowerCase().includes(agmSearch.toLowerCase()));
+  aglist.sort((x,y)=>agmSort==='rate'?((y.commission_rate!=null?y.commission_rate:(y.is_followkorea?15:10))-(x.commission_rate!=null?x.commission_rate:(x.is_followkorea?15:10))):x.name.localeCompare(y.name));
+  const rows=aglist.map(a=>{const pm=a.payout_method||{};const rate=a.commission_rate!=null?a.commission_rate:(a.is_followkorea?15:10);return `<tr>
     <td><b>${esc(a.name)}</b>${a.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}${a.biz_no?'<div class="cny">사업자 '+esc(a.biz_no)+'</div>':''}</td>
     <td>${esc(a.contact_name||'-')}</td>
     <td>${a.phone?esc(a.phone):'-'}${a.email?'<div class="cny">'+esc(a.email)+'</div>':''}</td>
@@ -663,7 +683,7 @@ async function renderAgencies(){
     <td class="right"><button class="btn sm ghost" onclick="agencyModal('${a.id}')">수정</button></td></tr>`;}).join('');
   m.innerHTML=`<div class="page-head"><div><h2>에이전시 관리</h2><div class="sub">전체 ${state.agencies.length}곳</div></div>
      <button class="btn" onclick="agencyModal()">+ 에이전시 등록</button></div>
-   <div class="panel"><div class="pb">${state.agencies.length?`<table><thead><tr><th>이름</th><th>담당자</th><th>연락처</th><th class="right">수수료율</th><th>계좌</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">등록된 에이전시가 없습니다.</div>'}</div></div>`;
+   <div class="toolbar"><div class="srch">${MAG}<input id="srch_agm" placeholder="이름/담당자 검색" value="${esc(agmSearch)}" oninput="agmSearch=this.value;renderAgencies()"></div><select onchange="agmSort=this.value;renderAgencies()"><option value="name"${agmSort==='name'?' selected':''}>이름순</option><option value="rate"${agmSort==='rate'?' selected':''}>수수료 높은순</option></select></div>\n   <div class="panel"><div class="pb">${aglist.length?`<table><thead><tr><th>이름</th><th>담당자</th><th>연락처</th><th class="right">수수료율</th><th>계좌</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">등록된 에이전시가 없습니다.</div>'}</div></div>`;keepFocus('srch_agm');
 }
 function agencyModal(id){const a=id?state.agencies.find(x=>x.id===id):null;const pm=(a&&a.payout_method)||{};
   openModal(`<div class="mh">${a?'에이전시 수정':'에이전시 등록'}<span onclick="closeModal()">✕</span></div><div class="mb">
@@ -767,14 +787,16 @@ async function delPackage(id){if(!confirm('이 패키지를 삭제할까요?'))r
 async function renderReferrers(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const {data}=await db.from('referrers').select('*').eq('is_active',true).order('name');state.referrers=data||[];
-  const rows=state.referrers.map(r=>`<tr>
+  let rflist=state.referrers.filter(r=>!refmSearch||r.name.toLowerCase().includes(refmSearch.toLowerCase())||(r.channel||'').toLowerCase().includes(refmSearch.toLowerCase())||(r.rtype||'').toLowerCase().includes(refmSearch.toLowerCase()));
+  rflist.sort((x,y)=>refmSort==='rate'?(Number(y.rate)-Number(x.rate)):refmSort==='type'?((x.rtype||'').localeCompare(y.rtype||'')):x.name.localeCompare(y.name));
+  const rows=rflist.map(r=>`<tr>
     <td><b>${esc(r.name)}</b></td><td>${esc(r.rtype||'-')}</td><td>${esc(r.channel||'-')}</td>
     <td class="right">${r.rate}%</td><td class="muted">${esc(r.memo||'')}</td>
     <td class="right"><button class="btn sm ghost" onclick="referrerModal('${r.id}')">수정</button>
       <button class="btn sm danger" onclick="delReferrer('${r.id}')">삭제</button></td></tr>`).join('');
   m.innerHTML=`<div class="page-head"><div><h2>왕홍·소개자 관리</h2><div class="sub">전체 ${state.referrers.length}명 · 유형·채널·수수료율</div></div>
      <button class="btn" onclick="referrerModal()">+ 소개자 등록</button></div>
-   <div class="panel"><div class="pb">${state.referrers.length?`<table><thead><tr><th>이름</th><th>유형</th><th>채널</th><th class="right">수수료율</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">등록된 소개자가 없습니다.</div>'}</div></div>`;
+   <div class="toolbar"><div class="srch">${MAG}<input id="srch_refm" placeholder="이름/채널/유형 검색" value="${esc(refmSearch)}" oninput="refmSearch=this.value;renderReferrers()"></div><select onchange="refmSort=this.value;renderReferrers()"><option value="name"${refmSort==='name'?' selected':''}>이름순</option><option value="rate"${refmSort==='rate'?' selected':''}>수수료 높은순</option><option value="type"${refmSort==='type'?' selected':''}>유형순</option></select></div>\n   <div class="panel"><div class="pb">${rflist.length?`<table><thead><tr><th>이름</th><th>유형</th><th>채널</th><th class="right">수수료율</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">등록된 소개자가 없습니다.</div>'}</div></div>`;keepFocus('srch_refm');
 }
 function referrerModal(id){const r=id?state.referrers.find(x=>x.id===id):null;
   openModal(`<div class="mh">${r?'소개자 수정':'소개자 등록'}<span onclick="closeModal()">✕</span></div><div class="mb">
@@ -811,7 +833,10 @@ async function renderRefSettle(){
   state.referrers=refs||[];
   const agg={};(orders||[]).forEach(o=>{if(!o.referrer_id)return;const a=agg[o.referrer_id]=agg[o.referrer_id]||{rev:0,cnt:0};a.rev+=Number(o.total||0);a.cnt++;});
   const setlMap=Object.fromEntries((setl||[]).map(s=>[s.referrer_id,s]));
-  const rows=state.referrers.map(r=>{const a=agg[r.id]||{rev:0,cnt:0};const rate=Number(r.rate)||0;const comm=Math.round(a.rev*rate/100);const s=setlMap[r.id];
+  const rA=id=>agg[id]||{rev:0,cnt:0};
+  let rlist=state.referrers.filter(r=>!rsSearch||r.name.toLowerCase().includes(rsSearch.toLowerCase())||(r.channel||'').toLowerCase().includes(rsSearch.toLowerCase())||(r.rtype||'').toLowerCase().includes(rsSearch.toLowerCase()));
+  rlist.sort((x,y)=>rsSort==='name'?x.name.localeCompare(y.name):rsSort==='cnt'?rA(y.id).cnt-rA(x.id).cnt:rsSort==='comm'?(rA(y.id).rev*(y.rate||0))-(rA(x.id).rev*(x.rate||0)):rA(y.id).rev-rA(x.id).rev);
+  const rows=rlist.map(r=>{const a=agg[r.id]||{rev:0,cnt:0};const rate=Number(r.rate)||0;const comm=Math.round(a.rev*rate/100);const s=setlMap[r.id];
     return `<tr><td><b>${esc(r.name)}</b> <span class="muted">${esc(r.rtype||'')}${r.channel?'·'+esc(r.channel):''}</span></td>
       <td class="right">${a.cnt}건</td><td class="right">${won(a.rev)}</td>
       <td class="right"><input type="number" value="${rate}" id="rr_${r.id}" style="width:56px;padding:5px;border:1px solid var(--line);border-radius:6px;text-align:right" oninput="rfRecomm('${r.id}',${a.rev})">%</td>
@@ -825,9 +850,9 @@ async function renderRefSettle(){
      <div class="stat"><div class="k">소개 매출(당월)</div><div class="v">${won(totRev)}</div></div>
      <div class="stat"><div class="k">소개자 수</div><div class="v">${state.referrers.length}<small> 명</small></div></div>
      <div class="stat"><div class="k">정산 대상 월</div><div class="v" style="font-size:19px">${refMonth}</div></div></div>
-   <div class="panel"><div class="ph">소개자별 정산 (수수료율 수정 가능)</div><div class="pb">
+   <div class="panel"><div class="ph">소개자별 정산 <span style="display:flex;gap:6px;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_rs" placeholder="소개자 검색" value="${esc(rsSearch)}" oninput="rsSearch=this.value;renderRefSettle()"></span><select onchange="rsSort=this.value;renderRefSettle()"><option value="rev"${rsSort==='rev'?' selected':''}>매출순</option><option value="comm"${rsSort==='comm'?' selected':''}>수수료순</option><option value="cnt"${rsSort==='cnt'?' selected':''}>건수순</option><option value="name"${rsSort==='name'?' selected':''}>이름순</option></select></span></div><div class="pb">
      <table><thead><tr><th>소개자</th><th class="right">건수</th><th class="right">소개 매출</th><th class="right">수수료율</th><th class="right">수수료</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
-   <div class="muted" style="font-size:12px">※ 소개자별 담당 견적의 매출을 집계해 수수료율(소개자 기본값)로 계산합니다. 정산 생성 → 세금계산서 → 지급완료 순으로 처리하세요.</div>`;
+   <div class="muted" style="font-size:12px">※ 소개자별 담당 견적의 매출을 집계해 수수료율(소개자 기본값)로 계산합니다. 정산 생성 → 세금계산서 → 지급완료 순으로 처리하세요.</div>`;keepFocus('srch_rs');
 }
 function rfRecomm(id,rev){const r=Number(el('rr_'+id).value||0);el('rfc_'+id).textContent=won(Math.round(rev*r/100));}
 async function makeRefSettle(id,rev){const r=Number(el('rr_'+id).value||0);const comm=Math.round(rev*r/100);
