@@ -172,6 +172,7 @@ const state={hospital_id:null,hospital_name:'강남펄스',staff:null,procedures
 
 const won=n=>'₩'+Number(n||0).toLocaleString('ko-KR');
 const cny=n=>'¥'+Math.round(Number(n||0)/KRW_PER_CNY).toLocaleString('ko-KR');
+const methodBadge=m=>m?`<span class="tag" style="background:#eef2ff;color:#4338ca;margin-left:4px">${esc(m)}</span>`:'';
 const fdate=s=>s?new Date(s).toLocaleDateString('ko-KR',{month:'2-digit',day:'2-digit'}):'-';
 const ftime=s=>s?new Date(s).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false}):'';
 const fdt=s=>s?`${fdate(s)} ${ftime(s)}`:'-';
@@ -263,7 +264,7 @@ async function renderDashboard(){
      }</tbody></table>`:'<div class="empty">오늘 예약이 없습니다.</div>'}</div></div>
    <div class="panel"><div class="ph">최근 상담·견적 <button class="btn sm" onclick="navTo('billing')">수납 →</button></div>
      <div class="pb">${(recent.data||[]).length?`<table><thead><tr><th>No</th><th>환자</th><th>에이전시</th><th class="right">금액</th><th>수납</th></tr></thead><tbody>${
-       recent.data.map(o=>`<tr><td>#${o.order_no}</td><td>${esc(PM[o.patient_id]||'-')}</td><td>${esc(AM[o.agency_id]||'-')}</td><td class="right">${won(o.total)}</td><td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span></td></tr>`).join('')
+       recent.data.map(o=>`<tr><td>#${o.order_no}</td><td>${esc(PM[o.patient_id]||'-')}</td><td>${esc(AM[o.agency_id]||'-')}</td><td class="right">${won(o.total)}</td><td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span>${o.pay_status==='paid'?methodBadge(o.pay_method):''}</td></tr>`).join('')
      }</tbody></table>`:'<div class="empty">견적이 없습니다.</div>'}</div></div>`;
 }
 
@@ -402,7 +403,7 @@ async function patientDetail(id){
   ]);
   const nonCancel=(ord.data||[]).filter(o=>o.status!=='cancelled');const vcnt=nonCancel.length;
   const spent=nonCancel.reduce((s,o)=>s+Number(o.total||0),0);
-  const ordRows=(ord.data||[]).map(o=>`<tr><td>#${o.order_no}</td><td>${fdate(o.order_date)}</td><td class="right">${won(o.total)}</td><td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span></td></tr>`).join('');
+  const ordRows=(ord.data||[]).map(o=>`<tr><td>#${o.order_no}</td><td>${fdate(o.order_date)}</td><td class="right">${won(o.total)}</td><td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span>${o.pay_status==='paid'?methodBadge(o.pay_method):''}</td></tr>`).join('');
   const chRows=(ch.data||[]).map(c=>`<tr><td>${fdate(c.visit_at)}</td><td>${esc(c.doctor||'-')}</td><td class="muted">${esc((c.chief_complaint||'').slice(0,26))}</td></tr>`).join('');
   const apRows=(ap.data||[]).map(a=>`<tr><td>${fdt(a.appointment_at)}</td><td>${esc(a.doctor||'-')}</td><td><span class="tag t-${a.status}">${STATUS_LABEL[a.status]}</span></td></tr>`).join('');
   const notes=(nt.data||[]);
@@ -646,9 +647,9 @@ async function renderBilling(){
   const rows=blist.map(o=>`<tr><td>#${o.order_no}</td><td>${fdate(o.order_date)}</td><td><b>${esc(PM[o.patient_id]||'-')}</b></td>
     <td>${esc(AM[o.agency_id]||'-')}</td><td class="right">${won(o.total)}</td>
     <td>${o.discount_amount>0?`<span style="color:var(--danger)">-${won(o.discount_amount)}</span>`:'-'}</td>
-    <td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span></td>
+    <td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span>${o.pay_status==='paid'?methodBadge(o.pay_method):''}</td>
     <td class="right"><button class="btn sm ghost" onclick="orderDetail('${o.id}')">상세</button>
-      ${o.pay_status!=='paid'?`<button class="btn sm ok" onclick="markPaid('${o.id}')">완납</button>`:''}</td></tr>`).join('');
+      ${o.pay_status!=='paid'?`<button class="btn sm ok" onclick="markPaid('${o.id}','카드')">카드</button> <button class="btn sm ok" onclick="markPaid('${o.id}','현금')">현금</button>`:''}</td></tr>`).join('');
   m.innerHTML=`<div class="page-head"><div><h2>수납·매출</h2><div class="sub">${now.getFullYear()}년 ${now.getMonth()+1}월</div></div>
      <button class="btn" onclick="navTo('quote')">+ 견적 작성</button></div>
    <div class="cards" style="grid-template-columns:repeat(3,1fr)">
@@ -657,8 +658,8 @@ async function renderBilling(){
      <div class="stat"><div class="k">미수금(전체)</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div></div>
    <div class="panel"><div class="ph">주문·수납 내역 <span style="display:flex;gap:6px;flex-wrap:wrap;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_bill" placeholder="환자/에이전시/번호" value="${esc(billSearch)}" oninput="billSearch=this.value;renderBilling()"></span><input type="date" value="${billFrom}" onchange="billFrom=this.value;renderBilling()"><input type="date" value="${billTo}" onchange="billTo=this.value;renderBilling()"><select onchange="billSort=this.value;renderBilling()"><option value="recent"${billSort==='recent'?' selected':''}>최신순</option><option value="amt"${billSort==='amt'?' selected':''}>금액순</option><option value="unpaid"${billSort==='unpaid'?' selected':''}>미수 먼저</option></select></span></div><div class="pb">${blist.length?`<table><thead><tr><th>No</th><th>일자</th><th>환자</th><th>에이전시</th><th class="right">합계</th><th>할인</th><th>수납</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">내역이 없습니다.</div>'}</div></div>`;keepFocus('srch_bill');
 }
-async function markPaid(id){const {data:o}=await db.from('orders').select('total').eq('id',id).single();
-  await db.from('orders').update({pay_status:'paid',paid_amount:o.total,updated_at:new Date().toISOString()}).eq('id',id);renderBilling();}
+async function markPaid(id,method){const {data:o}=await db.from('orders').select('total').eq('id',id).single();
+  await db.from('orders').update({pay_status:'paid',paid_amount:o.total,pay_method:method||null,updated_at:new Date().toISOString()}).eq('id',id);renderBilling();}
 async function orderDetail(id){
   openModal('<div class="mb loading">불러오는 중…</div>');
   const [{data:o},{data:items}]=await Promise.all([db.from('orders').select('*').eq('id',id).single(),db.from('order_items').select('*').eq('order_id',id)]);
@@ -674,7 +675,7 @@ async function orderDetail(id){
       <div class="totrow big"><span>합계</span><span>${won(o.total)} <span class="cny" style="font-size:13px">${cny(o.total)}</span></span></div></div>
     ${o.memo?`<div class="note-box" style="margin-top:10px">${esc(o.memo)}</div>`:''}</div>
     <div class="mf"><button class="btn ghost" onclick="closeModal()">닫기</button>
-      ${o.pay_status!=='paid'?`<button class="btn ok" onclick="markPaid('${o.id}');closeModal()">완납 처리</button>`:'<span class="tag t-paid">완납됨</span>'}</div>`);
+      ${o.pay_status!=='paid'?`<button class="btn ok" onclick="markPaid('${o.id}','카드');closeModal()">카드 완납</button> <button class="btn ok" onclick="markPaid('${o.id}','현금');closeModal()">현금 완납</button>`:`<span class="tag t-paid">완납됨</span>${methodBadge(o.pay_method)}`}</div>`);
 }
 
 /* ============ SETTLEMENT / 에이전시 정산 ============ */
