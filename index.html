@@ -292,13 +292,15 @@ async function renderReception(){
   const de=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1).toISOString();
   const {data}=await db.from('appointments').select('*').gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at');
   const PM=pmap(),PR=Object.fromEntries(state.procedures.map(p=>[p.id,p.name]));
+  const AM=amap();const PA=Object.fromEntries(state.patients.map(p=>[p.id,p.source_agency_id]));
   const rows=(data||[]).map(a=>`<tr><td>${ftime(a.appointment_at)}</td><td><b>${esc(PM[a.patient_id]||'-')}</b></td>
+    <td>${esc(AM[PA[a.patient_id]]||'-')}</td>
     <td>${esc(PR[a.procedure_id]||'-')}</td><td>${esc(a.doctor||'-')}</td>
     <td><span class="tag t-${a.status}">${STATUS_LABEL[a.status]}</span></td><td class="muted">${esc(a.memo||'')}</td>
     <td class="right">${nextBtns(a)}</td></tr>`).join('');
   m.innerHTML=`<div class="page-head"><div><h2>접수 현황</h2><div class="sub">오늘 ${now.toLocaleDateString('ko-KR')}</div></div>
      <button class="btn" onclick="apptModal()">+ 예약 등록</button></div>
-   <div class="panel"><div class="pb">${(data||[]).length?`<table><thead><tr><th>시간</th><th>환자</th><th>시술</th><th>담당</th><th>상태</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">오늘 예약이 없습니다.</div>'}</div></div>`;
+   <div class="panel"><div class="pb">${(data||[]).length?`<table><thead><tr><th>시간</th><th>환자</th><th>에이전시</th><th>시술</th><th>담당</th><th>상태</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">오늘 예약이 없습니다.</div>'}</div></div>`;
 }
 function nextBtns(a){const flow={booked:'checked_in',confirmed:'checked_in',checked_in:'in_progress',in_progress:'done'};let o='';
   if(flow[a.status])o+=`<button class="btn sm" onclick="setAppt('${a.id}','${flow[a.status]}')">${STATUS_LABEL[flow[a.status]]}</button> `;
