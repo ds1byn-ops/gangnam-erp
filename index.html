@@ -143,6 +143,7 @@
         <a data-view="quote">상담·견적</a>
         <a data-view="charts">진료차트</a>
         <a data-view="billing">수납·매출</a>
+        <a data-view="stats">통계</a>
         <a data-view="settlement">에이전시 정산</a>
         <a data-view="agencies">에이전시 관리</a>
         <a data-view="packages">패키지 관리</a>
@@ -218,7 +219,7 @@ async function loadPatients(){const {data}=await db.from('patients').select('*')
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats}[v])();}
 function openModal(html,lg){el('modal').className='modal'+(lg?' lg':'');el('modal').innerHTML=html;el('modalBg').style.display='flex';}
 function closeModal(){el('modalBg').style.display='none';}
 el('modalBg').addEventListener('click',e=>{if(e.target===el('modalBg'))closeModal();});
@@ -918,6 +919,77 @@ async function makeRefSettle(id,rev){const r=Number(el('rr_'+id).value||0);const
   if(error){alert('실패: '+error.message);return;}renderRefSettle();}
 async function rfTax(id){await db.from('referrer_settlements').update({tax_issued:true,updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
 async function rfPay(id){await db.from('referrer_settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderRefSettle();}
+
+/* ============ 통계 ============ */
+let statMonth=null;
+function statBar(label,val,max,sub){const pct=max?Math.round(val/max*100):0;return `<tr><td style="white-space:nowrap">${esc(label)}</td><td style="width:50%"><div style="background:#eef2f6;border-radius:5px;height:9px"><div style="width:${pct}%;background:linear-gradient(90deg,#14b8a6,#0f766e);height:9px;border-radius:5px"></div></div></td><td class="right"><b>${sub}</b></td></tr>`;}
+async function renderStats(){
+  const now=new Date();if(!statMonth)statMonth=now.toISOString().slice(0,7);
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const y=+statMonth.slice(0,4),mo=+statMonth.slice(5,7)-1;
+  const ms=new Date(y,mo,1).toISOString(),me=new Date(y,mo+1,1).toISOString();
+  const trendStart=new Date(y,mo-5,1).toISOString();
+  const [ordM,trendO,patsR]=await Promise.all([
+    db.from('orders').select('*').gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
+    db.from('orders').select('total,order_date,status').gte('order_date',trendStart).lt('order_date',me).neq('status','cancelled'),
+    db.from('patients').select('*'),
+  ]);
+  const orders=ordM.data||[];const ids=orders.map(o=>o.id);
+  let items=[];if(ids.length){const {data}=await db.from('order_items').select('*').in('order_id',ids);items=data||[];}
+  const procCat=Object.fromEntries(state.procedures.map(p=>[p.id,p.category]));
+  const AM=amap();const RM=Object.fromEntries(state.referrers.map(r=>[r.id,r.name]));
+  const patAll=patsR.data||[];
+  const total=orders.reduce((s,o)=>s+Number(o.total||0),0);
+  const cnt=orders.length;const avg=cnt?Math.round(total/cnt):0;
+  const unpaid=orders.filter(o=>o.pay_status!=='paid').reduce((s,o)=>s+Number(o.total||0),0);
+  const newP=patAll.filter(p=>{if(!p.first_visit)return false;const d=new Date(p.first_visit);return d>=new Date(y,mo,1)&&d<new Date(y,mo+1,1);}).length;
+  const byMethod={};orders.forEach(o=>{const k=o.pay_status==='paid'?(o.pay_method||'기타'):'미수';byMethod[k]=(byMethod[k]||0)+Number(o.total||0);});
+  const byCat={};items.forEach(i=>{const c=i.procedure_id?(procCat[i.procedure_id]||'기타'):'패키지';byCat[c]=(byCat[c]||0)+Number(i.amount||0);});
+  const procAgg={};items.forEach(i=>{const k=i.name;procAgg[k]=procAgg[k]||{amt:0,qty:0};procAgg[k].amt+=Number(i.amount||0);procAgg[k].qty+=i.qty||1;});
+  const topProc=Object.entries(procAgg).sort((a,b)=>b[1].amt-a[1].amt).slice(0,10);
+  const byAg={};orders.forEach(o=>{if(!o.agency_id)return;byAg[o.agency_id]=(byAg[o.agency_id]||0)+Number(o.total||0);});
+  const topAg=Object.entries(byAg).sort((a,b)=>b[1]-a[1]);
+  const byRf={};orders.forEach(o=>{if(!o.referrer_id)return;byRf[o.referrer_id]=(byRf[o.referrer_id]||0)+Number(o.total||0);});
+  const topRf=Object.entries(byRf).sort((a,b)=>b[1]-a[1]);
+  const byNat={};patAll.forEach(p=>{const n=p.nationality||'미상';byNat[n]=(byNat[n]||0)+1;});
+  const natArr=Object.entries(byNat).sort((a,b)=>b[1]-a[1]);
+  const months=[];for(let k=5;k>=0;k--){const d=new Date(y,mo-k,1);months.push({label:(d.getMonth()+1)+'월',key:d.getFullYear()+'-'+(d.getMonth()+1),sum:0});}
+  (trendO.data||[]).forEach(o=>{const d=new Date(o.order_date);const key=d.getFullYear()+'-'+(d.getMonth()+1);const mm=months.find(x=>x.key===key);if(mm)mm.sum+=Number(o.total||0);});
+  const maxT=Math.max(1,...months.map(x=>x.sum));
+  const trendChart=`<div style="display:flex;align-items:flex-end;gap:14px;height:170px;padding:16px 12px 4px">${months.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">${x.sum?Math.round(x.sum/10000)+'만':''}</div><div style="width:56%;background:linear-gradient(180deg,#14b8a6,#0f766e);border-radius:6px 6px 0 0;height:${Math.round(x.sum/maxT*125)}px;min-height:${x.sum?4:0}px"></div><div style="font-size:12px;color:var(--muted);margin-top:6px">${x.label}</div></div>`).join('')}</div>`;
+  const catMax=Math.max(1,...Object.values(byCat));
+  const catRows=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>statBar(c,v,catMax,won(v))).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';
+  const mMax=Math.max(1,...Object.values(byMethod));
+  const methRows=Object.entries(byMethod).sort((a,b)=>b[1]-a[1]).map(([c,v])=>statBar(c,v,mMax,won(v))).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';
+  const pMax=Math.max(1,...topProc.map(x=>x[1].amt));
+  const procRows=topProc.map(([n,o],i)=>`<tr><td>${i+1}</td><td>${esc(n)}</td><td class="right">${o.qty}건</td><td class="right"><b>${won(o.amt)}</b></td></tr>`).join('')||'<tr><td colspan=4 class="muted">데이터 없음</td></tr>';
+  const agMax=Math.max(1,...topAg.map(x=>x[1]));
+  const agRows=topAg.map(([id,v])=>statBar(AM[id]||'-',v,agMax,won(v))).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';
+  const rfMax=Math.max(1,...topRf.map(x=>x[1]));
+  const rfRows=topRf.map(([id,v])=>statBar(RM[id]||'-',v,rfMax,won(v))).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';
+  const natMax=Math.max(1,...natArr.map(x=>x[1]));
+  const natRows=natArr.map(([n,v])=>statBar(n,v,natMax,v+'명')).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';
+  m.innerHTML=`<div class="page-head"><div><h2>통계</h2><div class="sub">${y}년 ${mo+1}월 · 매출·시술·유입 분석</div></div>
+     <input type="month" value="${statMonth}" onchange="statMonth=this.value;renderStats()" style="padding:8px 12px;border:1px solid var(--line);border-radius:9px"></div>
+   <div class="cards" style="grid-template-columns:repeat(5,1fr)">
+     <div class="stat"><div class="k">당월 매출</div><div class="v" style="font-size:20px">${won(total)}</div><div class="cny">${cny(total)}</div></div>
+     <div class="stat"><div class="k">시술 건수</div><div class="v">${cnt}<small> 건</small></div></div>
+     <div class="stat"><div class="k">객단가</div><div class="v" style="font-size:20px">${won(avg)}</div></div>
+     <div class="stat"><div class="k">미수금</div><div class="v" style="font-size:20px;color:var(--danger)">${won(unpaid)}</div></div>
+     <div class="stat"><div class="k">신규 환자</div><div class="v">${newP}<small> 명</small></div></div>
+   </div>
+   <div class="panel"><div class="ph">최근 6개월 매출 추이</div>${trendChart}</div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+     <div class="panel"><div class="ph">카테고리별 매출</div><div class="pb"><table>${catRows}</table></div></div>
+     <div class="panel"><div class="ph">결제수단별 매출</div><div class="pb"><table>${methRows}</table></div></div>
+   </div>
+   <div class="panel"><div class="ph">인기 시술 TOP 10</div><div class="pb"><table><thead><tr><th>#</th><th>시술명</th><th class="right">수량</th><th class="right">매출</th></tr></thead><tbody>${procRows}</tbody></table></div></div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+     <div class="panel"><div class="ph">에이전시별 매출</div><div class="pb"><table>${agRows}</table></div></div>
+     <div class="panel"><div class="ph">소개자별 매출</div><div class="pb"><table>${rfRows}</table></div></div>
+   </div>
+   <div class="panel"><div class="ph">국적별 환자 분포 (전체)</div><div class="pb"><table>${natRows}</table></div></div>`;
+}
 
 /* ============ 직원 계정·권한 ============ */
 const ROLE_LABEL={owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'};
