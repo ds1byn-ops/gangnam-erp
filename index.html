@@ -621,7 +621,7 @@ async function renderSettlement(){
   const AM=amap();const agg={};
   (orders||[]).forEach(o=>{if(!o.agency_id)return;const a=agg[o.agency_id]=agg[o.agency_id]||{rev:0,cnt:0};a.rev+=Number(o.total||0);a.cnt++;});
   const setlMap=Object.fromEntries((setl||[]).map(s=>[s.agency_id,s]));
-  const rows=state.agencies.map(ag=>{const a=agg[ag.id]||{rev:0,cnt:0};const rate=ag.is_followkorea?15:10;const comm=Math.round(a.rev*rate/100);const s=setlMap[ag.id];
+  const rows=state.agencies.map(ag=>{const a=agg[ag.id]||{rev:0,cnt:0};const rate=ag.commission_rate!=null?Number(ag.commission_rate):(ag.is_followkorea?15:10);const comm=Math.round(a.rev*rate/100);const s=setlMap[ag.id];
     return `<tr><td><b>${esc(ag.name)}</b>${ag.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}</td>
       <td class="right">${a.cnt}건</td><td class="right">${won(a.rev)}</td>
       <td class="right"><input type="number" value="${rate}" id="rate_${ag.id}" style="width:60px;padding:5px;border:1px solid var(--line);border-radius:6px;text-align:right" oninput="recomm('${ag.id}',${a.rev})">%</td>
@@ -651,27 +651,37 @@ async function paySettle(id){await db.from('settlements').update({status:'paid',
 async function renderAgencies(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const {data}=await db.from('agencies').select('*').order('name');state.agencies=data||[];
-  const rows=state.agencies.map(a=>{const pm=a.payout_method||{};return `<tr>
+  const rows=state.agencies.map(a=>{const pm=a.payout_method||{};const rate=a.commission_rate!=null?a.commission_rate:(a.is_followkorea?15:10);return `<tr>
     <td><b>${esc(a.name)}</b>${a.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}</td>
+    <td>${esc(a.contact_name||'-')}</td>
+    <td>${a.phone?esc(a.phone):'-'}${a.email?'<div class="cny">'+esc(a.email)+'</div>':''}</td>
+    <td class="right">${rate}%</td>
     <td>${esc(pm.bank||'-')} ${esc(pm.account||'')}</td>
-    <td>${esc(pm.holder||'-')}</td>
     <td class="muted">${esc(a.memo||'')}</td>
     <td class="right"><button class="btn sm ghost" onclick="agencyModal('${a.id}')">수정</button></td></tr>`;}).join('');
   m.innerHTML=`<div class="page-head"><div><h2>에이전시 관리</h2><div class="sub">전체 ${state.agencies.length}곳</div></div>
      <button class="btn" onclick="agencyModal()">+ 에이전시 등록</button></div>
-   <div class="panel"><div class="pb">${state.agencies.length?`<table><thead><tr><th>이름</th><th>계좌</th><th>예금주</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">등록된 에이전시가 없습니다.</div>'}</div></div>`;
+   <div class="panel"><div class="pb">${state.agencies.length?`<table><thead><tr><th>이름</th><th>담당자</th><th>연락처</th><th class="right">수수료율</th><th>계좌</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">등록된 에이전시가 없습니다.</div>'}</div></div>`;
 }
 function agencyModal(id){const a=id?state.agencies.find(x=>x.id===id):null;const pm=(a&&a.payout_method)||{};
   openModal(`<div class="mh">${a?'에이전시 수정':'에이전시 등록'}<span onclick="closeModal()">✕</span></div><div class="mb">
     <div class="field"><label>에이전시명 *</label><input id="ag_name" value="${a?esc(a.name):''}"></div>
-    <div class="field"><label><input type="checkbox" id="ag_fk" ${a&&a.is_followkorea?'checked':''}> 팔로우코리아(FK) 계열 · 기본 수수료 15%</label></div>
+    <div class="field"><label><input type="checkbox" id="ag_fk" ${a&&a.is_followkorea?'checked':''}> 팔로우코리아(FK) 계열</label></div>
+    <div class="grid2"><div class="field"><label>담당자</label><input id="ag_contact" value="${a?esc(a.contact_name||''):''}"></div>
+      <div class="field"><label>수수료율(%)</label><input id="ag_rate" type="number" list="ratelist" value="${a&&a.commission_rate!=null?a.commission_rate:''}" placeholder="선택 또는 직접입력">
+        <datalist id="ratelist"><option value="5"></option><option value="7"></option><option value="10"></option><option value="12"></option><option value="15"></option><option value="20"></option></datalist></div></div>
+    <div class="grid2"><div class="field"><label>전화번호</label><input id="ag_phone" value="${a?esc(a.phone||''):''}"></div>
+      <div class="field"><label>이메일</label><input id="ag_email" type="email" value="${a?esc(a.email||''):''}"></div></div>
     <div class="grid2"><div class="field"><label>은행</label><input id="ag_bank" value="${esc(pm.bank||'')}"></div>
       <div class="field"><label>계좌번호</label><input id="ag_acc" value="${esc(pm.account||'')}"></div></div>
     <div class="field"><label>예금주</label><input id="ag_holder" value="${esc(pm.holder||'')}"></div>
     <div class="field"><label>메모</label><textarea id="ag_memo">${a?esc(a.memo||''):''}</textarea></div></div>
     <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="saveAgency('${id||''}')">저장</button></div>`);}
 async function saveAgency(id){const name=el('ag_name').value.trim();if(!name){alert('에이전시명을 입력하세요');return;}
+  const rv=el('ag_rate').value;
   const row={hospital_id:state.hospital_id,name,is_followkorea:el('ag_fk').checked,
+    contact_name:el('ag_contact').value||null,phone:el('ag_phone').value||null,email:el('ag_email').value||null,
+    commission_rate:rv===''?null:Number(rv),
     payout_method:{bank:el('ag_bank').value||'',account:el('ag_acc').value||'',holder:el('ag_holder').value||''},
     memo:el('ag_memo').value||null};
   let error;
