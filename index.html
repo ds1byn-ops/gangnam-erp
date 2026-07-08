@@ -139,7 +139,7 @@
         <a data-view="dashboard" class="active">대시보드</a>
         <a data-view="calendar">예약 캘린더</a>
         <a data-view="reception">접수 현황</a>
-        <a data-view="patients">환자관리</a>
+        <a data-view="patients">환자 CRM</a>
         <a data-view="quote">상담·견적</a>
         <a data-view="charts">진료차트</a>
         <a data-view="billing">수납·매출</a>
@@ -334,7 +334,7 @@ async function renderPatients(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';await loadPatients();
   const {data:ords}=await db.from('orders').select('patient_id,total,status').neq('status','cancelled');
   patAgg={};(ords||[]).forEach(o=>{const a=patAgg[o.patient_id]=patAgg[o.patient_id]||{cnt:0,sum:0};a.cnt++;a.sum+=Number(o.total||0);});
-  m.innerHTML=`<div class="page-head"><div><h2>환자관리</h2><div class="sub">전체 ${state.patients.length}명</div></div>
+  m.innerHTML=`<div class="page-head"><div><h2>환자 CRM</h2><div class="sub">전체 ${state.patients.length}명 · 클릭하면 상세 프로필</div></div>
      <button class="btn" onclick="patientModal()">+ 환자 등록</button></div>
    <div class="toolbar"><div class="srch">${MAG}<input id="patSearch" placeholder="이름/영문명 검색…" oninput="filterPatients()"></div>
      <select id="patSort" onchange="filterPatients()"><option value="name">이름순</option><option value="sum">누적 많은순</option><option value="cnt">방문 많은순</option></select></div>
@@ -354,40 +354,74 @@ function drawPatients(list){const AM=amap();const t=el('patTable');
 function filterPatients(){const q=(el('patSearch').value||'').trim().toLowerCase();const s=el('patSort')?el('patSort').value:'name';const g=id=>patAgg[id]||{cnt:0,sum:0};
   let l=state.patients.filter(p=>!q||p.name.toLowerCase().includes(q)||(p.eng_name||'').toLowerCase().includes(q));
   l.sort((a,b)=>s==='sum'?g(b.id).sum-g(a.id).sum:s==='cnt'?g(b.id).cnt-g(a.id).cnt:a.name.localeCompare(b.name));drawPatients(l);}
-function patientModal(){const aOpt='<option value="">(없음)</option>'+state.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
-  openModal(`<div class="mh">환자 등록<span onclick="closeModal()">✕</span></div><div class="mb">
-    <div class="grid2"><div class="field"><label>이름 *</label><input id="p_name"></div><div class="field"><label>국적</label><input id="p_nat" value="중국"></div></div>
-    <div class="grid2"><div class="field"><label>영문명</label><input id="p_eng" placeholder="e.g. WANG XIAOXIAO"></div><div class="field"><label>생년월일</label><input id="p_birth" type="date"></div></div>
-    <div class="grid2"><div class="field"><label>연락처</label><input id="p_phone"></div><div class="field"><label>소개 에이전시</label><select id="p_ag">${aOpt}</select></div></div>
-    <div class="field"><label>유입경로</label><input id="p_src" placeholder="예: 왕홍소개, 샤오홍슈"></div></div>
-    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="savePatient()">저장</button></div>`);}
-async function savePatient(){const name=el('p_name').value.trim();if(!name){alert('이름 입력');return;}
-  const row={hospital_id:state.hospital_id,name,eng_name:el('p_eng').value||null,birth_date:el('p_birth').value||null,nationality:el('p_nat').value||null,contact:{phone:el('p_phone').value||''},source_agency_id:el('p_ag').value||null,source_channel:el('p_src').value||null,first_visit:new Date().toISOString().slice(0,10)};
-  const {error}=await db.from('patients').insert(row);if(error){alert('저장 실패: '+error.message);return;}closeModal();renderPatients();}
+function patientModal(id){const p=id?state.patients.find(x=>x.id===id):null;const pm=(p&&p.contact)||{};
+  const aOpt='<option value="">(없음)</option>'+state.agencies.map(a=>`<option value="${a.id}" ${p&&p.source_agency_id===a.id?'selected':''}>${esc(a.name)}</option>`).join('');
+  openModal(`<div class="mh">${p?'환자 정보 수정':'환자 등록'}<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div class="grid2"><div class="field"><label>이름 *</label><input id="p_name" value="${p?esc(p.name):''}"></div><div class="field"><label>영문명</label><input id="p_eng" value="${p?esc(p.eng_name||''):''}" placeholder="WANG XIAOXIAO"></div></div>
+    <div class="grid3"><div class="field"><label>성별</label><select id="p_gender"><option value="">-</option><option ${p&&p.gender==='여'?'selected':''}>여</option><option ${p&&p.gender==='남'?'selected':''}>남</option></select></div>
+      <div class="field"><label>생년월일</label><input id="p_birth" type="date" value="${p&&p.birth_date?p.birth_date:''}"></div>
+      <div class="field"><label>국적</label><input id="p_nat" value="${p?esc(p.nationality||''):'중국'}"></div></div>
+    <div class="grid2"><div class="field"><label>연락처</label><input id="p_phone" value="${esc(pm.phone||'')}"></div><div class="field"><label>소개 에이전시</label><select id="p_ag">${aOpt}</select></div></div>
+    <div class="field"><label>유입경로</label><input id="p_src" value="${p?esc(p.source_channel||''):''}" placeholder="예: 왕홍소개, 샤오홍슈"></div>
+    <div class="field" style="border-top:1px solid var(--line);padding-top:10px;margin-bottom:2px"><label style="color:var(--brand)">의료관광 정보</label></div>
+    <div class="grid2"><div class="field"><label>여권번호</label><input id="p_pass" value="${p?esc(p.passport_no||''):''}"></div><div class="field"><label>비자유형</label><input id="p_visa" value="${p?esc(p.visa_type||''):''}" placeholder="관광/의료"></div></div>
+    <div class="grid2"><div class="field"><label>입국일</label><input id="p_arr" type="date" value="${p&&p.arrival_date?p.arrival_date:''}"></div><div class="field"><label>출국일</label><input id="p_dep" type="date" value="${p&&p.departure_date?p.departure_date:''}"></div></div>
+    <div class="grid2"><div class="field"><label>통역</label><input id="p_intp" value="${p?esc(p.interpreter||''):''}"></div><div class="field"><label>태그(쉼표 구분)</label><input id="p_tags" value="${p&&p.tags?esc(p.tags.join(', ')):''}" placeholder="VIP, 재방문"></div></div>
+    <div class="field"><label>주소</label><input id="p_addr" value="${p?esc(p.address||''):''}"></div></div>
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="savePatient('${id||''}')">저장</button></div>`,true);}
+async function savePatient(id){const name=el('p_name').value.trim();if(!name){alert('이름을 입력하세요');return;}
+  const tags=(el('p_tags').value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const row={hospital_id:state.hospital_id,name,eng_name:el('p_eng').value||null,gender:el('p_gender').value||null,birth_date:el('p_birth').value||null,nationality:el('p_nat').value||null,contact:{phone:el('p_phone').value||''},source_agency_id:el('p_ag').value||null,source_channel:el('p_src').value||null,passport_no:el('p_pass').value||null,visa_type:el('p_visa').value||null,arrival_date:el('p_arr').value||null,departure_date:el('p_dep').value||null,interpreter:el('p_intp').value||null,address:el('p_addr').value||null,tags};
+  let error;
+  if(id){({error}=await db.from('patients').update(row).eq('id',id));}
+  else{row.first_visit=new Date().toISOString().slice(0,10);({error}=await db.from('patients').insert(row));}
+  if(error){alert('저장 실패: '+error.message);return;}
+  await loadPatients();closeModal();if(id){patientDetail(id);}else{renderPatients();}}
 async function patientDetail(id){
-  openModal('<div class="mb loading">불러오는 중…</div>');const p=state.patients.find(x=>x.id===id);const AM=amap();
-  const [ord,ch]=await Promise.all([
+  openModal('<div class="mb loading">불러오는 중…</div>',true);const p=state.patients.find(x=>x.id===id);const AM=amap();
+  const [ord,ch,ap,nt]=await Promise.all([
     db.from('orders').select('*').eq('patient_id',id).order('order_date',{ascending:false}),
     db.from('charts').select('*').eq('patient_id',id).order('visit_at',{ascending:false}),
+    db.from('appointments').select('*').eq('patient_id',id).order('appointment_at',{ascending:false}).limit(20),
+    db.from('patient_notes').select('*').eq('patient_id',id).order('created_at',{ascending:false}),
   ]);
   const nonCancel=(ord.data||[]).filter(o=>o.status!=='cancelled');const vcnt=nonCancel.length;
   const spent=nonCancel.reduce((s,o)=>s+Number(o.total||0),0);
   const ordRows=(ord.data||[]).map(o=>`<tr><td>#${o.order_no}</td><td>${fdate(o.order_date)}</td><td class="right">${won(o.total)}</td><td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span></td></tr>`).join('');
   const chRows=(ch.data||[]).map(c=>`<tr><td>${fdate(c.visit_at)}</td><td>${esc(c.doctor||'-')}</td><td class="muted">${esc((c.chief_complaint||'').slice(0,26))}</td></tr>`).join('');
-  openModal(`<div class="mh">${esc(p.name)}<span onclick="closeModal()">✕</span></div><div class="mb">
-    <div class="detail-sec"><h4>기본정보 <span class="tag t-booked">${visitLabel(vcnt)}</span>${spent>=10000000?' <span class="tag" style="background:#fef3c7;color:#b45309">VIP</span>':''}</h4><div class="kv">
-      <div class="k">영문명</div><div>${esc(p.eng_name||'-')}</div>
-      <div class="k">생년월일</div><div>${p.birth_date?esc(p.birth_date):'-'}</div>
+  const apRows=(ap.data||[]).map(a=>`<tr><td>${fdt(a.appointment_at)}</td><td>${esc(a.doctor||'-')}</td><td><span class="tag t-${a.status}">${STATUS_LABEL[a.status]}</span></td></tr>`).join('');
+  const notes=(nt.data||[]);
+  const noteRows=notes.length?notes.map(n=>`<div style="border-left:3px solid var(--brand);padding:3px 0 3px 10px;margin-bottom:8px"><div style="font-size:12px;color:var(--muted)">${esc(n.category||'')} · ${new Date(n.created_at).toLocaleString('ko-KR')}${n.author?' · '+esc(n.author):''}</div><div style="white-space:pre-wrap">${esc(n.note)}</div></div>`).join(''):'<div class="muted">상담 메모가 없습니다.</div>';
+  const tags=(p.tags||[]).map(tg=>`<span class="tag" style="background:#e0f2f1;color:#0f766e;margin-right:4px">${esc(tg)}</span>`).join('');
+  openModal(`<div class="mh">${esc(p.name)} <span class="muted" style="font-weight:400;font-size:13px">${esc(p.eng_name||'')}</span>${spent>=10000000?' <span class="tag" style="background:#fef3c7;color:#b45309">VIP</span>':''}<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div style="margin-bottom:10px">${tags||'<span class="muted" style="font-size:12px">태그 없음</span>'}</div>
+    <div class="detail-sec"><h4>기본정보 <span class="tag t-booked">${visitLabel(vcnt)}</span></h4><div class="kv">
+      <div class="k">성별/생년</div><div>${esc(p.gender||'-')} / ${p.birth_date?esc(p.birth_date):'-'}</div>
       <div class="k">국적</div><div>${esc(p.nationality||'-')}</div>
       <div class="k">연락처</div><div>${esc((p.contact&&p.contact.phone)||'-')}</div>
-      <div class="k">소개 에이전시</div><div>${esc(AM[p.source_agency_id]||'-')}</div>
-      <div class="k">방문 회차</div><div>${visitLabel(vcnt)} (누적 ${vcnt}건)</div>
-      <div class="k">누적 시술</div><div><b>${won(spent)}</b> <span class="cny">(${cny(spent)})</span>${spent>=10000000?' · <b style="color:#b45309">VIP</b>':''}</div></div></div>
+      <div class="k">주소</div><div>${esc(p.address||'-')}</div>
+      <div class="k">소개 경로</div><div>${esc(AM[p.source_agency_id]||'-')}${p.source_channel?' · '+esc(p.source_channel):''}</div>
+      <div class="k">누적 시술</div><div><b>${won(spent)}</b> <span class="cny">(${cny(spent)})</span></div></div></div>
+    <div class="detail-sec"><h4>의료관광 정보</h4><div class="kv">
+      <div class="k">여권번호</div><div>${esc(p.passport_no||'-')}</div>
+      <div class="k">비자유형</div><div>${esc(p.visa_type||'-')}</div>
+      <div class="k">입국/출국</div><div>${p.arrival_date?esc(p.arrival_date):'-'} ~ ${p.departure_date?esc(p.departure_date):'-'}</div>
+      <div class="k">통역</div><div>${esc(p.interpreter||'-')}</div></div></div>
+    <div class="detail-sec"><h4>상담 메모 (${notes.length})</h4>
+      <div style="display:flex;gap:6px;margin-bottom:10px"><select id="pn_cat" style="width:84px;padding:8px;border:1px solid var(--line);border-radius:8px"><option>상담</option><option>전화</option><option>방문</option><option>기타</option></select>
+        <input id="pn_note" placeholder="메모 입력 후 추가" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px" onkeydown="if(event.key==='Enter')addNote('${id}')">
+        <button class="btn sm" onclick="addNote('${id}')">추가</button></div>
+      ${noteRows}</div>
     <div class="detail-sec"><h4>상담·견적 (${(ord.data||[]).length})</h4>${(ord.data||[]).length?`<table>${ordRows}</table>`:'<div class="muted">없음</div>'}</div>
+    <div class="detail-sec"><h4>예약 (${(ap.data||[]).length})</h4>${(ap.data||[]).length?`<table>${apRows}</table>`:'<div class="muted">없음</div>'}</div>
     <div class="detail-sec"><h4>진료차트 (${(ch.data||[]).length})</h4>${(ch.data||[]).length?`<table>${chRows}</table>`:'<div class="muted">없음</div>'}</div></div>
     <div class="mf"><button class="btn ghost" onclick="closeModal()">닫기</button>
+      <button class="btn ghost" onclick="patientModal('${id}')">정보 수정</button>
       <button class="btn" onclick="closeModal();startQuote('${id}')">견적 작성</button></div>`);
 }
+async function addNote(id){const note=(el('pn_note').value||'').trim();if(!note)return;
+  const {error}=await db.from('patient_notes').insert({hospital_id:state.hospital_id,patient_id:id,category:el('pn_cat').value,note,author:state.staff?state.staff.name:null});
+  if(error){alert('저장 실패: '+error.message);return;}patientDetail(id);}
 
 /* ============ QUOTE / 상담 견적 ============ */
 let cart=[];let quoteCtx={patient_id:'',agency_id:'',doctor:'',discount_kind:'none',discount_value:0,discount_code:'',memo:''};
