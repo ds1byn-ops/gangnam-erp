@@ -199,7 +199,7 @@
 const SB_URL="https://fhuninzvrkzodhvwkxvo.supabase.co";
 const SB_KEY="sb_publishable_DqrHtdkvc-0VnN511-QdnQ_RuC-fbJ4";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.4.0 · 2026-07-08';
+const APP_VERSION='v1.4.1 · 2026-07-08';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -1064,13 +1064,18 @@ async function renderStats(){
 /* ============ 감사 로그 ============ */
 async function logAudit(action,detail){try{await db.from('audit_logs').insert({hospital_id:state.hospital_id,staff_id:state.staff?state.staff.id:null,staff_name:state.staff?state.staff.name:null,menu:curView,action:action,detail:detail?String(detail):null,ip:state.ip||null});}catch(e){}}
 function menuLabel(k){const x=(typeof MENUS!=='undefined')?MENUS.find(y=>y.k===k):null;return x?x.label:(k||'-');}
+let alFrom='',alTo='';
 async function renderAudit(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
-  const {data}=await db.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(500);
+  const useR=!!(alFrom&&alTo);
+  let q=db.from('audit_logs').select('*').order('created_at',{ascending:false});
+  q=useR?q.gte('created_at',alFrom).lte('created_at',alTo+'T23:59:59').limit(5000):q.limit(500);
+  const {data}=await q;
   state._audit=data||[];
-  m.innerHTML=`<div class="page-head"><div><h2>관리자 로그</h2><div class="sub">직원 활동 감사 로그 · 누가·메뉴·IP·시각·행위 (최근 500건)</div></div>
-     <button class="btn ghost" onclick="exportAuditCSV()">CSV</button></div>
-   <div class="toolbar"><div class="srch">${MAG}<input id="alSrch" placeholder="직원/행위/메뉴 검색" oninput="filterAudit()"></div></div>
+  m.innerHTML=`<div class="page-head"><div><h2>관리자 로그</h2><div class="sub">직원 활동 감사 로그 · 누가·메뉴·IP·시각·행위 · ${useR?(alFrom+' ~ '+alTo):'최근 500건'} · 총 ${(data||[]).length}건</div></div>
+     <button class="btn ghost" onclick="exportAuditCSV()">CSV 내보내기</button></div>
+   <div class="toolbar"><div class="srch">${MAG}<input id="alSrch" placeholder="직원/행위/메뉴 검색" oninput="filterAudit()"></div>
+     <input type="date" value="${alFrom}" onchange="alFrom=this.value;renderAudit()" title="시작일" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px"><span class="muted">~</span><input type="date" value="${alTo}" onchange="alTo=this.value;renderAudit()" title="종료일" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px">${useR?'<button class="btn ghost sm" onclick="alFrom=&quot;&quot;;alTo=&quot;&quot;;renderAudit()">최근 500건</button>':''}</div>
    <div class="panel"><div class="pb" id="alTable"></div></div>`;
   drawAudit(state._audit);
 }
