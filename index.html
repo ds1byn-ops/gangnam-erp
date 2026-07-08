@@ -211,7 +211,10 @@ async function boot(){
   el('hospName').textContent=state.hospital_name;
   el('whoName').textContent=staff.name;
   el('whoRole').textContent=({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[staff.role]||staff.role;
-  if(staff.role!=='owner')document.querySelectorAll('.owner-only').forEach(e=>e.style.display='none');
+  const _allm=['dashboard','calendar','reception','patients','quote','charts','billing','stats','settlement','agencies','packages','referrers','refsettle','staff','settings'];
+  let _allowed=(staff.role==='owner')?_allm:((Array.isArray(staff.menu_perms)&&staff.menu_perms.length)?staff.menu_perms.slice():roleMenus(staff.role));
+  if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings');
+  document.querySelectorAll('#nav a').forEach(a=>{a.style.display=_allowed.includes(a.dataset.view)?'':'none';});
   el('login').style.display='none';el('app').style.display='block';
   await loadPatients();navTo('dashboard');
 }
@@ -993,26 +996,47 @@ async function renderStats(){
 
 /* ============ 직원 계정·권한 ============ */
 const ROLE_LABEL={owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'};
+const MENUS=[{k:'dashboard',label:'대시보드'},{k:'calendar',label:'예약 캘린더'},{k:'reception',label:'접수 현황'},{k:'patients',label:'환자 CRM'},{k:'quote',label:'상담·견적'},{k:'charts',label:'진료차트'},{k:'billing',label:'수납·매출'},{k:'stats',label:'통계'},{k:'settlement',label:'에이전시 정산'},{k:'agencies',label:'에이전시 관리'},{k:'packages',label:'패키지 관리'},{k:'referrers',label:'왕홍·소개자'},{k:'refsettle',label:'소개자 정산'},{k:'staff',label:'직원 관리'},{k:'settings',label:'병원 설정'}];
+const ROLE_DESC='원장: 모든 메뉴·병원설정·직원관리 접근(전권). 매니저: 직원관리·병원설정 제외 전체 접근·편집(정산·통계 포함). 데스크: 접수·예약·환자·상담견적·진료차트·수납 등 일선 업무. 열람: 조회 전용(데이터 편집 불가).';
+function roleMenus(role){const all=MENUS.map(x=>x.k);if(role==='owner')return all;const noAdmin=all.filter(k=>k!=='staff'&&k!=='settings');if(role==='desk')return ['dashboard','calendar','reception','patients','quote','charts','billing'];if(role==='viewer')return ['dashboard','stats','patients','billing'];return noAdmin;}
+function menuCheckboxes(sel){return MENUS.filter(x=>x.k!=='staff'&&x.k!=='settings').map(x=>`<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:13px"><input type="checkbox" value="${x.k}" ${sel.includes(x.k)?'checked':''}> ${x.label}</label>`).join('');}
+function permModal(id){const s=(state._staff||[]).find(x=>x.id===id);if(!s)return;
+  const sel=(Array.isArray(s.menu_perms)&&s.menu_perms.length)?s.menu_perms:roleMenus(s.role);
+  openModal(`<div class="mh">${esc(s.name)} · 권한 설정<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div class="field"><label>권한(역할)</label><select id="pm_role">${Object.entries(ROLE_LABEL).map(([k,v])=>`<option value="${k}" ${s.role===k?'selected':''}>${v}</option>`).join('')}</select></div>
+    <div class="field"><label>노출 메뉴 (체크한 메뉴만 표시)</label><div id="pm_menus">${menuCheckboxes(sel)}</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">아무것도 선택하지 않으면 역할 기본값이 적용됩니다. (직원관리·병원설정은 원장 전용)</div></div></div>
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="savePerm('${id}')">저장</button></div>`,true);}
+async function savePerm(id){const role=el('pm_role').value;const menus=[...document.querySelectorAll('#pm_menus input:checked')].map(i=>i.value);
+  const {error}=await db.from('staff_accounts').update({role,menu_perms:menus.length?menus:null,updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){alert('저장 실패: '+error.message);return;}closeModal();renderStaff();}
 async function renderStaff(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
-  const {data}=await db.from('staff_accounts').select('*').order('created_at');
+  const {data}=await db.from('staff_accounts').select('*').order('created_at');state._staff=data||[];
   const rows=(data||[]).map(s=>`<tr>
     <td><b>${esc(s.name)}</b>${s.id===state.staff.id?' <span class="tag t-confirmed">나</span>':''}</td>
     <td><select onchange="setStaffRole('${s.id}',this.value)" ${s.id===state.staff.id?'disabled':''} style="padding:6px;border:1px solid var(--line);border-radius:7px">${Object.entries(ROLE_LABEL).map(([k,v])=>`<option value="${k}" ${s.role===k?'selected':''}>${v}</option>`).join('')}</select></td>
     <td>${s.is_active?'<span class="tag t-done">활성</span>':'<span class="tag t-cancelled">비활성</span>'}</td>
-    <td class="right">${s.id===state.staff.id?'':`<button class="btn sm ghost" onclick="toggleStaff('${s.id}',${!s.is_active})">${s.is_active?'비활성화':'활성화'}</button>`}</td></tr>`).join('');
+    <td class="right"><button class="btn sm ghost" onclick="permModal('${s.id}')">메뉴권한</button> ${s.id===state.staff.id?'':`<button class="btn sm ghost" onclick="toggleStaff('${s.id}',${!s.is_active})">${s.is_active?'비활성화':'활성화'}</button>`}</td></tr>`).join('');
   m.innerHTML=`<div class="page-head"><div><h2>직원 관리</h2><div class="sub">권한: 원장 / 매니저 / 데스크 / 열람</div></div>
      <button class="btn" onclick="staffModal()">+ 직원 추가</button></div>
    <div class="panel"><div class="pb"><table><thead><tr><th>이름</th><th>권한</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
-   <div class="muted" style="font-size:12px">※ 직원 추가 시 이메일/비밀번호 로그인 계정이 생성됩니다. 권한 변경은 즉시 적용되며, 비활성 계정은 로그인해도 접근이 제한됩니다.</div>`;
+   <div class="panel"><div class="ph">권한 안내</div><div class="pb" style="padding:12px 16px;font-size:13px;line-height:1.9;color:var(--muted)">
+     <b style="color:var(--ink)">원장</b> — 모든 메뉴·병원설정·직원관리 (전권)<br>
+     <b style="color:var(--ink)">매니저</b> — 직원관리·병원설정 제외 전체 접근·편집 (정산·통계 포함)<br>
+     <b style="color:var(--ink)">데스크</b> — 접수·예약·환자·상담견적·진료차트·수납 등 일선 업무<br>
+     <b style="color:var(--ink)">열람</b> — 조회 전용 (데이터 편집 불가)<br>
+     <span style="font-size:12px">※ '메뉴권한' 버튼에서 직원별로 노출 메뉴를 직접 체크해 지정할 수 있습니다(미선택 시 역할 기본값). 직원 추가 시 이메일/비밀번호 로그인 계정이 생성됩니다.</span></div></div>`;
 }
 function staffModal(){
   openModal(`<div class="mh">직원 추가<span onclick="closeModal()">✕</span></div><div class="mb">
     <div class="field"><label>이름 *</label><input id="s_name"></div>
     <div class="field"><label>로그인 이메일 *</label><input id="s_email" type="email" placeholder="staff@gangnam.clinic"></div>
     <div class="field"><label>초기 비밀번호 * (6자 이상)</label><input id="s_pw" type="text" value="pulse1234"></div>
-    <div class="field"><label>권한</label><select id="s_role"><option value="manager">매니저</option><option value="desk" selected>데스크</option><option value="viewer">열람</option><option value="owner">원장</option></select></div></div>
-    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="saveStaff()">계정 생성</button></div>`);
+    <div class="field"><label>권한</label><select id="s_role"><option value="manager">매니저</option><option value="desk" selected>데스크</option><option value="viewer">열람</option><option value="owner">원장</option></select></div>
+    <div class="field"><label>노출 메뉴 (선택 안 하면 역할 기본값)</label><div id="s_menus">${menuCheckboxes([])}</div></div>
+    <div class="muted" style="font-size:12px">${ROLE_DESC}</div></div>
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="saveStaff()">계정 생성</button></div>`,true);
 }
 async function saveStaff(){
   const name=el('s_name').value.trim(),email=el('s_email').value.trim(),password=el('s_pw').value,role=el('s_role').value;
@@ -1020,6 +1044,8 @@ async function saveStaff(){
   const {data,error}=await db.functions.invoke('create-staff',{body:{name,email,password,role}});
   if(error){let msg=error.message||error;try{const c=await error.context.json();if(c&&c.error)msg=c.error;}catch(e){}alert('생성 실패: '+msg);return;}
   if(data&&data.error){alert('생성 실패: '+data.error);return;}
+  const menus=[...document.querySelectorAll('#s_menus input:checked')].map(i=>i.value);
+  if(menus.length&&data&&data.id){await db.from('staff_accounts').update({menu_perms:menus}).eq('id',data.id);}
   closeModal();renderStaff();alert('직원 계정이 생성되었습니다. ('+email+')');
 }
 async function setStaffRole(id,role){const {error}=await db.from('staff_accounts').update({role,updated_at:new Date().toISOString()}).eq('id',id);if(error)alert('실패: '+error.message);renderStaff();}
