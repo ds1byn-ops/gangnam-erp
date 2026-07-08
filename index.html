@@ -95,7 +95,8 @@
   .pl-row{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer}
   .pl-row:hover{background:#f0fdfa}
   .pl-row .nm{font-weight:600}.pl-row .zh{color:var(--muted);font-size:12px}
-  .cart-item{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line)}
+  .cart-item{display:grid;grid-template-columns:1fr auto auto auto auto;gap:8px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line)}
+  .ldisc{font-size:12px;color:var(--muted);white-space:nowrap}.ldisc input{width:46px;padding:4px;border:1px solid var(--line);border-radius:6px;text-align:right;margin-right:2px}
   .qty{display:flex;align-items:center;gap:6px}
   .qty button{width:24px;height:24px;border:1px solid var(--line);background:#fff;border-radius:6px;font-weight:700}
   .totrow{display:flex;justify-content:space-between;padding:6px 12px;font-size:14px}
@@ -140,6 +141,7 @@
         <a data-view="charts"><span class="ico">✎</span> 진료차트</a>
         <a data-view="billing"><span class="ico">₩</span> 수납·매출</a>
         <a data-view="settlement"><span class="ico">🤝</span> 에이전시 정산</a>
+        <a data-view="agencies"><span class="ico">🏢</span> 에이전시 관리</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
         <button onclick="doLogout()">로그아웃</button></div>
@@ -202,7 +204,7 @@ async function loadPatients(){const {data}=await db.from('patients').select('*')
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies}[v])();}
 function openModal(html,lg){el('modal').className='modal'+(lg?' lg':'');el('modal').innerHTML=html;el('modalBg').style.display='flex';}
 function closeModal(){el('modalBg').style.display='none';}
 el('modalBg').addEventListener('click',e=>{if(e.target===el('modalBg'))closeModal();});
@@ -434,16 +436,19 @@ function pkgView(id){const p=state.packages.find(x=>x.id===id);if(!p)return;
     <div class="mf"><button class="btn ghost" onclick="closeModal()">닫기</button>
       <button class="btn" onclick="closeModal();addPkg('${p.id}')">견적에 담기</button></div>`);}
 function chQty(i,d){cart[i].qty+=d;if(cart[i].qty<=0)cart.splice(i,1);drawCart();}
+function lineNet(c){return Math.round(c.unit_price*c.qty*(1-(c.dpct||0)/100));}
+function setDisc(i,v){cart[i].dpct=Math.max(0,Math.min(100,Number(v)||0));var e=el('lnet_'+i);if(e)e.textContent=won(lineNet(cart[i]));calcQuote();}
 function drawCart(){
   el('q_cart').innerHTML=cart.length?cart.map((c,i)=>`<div class="cart-item">
      <div><b>${esc(c.name)}</b><div class="cny">${won(c.unit_price)}</div></div>
      <div class="qty"><button onclick="chQty(${i},-1)">−</button><b>${c.qty}</b><button onclick="chQty(${i},1)">+</button></div>
-     <div class="right"><b>${won(c.unit_price*c.qty)}</b></div>
+     <div class="ldisc"><input type="number" min="0" max="100" value="${c.dpct||0}" oninput="setDisc(${i},this.value)" title="이 시술 할인%">%</div>
+     <div class="right"><b id="lnet_${i}">${won(lineNet(c))}</b></div>
      <button class="btn sm danger" onclick="chQty(${i},-99)">×</button></div>`).join(''):'<div class="empty" style="padding:20px">시술을 담아주세요</div>';
   calcQuote();
 }
 function calcQuote(){
-  const sub=cart.reduce((s,c)=>s+c.unit_price*c.qty,0);
+  const sub=cart.reduce((s,c)=>s+lineNet(c),0);
   const kind=el('q_dkind').value;let val=Number(el('q_dval').value||0);let disc=0;
   if(kind==='percent')disc=Math.round(sub*Math.min(val,100)/100);else if(kind==='fixed')disc=Math.min(val,sub);
   const total=sub-disc;
@@ -467,7 +472,7 @@ async function saveQuote(){
     pay_status:'unpaid',paid_amount:0,memo:el('q_memo').value||null};
   const {data:o,error}=await db.from('orders').insert(row).select().single();
   if(error){alert('저장 실패: '+error.message);return;}
-  const items=cart.map(c=>({hospital_id:state.hospital_id,order_id:o.id,procedure_id:c.procedure_id,name:c.name,unit_price:c.unit_price,qty:c.qty,amount:c.unit_price*c.qty}));
+  const items=cart.map(c=>({hospital_id:state.hospital_id,order_id:o.id,procedure_id:c.procedure_id,name:c.name,unit_price:c.unit_price,qty:c.qty,line_discount:(c.unit_price*c.qty-lineNet(c)),amount:lineNet(c)}));
   const {error:e2}=await db.from('order_items').insert(items);
   if(e2){alert('항목 저장 실패: '+e2.message);return;}
   alert(`견적 #${o.order_no} 저장 완료 · 합계 ${won(o.total)}`);navTo('billing');
@@ -533,7 +538,7 @@ async function orderDetail(id){
   openModal('<div class="mb loading">불러오는 중…</div>');
   const [{data:o},{data:items}]=await Promise.all([db.from('orders').select('*').eq('id',id).single(),db.from('order_items').select('*').eq('order_id',id)]);
   const p=state.patients.find(x=>x.id===o.patient_id),AM=amap();
-  const it=(items||[]).map(i=>`<tr><td>${esc(i.name)}</td><td class="right">${won(i.unit_price)}</td><td class="right">${i.qty}</td><td class="right"><b>${won(i.amount)}</b></td></tr>`).join('');
+  const it=(items||[]).map(i=>`<tr><td>${esc(i.name)}${i.line_discount>0?' (-'+won(i.line_discount)+')':''}</td><td class="right">${won(i.unit_price)}</td><td class="right">${i.qty}</td><td class="right"><b>${won(i.amount)}</b></td></tr>`).join('');
   openModal(`<div class="mh">견적 #${o.order_no}<span onclick="closeModal()">✕</span></div><div class="mb">
     <div class="kv" style="margin-bottom:12px"><div class="k">환자</div><div>${esc(p?p.name:'-')}</div><div class="k">에이전시</div><div>${esc(AM[o.agency_id]||'-')}</div>
       <div class="k">담당의</div><div>${esc(o.doctor||'-')}</div><div class="k">일자</div><div>${fdt(o.order_date)}</div></div>
@@ -566,8 +571,8 @@ async function renderSettlement(){
       <td class="right">${a.cnt}건</td><td class="right">${won(a.rev)}</td>
       <td class="right"><input type="number" value="${rate}" id="rate_${ag.id}" style="width:60px;padding:5px;border:1px solid var(--line);border-radius:6px;text-align:right" oninput="recomm('${ag.id}',${a.rev})">%</td>
       <td class="right"><b id="comm_${ag.id}">${won(comm)}</b></td>
-      <td>${s?`<span class="tag t-${s.status==='paid'?'paid':'unpaid'}">${s.status==='paid'?'지급완료':'정산생성'}</span>`:'<span class="muted">미정산</span>'}</td>
-      <td class="right">${s?(s.status!=='paid'?`<button class="btn sm ok" onclick="paySettle('${s.id}')">지급완료</button>`:''):`<button class="btn sm" onclick="makeSettle('${ag.id}',${a.rev})">정산 생성</button>`}</td></tr>`;}).join('');
+      <td>${!s?'<span class="muted">미정산</span>':(s.status==='paid'?'<span class="tag t-paid">지급완료</span>':(s.tax_issued?'<span class="tag t-confirmed">세금계산서 발행</span>':'<span class="tag t-unpaid">정산생성</span>'))}</td>
+      <td class="right">${!s?`<button class="btn sm" onclick="makeSettle('${ag.id}',${a.rev})">정산 생성</button>`:(s.status==='paid'?'':(s.tax_issued?'':`<button class="btn sm ghost" onclick="issueTax('${s.id}')">세금계산서</button> `)+`<button class="btn sm ok" onclick="paySettle('${s.id}')">지급완료</button>`)}</td></tr>`;}).join('');
   const totRev=Object.values(agg).reduce((s,a)=>s+a.rev,0);
   m.innerHTML=`<div class="page-head"><div><h2>에이전시 정산</h2><div class="sub">에이전시별 매출·수수료 · 소개 에이전시 기준</div></div>
      <input type="month" value="${setMonth}" onchange="setMonth=this.value;renderSettlement()" style="padding:8px 12px;border:1px solid var(--line);border-radius:9px"></div>
@@ -584,9 +589,44 @@ function recomm(agId,rev){const r=Number(el('rate_'+agId).value||0);el('comm_'+a
 async function makeSettle(agId,rev){const r=Number(el('rate_'+agId).value||0);const comm=Math.round(rev*r/100);
   const {error}=await db.from('settlements').insert({hospital_id:state.hospital_id,agency_id:agId,period:setMonth,total_amount:comm,status:'unpaid'});
   if(error){alert('실패: '+error.message);return;}renderSettlement();}
+async function issueTax(id){await db.from('settlements').update({tax_issued:true,tax_issued_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderSettlement();}
 async function paySettle(id){await db.from('settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);renderSettlement();}
 
-boot(); /* build: packages+quote+calendar+settlement */
+/* ============ AGENCIES / 에이전시 등록 ============ */
+async function renderAgencies(){
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const {data}=await db.from('agencies').select('*').order('name');state.agencies=data||[];
+  const rows=state.agencies.map(a=>{const pm=a.payout_method||{};return `<tr>
+    <td><b>${esc(a.name)}</b>${a.is_followkorea?' <span class="tag t-confirmed">FK</span>':''}</td>
+    <td>${esc(pm.bank||'-')} ${esc(pm.account||'')}</td>
+    <td>${esc(pm.holder||'-')}</td>
+    <td class="muted">${esc(a.memo||'')}</td>
+    <td class="right"><button class="btn sm ghost" onclick="agencyModal('${a.id}')">수정</button></td></tr>`;}).join('');
+  m.innerHTML=`<div class="page-head"><div><h2>에이전시 관리</h2><div class="sub">전체 ${state.agencies.length}곳</div></div>
+     <button class="btn" onclick="agencyModal()">+ 에이전시 등록</button></div>
+   <div class="panel"><div class="pb">${state.agencies.length?`<table><thead><tr><th>이름</th><th>계좌</th><th>예금주</th><th>메모</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">등록된 에이전시가 없습니다.</div>'}</div></div>`;
+}
+function agencyModal(id){const a=id?state.agencies.find(x=>x.id===id):null;const pm=(a&&a.payout_method)||{};
+  openModal(`<div class="mh">${a?'에이전시 수정':'에이전시 등록'}<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div class="field"><label>에이전시명 *</label><input id="ag_name" value="${a?esc(a.name):''}"></div>
+    <div class="field"><label><input type="checkbox" id="ag_fk" ${a&&a.is_followkorea?'checked':''}> 팔로우코리아(FK) 계열 · 기본 수수료 15%</label></div>
+    <div class="grid2"><div class="field"><label>은행</label><input id="ag_bank" value="${esc(pm.bank||'')}"></div>
+      <div class="field"><label>계좌번호</label><input id="ag_acc" value="${esc(pm.account||'')}"></div></div>
+    <div class="field"><label>예금주</label><input id="ag_holder" value="${esc(pm.holder||'')}"></div>
+    <div class="field"><label>메모</label><textarea id="ag_memo">${a?esc(a.memo||''):''}</textarea></div></div>
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="saveAgency('${id||''}')">저장</button></div>`);}
+async function saveAgency(id){const name=el('ag_name').value.trim();if(!name){alert('에이전시명을 입력하세요');return;}
+  const row={hospital_id:state.hospital_id,name,is_followkorea:el('ag_fk').checked,
+    payout_method:{bank:el('ag_bank').value||'',account:el('ag_acc').value||'',holder:el('ag_holder').value||''},
+    memo:el('ag_memo').value||null};
+  let error;
+  if(id){({error}=await db.from('agencies').update(row).eq('id',id));}
+  else{({error}=await db.from('agencies').insert(row));}
+  if(error){alert('저장 실패: '+error.message);return;}
+  const {data}=await db.from('agencies').select('*').order('name');state.agencies=data||[];
+  closeModal();renderAgencies();}
+
+boot(); /* build: v3 lineDiscount+taxInvoice+agencyMgmt */
 </script>
 </body>
 </html>
