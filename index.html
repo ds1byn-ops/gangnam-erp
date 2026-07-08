@@ -133,18 +133,18 @@
     <aside class="side">
       <div class="brand" style="cursor:pointer" onclick="location.reload()" title="새로고침">강남클리닉<small id="hospName">ERP</small></div>
       <nav class="nav" id="nav">
-        <a data-view="dashboard" class="active"><span class="ico">▤</span> 대시보드</a>
-        <a data-view="calendar"><span class="ico">📅</span> 예약 캘린더</a>
-        <a data-view="reception"><span class="ico">◷</span> 접수 현황</a>
-        <a data-view="patients"><span class="ico">☺</span> 환자관리</a>
-        <a data-view="quote"><span class="ico">🧾</span> 상담·견적</a>
-        <a data-view="charts"><span class="ico">✎</span> 진료차트</a>
-        <a data-view="billing"><span class="ico">₩</span> 수납·매출</a>
-        <a data-view="settlement"><span class="ico">🤝</span> 에이전시 정산</a>
-        <a data-view="agencies"><span class="ico">🏢</span> 에이전시 관리</a>
-        <a data-view="packages"><span class="ico">📦</span> 패키지 관리</a>
-        <a data-view="referrers"><span class="ico">🌟</span> 왕홍·소개자</a>
-        <a data-view="refsettle"><span class="ico">💸</span> 소개자 정산</a>
+        <a data-view="dashboard" class="active">대시보드</a>
+        <a data-view="calendar">예약 캘린더</a>
+        <a data-view="reception">접수 현황</a>
+        <a data-view="patients">환자관리</a>
+        <a data-view="quote">상담·견적</a>
+        <a data-view="charts">진료차트</a>
+        <a data-view="billing">수납·매출</a>
+        <a data-view="settlement">에이전시 정산</a>
+        <a data-view="agencies">에이전시 관리</a>
+        <a data-view="packages">패키지 관리</a>
+        <a data-view="referrers">왕홍·소개자</a>
+        <a data-view="refsettle">소개자 정산</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
         <button onclick="doLogout()">로그아웃</button></div>
@@ -418,7 +418,7 @@ function renderQuote(){
          <div class="muted" id="q_codemsg" style="font-size:12px;margin-top:4px"></div>
        </div>
        <div id="q_tot" style="padding:4px 8px 8px"></div>
-       <div style="padding:0 8px 8px;display:flex;gap:8px"><button class="btn" style="flex:1" onclick="saveQuote()">견적 저장</button><button class="btn ghost" style="flex:1" onclick="printQuote()">🖨 견적서 출력</button></div>
+       <div style="padding:0 8px 8px;display:flex;gap:8px"><button class="btn" style="flex:1" onclick="saveQuote()">견적 저장</button><button class="btn ghost" style="flex:1" onclick="printQuote()">견적서 출력</button></div>
      </div></div>
    </div>`;
   drawPrice();drawCart();
