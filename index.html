@@ -191,6 +191,8 @@
         <a data-view="staff" class="owner-only">직원 관리</a>
         <a data-view="settings" class="owner-only">병원 설정</a>
         <a data-view="audit" class="owner-only">관리자 로그</a>
+        <div class="grp platform-only" style="display:none">플랫폼</div>
+        <a data-view="onboard" class="platform-only" style="display:none">🏥 병원 온보딩</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
         <button onclick="doLogout()">로그아웃</button><div id="appVer" style="margin-top:10px;font-size:11px;color:#475569;text-align:center"></div></div>
@@ -260,6 +262,8 @@ async function boot(){
   if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings'&&k!=='audit');
   document.querySelectorAll('#nav a').forEach(a=>{a.style.display=_allowed.includes(a.dataset.view)?'':'none';});
   if(staff.role!=='owner')document.querySelectorAll('.nav .grp.owner-only').forEach(e=>e.style.display='none');
+  try{ const {data:pa}=await db.from('platform_admins').select('id').eq('id',user.id).maybeSingle(); state.isPlatformAdmin=!!pa; }catch(e){ state.isPlatformAdmin=false; }
+  document.querySelectorAll('.platform-only').forEach(a=>{a.style.display=state.isPlatformAdmin?'':'none';});
   el('login').style.display='none';el('app').style.display='block';
   await loadPatients();navTo('dashboard');setTimeout(()=>logAudit('로그인'),800);
 }
@@ -267,7 +271,51 @@ async function loadPatients(){const {data}=await db.from('patients').select('*')
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,onboard:renderOnboard}[v])();}
+
+/* ============ 병원 온보딩 (platform admin) ============ */
+function renderOnboard(){
+  const m=el('main');
+  if(!state.isPlatformAdmin){ m.innerHTML='<div class="page-head"><div><h2>접근 불가</h2></div></div><div class="muted" style="padding:20px">플랫폼 관리자만 접근할 수 있습니다.</div>'; return; }
+  const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
+  const fld=(label,inner)=>'<div style="margin-bottom:11px"><label style="display:block;font-size:12px;color:#475569;font-weight:600;margin-bottom:4px">'+label+'</label>'+inner+'</div>';
+  m.innerHTML='<div class="page-head"><div><h2>🏥 병원 온보딩</h2><div class="sub">새 병원 + 원장 계정을 한 번에 생성 (플랫폼 관리자 전용). 생성된 원장 계정으로 로그인하면 해당 병원으로 들어갑니다.</div></div></div>'
+    +'<div class="panel" style="max-width:560px"><div class="pb" style="padding:16px">'
+    +fld('병원명 *','<input id="ob_name" '+inp+' placeholder="예: 서울다운의원">')
+    +fld('사업자등록번호','<input id="ob_biz" '+inp+' placeholder="000-00-00000">')
+    +fld('원장 이메일(로그인 ID) *','<input id="ob_email" type="email" '+inp+' placeholder="owner@hospital.clinic">')
+    +fld('원장 비밀번호 * &nbsp;<button type="button" class="btn ghost sm" onclick="obGenPw()">자동생성</button>','<input id="ob_pw" '+inp+' placeholder="8자 이상">')
+    +fld('원장 이름','<input id="ob_owner" '+inp+' placeholder="비우면 「병원명 원장」">')
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +fld('플랜','<select id="ob_plan" '+inp+'><option value="basic">basic</option><option value="pro">pro</option></select>')
+    +fld('상태','<select id="ob_status" '+inp+'><option value="trial">trial(체험)</option><option value="active">active(정식)</option><option value="paused">paused(중지)</option></select>')
+    +'</div>'
+    +'<button class="btn" id="ob_btn" onclick="submitOnboard()" style="width:100%;margin-top:6px">병원 + 원장계정 생성</button>'
+    +'<div id="ob_result" style="margin-top:14px"></div>'
+    +'</div></div>';
+}
+function obGenPw(){ const cs='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$'; let p=''; const a=new Uint32Array(14); crypto.getRandomValues(a); for(let i=0;i<14;i++)p+=cs[a[i]%cs.length]; const e=el('ob_pw'); if(e)e.value=p; }
+async function submitOnboard(){
+  const btn=el('ob_btn');
+  const name=el('ob_name').value.trim(), email=el('ob_email').value.trim().toLowerCase(), pw=el('ob_pw').value;
+  if(!name||!email||!pw){ alert('병원명·원장 이메일·비밀번호는 필수입니다.'); return; }
+  if(pw.length<8){ alert('비밀번호는 8자 이상이어야 합니다.'); return; }
+  btn.disabled=true; const old=btn.textContent; btn.textContent='생성 중…';
+  try{
+    const { data, error } = await db.functions.invoke('onboard-hospital', { body:{
+      hospital_name:name, biz_no:el('ob_biz').value.trim(), owner_email:email, owner_password:pw,
+      owner_name:el('ob_owner').value.trim(), plan_tier:el('ob_plan').value, status:el('ob_status').value } });
+    if(error){ let msg=error.message||String(error); try{ const ctx=await error.context.json(); if(ctx&&ctx.error)msg=ctx.error; }catch(_){} throw new Error(msg); }
+    if(data&&data.error) throw new Error(data.error);
+    el('ob_result').innerHTML='<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;font-size:13px;line-height:1.7">'
+      +'<b style="color:#16a34a">✅ 생성 완료</b><br>병원: <b>'+esc(data.hospital_name)+'</b> ('+esc(data.plan_tier)+' / '+esc(data.status)+')<br>'
+      +'원장 로그인: <b>'+esc(data.owner_email)+'</b><br>비밀번호: <code style="background:#e2e8f0;padding:2px 6px;border-radius:5px">'+esc(pw)+'</code><br>'
+      +'<span class="muted" style="font-size:11px">이 계정으로 로그인하면 새 병원으로 들어갑니다. 원장에게 전달 후 비밀번호 변경을 권장하세요.</span></div>';
+    logAudit('병원 온보딩', name+' / '+email);
+    ['ob_name','ob_biz','ob_email','ob_pw','ob_owner'].forEach(id=>{const e=el(id);if(e)e.value='';});
+  }catch(e){ el('ob_result').innerHTML='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:12px;color:#dc2626;font-size:13px">❌ '+esc(e.message||String(e))+'</div>'; }
+  btn.disabled=false; btn.textContent=old;
+}
 function openModal(html,lg){el('modal').className='modal'+(lg?' lg':'');el('modal').innerHTML=html;el('modalBg').style.display='flex';}
 function closeModal(){el('modalBg').style.display='none';}
 el('modalBg').addEventListener('click',e=>{if(e.target===el('modalBg'))closeModal();});
