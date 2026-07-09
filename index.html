@@ -288,12 +288,20 @@ function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a'
 /* ============ 구독 · 이용권 ============ */
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
 function planFeatures(tier){ return ({
-  basic:['대시보드 · 예약 · 접수','환자 CRM · 상담견적 · 진료차트','수납 · 매출 관리','직원 계정 3개'],
-  advanced:['기본 기능 전체','통계 리포트','에이전시 · 소개자 정산','거래처 · 패키지 관리','세금계산서 · 명세서 발행','직원 계정 3개'],
-  premium:['고급 기능 전체','세금계산서 국세청 자동발행','정산 자동마감 · 명세서 일괄발송','예약 자동 리마인더 (알림톡·위챗)','다지점 통합 관리','직원 계정 무제한','우선 기술지원']
+  basic:['대시보드 · 예약 · 접수','환자 CRM · 상담견적 · 진료차트','수납 · 매출 관리','견적 발송(카톡·위챗) 월 100건','세금계산서·명세서 월 30건','직원 계정 3개'],
+  advanced:['기본 기능 전체','통계 리포트','에이전시 · 소개자 정산','거래처 · 패키지 관리','세금계산서 · 명세서 발행','견적 발송 월 1,000건','세금계산서·명세서 월 200건','직원 계정 3개'],
+  premium:['고급 기능 전체','세금계산서 국세청 자동발행','정산 자동마감 · 명세서 일괄발송','예약 자동 리마인더 (알림톡·위챗)','다지점 통합 관리','견적 발송 · 발급 무제한','직원 계정 무제한','우선 기술지원']
 })[tier]||[]; }
-function renderSubscription(){
+async function renderSubscription(){
   const m=el('main');
+  let usage=null; try{ const r=await db.rpc('get_usage'); usage=r&&r.data; }catch(e){}
+  const usageBar=function(label,used,limit){
+    const unl=(limit===null||limit===undefined);
+    const pct=unl?0:Math.min(100,Math.round((used||0)/Math.max(1,limit)*100));
+    const near=!unl && (used||0)>=limit;
+    return '<div style="flex:1;min-width:220px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:var(--muted)">'+label+'</span><span style="font-weight:700;color:'+(near?'#dc2626':'#0f766e')+'">'+(used||0)+' / '+(unl?'무제한':limit)+'</span></div>'+(unl?'<div style="height:8px;background:#e6f7f2;border-radius:5px"></div>':'<div style="height:8px;background:#f1f5f9;border-radius:5px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+(near?'#dc2626':'#0f766e')+'"></div></div>')+'</div>';
+  };
+  const usagePanel=usage?('<div class="panel"><div class="ph">이번 달 사용량 ('+esc(usage.period||'')+')</div><div class="pb" style="padding:16px;display:flex;gap:24px;flex-wrap:wrap">'+usageBar('견적 발송 (카톡·위챗)',usage.msg_used,usage.msg_limit)+usageBar('세금계산서·명세서 발급',usage.doc_used,usage.doc_limit)+'</div><div class="muted" style="font-size:11px;padding:0 16px 12px">매월 1일 자동 리셋</div></div>'):'';
   const tier=state.plan_tier||'basic', end=state.subscription_end, d=subDaysLeft();
   const label=PLAN_LABEL[tier]||tier;
   const badge={basic:'#64748b',advanced:'#0f766e',premium:'#7c3aed'}[tier]||'#64748b';
@@ -320,6 +328,7 @@ function renderSubscription(){
       +'<div style="border-left:1px solid var(--line);padding-left:16px"><div class="muted" style="font-size:12px">남은 기간</div><div style="font-size:18px;font-weight:800;color:'+ddColor+'">'+ddText+'</div></div>'
       +'<div style="margin-left:auto;font-size:12px;color:var(--muted)">갱신·등급변경은 <b>팔로우코리아</b>에 문의하세요</div>'
     +'</div></div></div>'
+    +usagePanel
     +((d!==null&&d<=7)?('<div class="panel" style="border:1px solid #fca5a5"><div class="pb" style="padding:14px 16px;color:#dc2626;font-size:13px;font-weight:600">⚠️ '+(d<0?'구독이 만료되었습니다.':(d===0?'오늘 구독이 만료됩니다.':'구독 만료 '+d+'일 전입니다.'))+' 팔로우코리아에 갱신을 요청하세요.</div></div>'):'')
     +'<div class="panel"><div class="ph">구독 등급 안내</div><div class="pb" style="padding:16px"><div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch">'+card('basic',tier==='basic')+card('advanced',tier==='advanced')+card('premium',tier==='premium')+'</div><div class="muted" style="font-size:11.5px;margin-top:14px">※ 부가세 별도 · 등급 변경/결제는 팔로우코리아에 문의 · 자동화 기능(세금계산서 자동발행·정산 자동마감·예약 리마인더)은 순차 제공</div></div></div>';
 }
@@ -857,10 +866,19 @@ function quoteText(){
   t+=`※ 본 견적은 상담 기준 금액이며, 실제 시술 내용에 따라 변동될 수 있습니다.`;
   return t;
 }
+async function useQuota(kind,labelName){
+  try{
+    const {data,error}=await db.rpc('use_quota',{p_kind:kind});
+    if(error) return true; // 카운터 오류 시 사용 막지 않음
+    if(data&&data.allowed===false){ alert('이번 달 '+labelName+' 한도('+data.limit+'건)를 모두 사용했습니다.\n매월 1일 자동 리셋되며, 상위 요금제로 업그레이드하면 한도가 늘어납니다.'); return false; }
+    return true;
+  }catch(e){ return true; }
+}
 async function sendWechat(){
   if(!cart.length){alert('시술을 담아주세요');return;}
   if(!el('q_pat').value){alert('환자를 선택하세요');return;}
   calcQuote();
+  if(!await useQuota('msg','견적 발송')) return;
   const text=quoteText();
   let copied=false;
   try{await navigator.clipboard.writeText(text);copied=true;}
@@ -877,6 +895,7 @@ async function sendKakao(){
   if(!cart.length){alert('시술을 담아주세요');return;}
   if(!el('q_pat').value){alert('환자를 선택하세요');return;}
   calcQuote();
+  if(!await useQuota('msg','견적 발송')) return;
   const text=quoteText();
   // 1) 카카오 JS 키가 설정된 경우: 카카오톡 공유(수신자 선택 후 전송)
   if(ensureKakao()){
@@ -1031,7 +1050,7 @@ function recomm(agId,rev){const r=Number(el('rate_'+agId).value||0);const comm=M
 async function makeSettle(agId,rev){const r=Number(el('rate_'+agId).value||0);const comm=Math.round(rev*r/100);const vat=setlVat?Math.round(comm*0.1):0;
   const {error}=await db.from('settlements').insert({hospital_id:state.hospital_id,agency_id:agId,period:setMonth,total_amount:comm,vat_amount:vat,payout:comm+vat,status:'unpaid'});
   if(error){alert('실패: '+error.message);return;}logAudit('에이전시 정산생성',won(comm));renderSettlement();}
-async function issueTax(id){await db.from('settlements').update({tax_issued:true,tax_issued_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);logAudit('세금계산서 발행(에이전시)');renderSettlement();}
+async function issueTax(id){if(!await useQuota('doc','세금계산서 발급')) return;await db.from('settlements').update({tax_issued:true,tax_issued_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);logAudit('세금계산서 발행(에이전시)');renderSettlement();}
 async function paySettle(id){await db.from('settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);logAudit('에이전시 정산 지급완료');renderSettlement();}
 
 /* ============ AGENCIES / 에이전시 등록 ============ */
@@ -1477,6 +1496,7 @@ function stmtModal(agencyId){stmtCtx.agencyId=agencyId;const a=state.agencies.fi
     <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="genStatement()">명세서 출력</button></div>`);}
 async function genStatement(){
   const a=state.agencies.find(x=>x.id===stmtCtx.agencyId);if(!a)return;
+  if(!await useQuota('doc','명세서 발급')) return;
   const from=el('st_from').value,to=el('st_to').value,vat=el('st_vat').checked;
   let q=db.from('orders').select('id,order_no,order_date,patient_id').eq('agency_id',a.id).neq('status','cancelled');
   if(from)q=q.gte('order_date',from);
