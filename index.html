@@ -48,6 +48,7 @@
   .btn.danger{background:#fee2e2;color:var(--danger)}
   .btn.ok{background:#16a34a}
   .btn.kakao{background:#FEE500;color:#3C1E1E}
+  .btn.wechat{background:#07C160;color:#fff}
   .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow)}
   .stat.clk{cursor:pointer;transition:border-color .15s,box-shadow .15s}
@@ -526,7 +527,7 @@ function renderQuote(){
          <div class="muted" id="q_codemsg" style="font-size:12px;margin-top:4px"></div>
        </div>
        <div id="q_tot" style="padding:4px 8px 8px"></div>
-       <div style="padding:0 8px 8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" style="flex:1;min-width:90px" onclick="saveQuote()">견적 저장</button><button class="btn ghost" style="flex:1;min-width:90px" onclick="printQuote()">견적서 출력</button><button class="btn kakao" style="flex:1;min-width:110px" onclick="sendKakao()">카카오톡 전송</button></div>
+       <div style="padding:0 8px 8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" style="flex:1;min-width:90px" onclick="saveQuote()">견적 저장</button><button class="btn ghost" style="flex:1;min-width:90px" onclick="printQuote()">견적서 출력</button><button class="btn kakao" style="flex:1;min-width:110px" onclick="sendKakao()">카카오톡 전송</button><button class="btn wechat" style="flex:1;min-width:110px" onclick="sendWechat()">위챗 전송</button></div>
      </div></div>
    </div>`;
   drawPrice();drawCart();
@@ -668,6 +669,22 @@ function quoteText(){
   t+=`합계: ${won(total)} (${cny(total)})\n\n`;
   t+=`※ 본 견적은 상담 기준 금액이며, 실제 시술 내용에 따라 변동될 수 있습니다.`;
   return t;
+}
+async function sendWechat(){
+  if(!cart.length){alert('시술을 담아주세요');return;}
+  if(!el('q_pat').value){alert('환자를 선택하세요');return;}
+  calcQuote();
+  const text=quoteText();
+  let copied=false;
+  try{await navigator.clipboard.writeText(text);copied=true;}
+  catch(e){
+    const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    try{copied=document.execCommand('copy');}catch(_){}
+    document.body.removeChild(ta);
+  }
+  logAudit('위챗 견적 전송(복사)',`${won(quoteCtx.total)}`);
+  alert(copied?'견적 내용이 복사되었습니다.\n위챗(WeChat) 대화창에 붙여넣기(Ctrl+V) 하세요.':'복사에 실패했습니다. 견적서 출력을 이용하세요.');
 }
 async function sendKakao(){
   if(!cart.length){alert('시술을 담아주세요');return;}
