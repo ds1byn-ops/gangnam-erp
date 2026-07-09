@@ -289,7 +289,7 @@ function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a'
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
 function planFeatures(tier){ return ({
   basic:['대시보드 · 예약 · 접수','환자 CRM · 상담견적 · 진료차트','수납 · 매출 관리','견적 발송(카톡·위챗) 월 100건','세금계산서·명세서 월 30건','직원 계정 3개'],
-  advanced:['기본 기능 전체','통계 리포트','에이전시 · 소개자 정산','거래처 · 패키지 관리','세금계산서 · 명세서 발행','견적 발송 월 1,000건','세금계산서·명세서 월 200건','직원 계정 3개'],
+  advanced:['기본 기능 전체','통계 리포트','에이전시 · 소개자 정산','거래처 · 패키지 관리','예비 세금계산서 · 명세서 발행','견적 발송 월 1,000건','세금계산서·명세서 월 200건','직원 계정 5개'],
   premium:['고급 기능 전체','세금계산서 국세청 자동발행','정산 자동마감 · 명세서 일괄발송','예약 자동 리마인더 (알림톡·위챗)','다지점 통합 관리','견적 발송 · 발급 무제한','직원 계정 무제한','우선 기술지원']
 })[tier]||[]; }
 async function renderSubscription(){
@@ -1409,7 +1409,8 @@ async function renderStaff(){
   ]);
   state._staff=data||[];
   const isPremium=state.plan_tier==='premium';
-  const limit=(hosp&&typeof hosp.staff_limit==='number')?hosp.staff_limit:3;
+  const _floor=({basic:3,advanced:5})[state.plan_tier]||3;
+  const limit=Math.max(_floor,(hosp&&typeof hosp.staff_limit==='number')?hosp.staff_limit:3);
   const activeCnt=(data||[]).filter(s=>s.is_active).length;
   const atLimit=!isPremium && activeCnt>=limit;
   const rows=(data||[]).map(s=>`<tr>
