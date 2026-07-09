@@ -500,7 +500,7 @@ async function renderDashboard(){
    <div class="cards">
      <div class="stat clk" onclick="navTo('reception')" title="접수 현황으로"><div class="k">오늘 예약</div><div class="v">${appts.length}<small> 건</small></div></div>
      <div class="stat clk" onclick="navTo('billing')" title="수납·매출로"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
-     <div class="stat clk" onclick="billSort='unpaid';navTo('billing')" title="미수 먼저 보기"><div class="k">미수금</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div>
+     <div class="stat clk" onclick="unpaidModal()" title="미수 먼저 보기"><div class="k">미수금</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div>
      <div class="stat clk" onclick="navTo('patients')" title="환자 CRM으로"><div class="k">전체 환자</div><div class="v">${pat.count||0}<small> 명</small></div></div>
    </div>
    <div class="panel"><div class="ph">최근 6개월 매출 추이</div>${chart}</div>
@@ -960,6 +960,47 @@ function chartView(id){const c=(state._charts||[]).find(x=>x.id===id);if(!c)retu
     <div class="mf"><button class="btn ghost" onclick="closeModal()">닫기</button></div>`);}
 
 /* ============ BILLING ============ */
+/* ===== 미수금 상세 ===== */
+async function unpaidModal(){
+  const {data}=await db.from('orders').select('id,order_no,order_date,total,paid_amount,pay_status,agency_id,referrer_id,patient_id').neq('status','cancelled').neq('pay_status','paid').order('order_date',{ascending:false});
+  state._unpaid=data||[];
+  const AM=amap(), RM=Object.fromEntries(state.referrers.map(r=>[r.id,r.name]));
+  const ags=[...new Set((data||[]).map(o=>o.agency_id).filter(Boolean))];
+  const refs=[...new Set((data||[]).map(o=>o.referrer_id).filter(Boolean))];
+  const agOpts='<option value="">전체 에이전시</option>'+ags.map(id=>'<option value="'+id+'">'+esc(AM[id]||'-')+'</option>').join('');
+  const refOpts='<option value="">전체 소개자</option>'+refs.map(id=>'<option value="'+id+'">'+esc(RM[id]||'-')+'</option>').join('');
+  const ip='padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px';
+  openModal('<div class="mh">미수금 상세<span onclick="closeModal()">✕</span></div><div class="mb">'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">'
+    +'<input type="date" id="up_from" onchange="renderUnpaidList()" style="'+ip+'"><span class="muted">~</span><input type="date" id="up_to" onchange="renderUnpaidList()" style="'+ip+'">'
+    +'<select id="up_ag" onchange="renderUnpaidList()" style="'+ip+'">'+agOpts+'</select>'
+    +'<select id="up_ref" onchange="renderUnpaidList()" style="'+ip+'">'+refOpts+'</select>'
+    +'<button class="btn ghost sm" onclick="exportUnpaidCSV()" style="margin-left:auto">CSV</button></div>'
+    +'<div id="up_list"></div></div>',true);
+  renderUnpaidList();
+}
+function _unpaidRows(){
+  const from=el('up_from')?el('up_from').value:'', to=el('up_to')?el('up_to').value:'', ag=el('up_ag')?el('up_ag').value:'', ref=el('up_ref')?el('up_ref').value:'';
+  return (state._unpaid||[]).filter(function(o){ const d=(o.order_date||'').slice(0,10);
+    if(from&&d<from)return false; if(to&&d>to)return false; if(ag&&o.agency_id!==ag)return false; if(ref&&o.referrer_id!==ref)return false; return true; });
+}
+function renderUnpaidList(){
+  const AM=amap(), PM=pmap(), RM=Object.fromEntries(state.referrers.map(r=>[r.id,r.name]));
+  const rows=_unpaidRows(); let total=0;
+  const body=rows.map(function(o){ const due=Number(o.total||0)-Number(o.paid_amount||0); total+=due;
+    return '<tr><td>#'+o.order_no+'</td><td>'+fdate(o.order_date)+'</td><td>'+esc(PM[o.patient_id]||'-')+'</td><td>'+esc(AM[o.agency_id]||'-')+'</td><td>'+esc(RM[o.referrer_id]||'-')+'</td><td class="right">'+won(o.total)+'</td><td class="right"><b style="color:var(--danger)">'+won(due)+'</b></td><td><span class="tag t-'+o.pay_status+'">'+PAY_LABEL[o.pay_status]+'</span></td></tr>'; }).join('');
+  const el2=el('up_list'); if(!el2)return;
+  el2.innerHTML='<div style="font-size:13px;margin-bottom:6px">미수 <b>'+rows.length+'</b>건 · 미수 합계 <b style="color:var(--danger)">'+won(total)+'</b></div>'
+    +'<div style="max-height:52vh;overflow:auto"><table><thead><tr><th>주문</th><th>일자</th><th>환자</th><th>에이전시</th><th>소개자</th><th class="right">금액</th><th class="right">미수액</th><th>상태</th></tr></thead><tbody>'+(body||'<tr><td colspan=8 class="muted" style="text-align:center;padding:20px">해당 조건의 미수 건이 없습니다.</td></tr>')+'</tbody></table></div>';
+}
+function exportUnpaidCSV(){
+  const AM=amap(), PM=pmap(), RM=Object.fromEntries(state.referrers.map(r=>[r.id,r.name]));
+  const rows=_unpaidRows(); const q=function(c){return '\"'+(c==null?'':String(c)).replace(/\"/g,'\"\"')+'\"';};
+  const head=['주문','일자','환자','에이전시','소개자','금액','미수액','상태'];
+  const lines=rows.map(function(o){ return [o.order_no,fdate(o.order_date),PM[o.patient_id]||'',AM[o.agency_id]||'',RM[o.referrer_id]||'',o.total,Number(o.total||0)-Number(o.paid_amount||0),PAY_LABEL[o.pay_status]].map(q).join(','); });
+  const csv='﻿'+[head.map(q).join(',')].concat(lines).join('\n');
+  const b=new Blob([csv],{type:'text/csv;charset=utf-8'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download='미수금_'+new Date().toISOString().slice(0,10)+'.csv'; a.click(); URL.revokeObjectURL(u);
+}
 async function renderBilling(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const now=new Date();const ms=new Date(now.getFullYear(),now.getMonth(),1).toISOString(),me=new Date(now.getFullYear(),now.getMonth()+1,1).toISOString();
@@ -985,7 +1026,7 @@ async function renderBilling(){
    <div class="cards" style="grid-template-columns:repeat(3,1fr)">
      <div class="stat clk" onclick="billSort='amt';renderBilling()" title="금액순 정렬"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
      <div class="stat clk" onclick="billSort='recent';renderBilling()" title="최신순 정렬"><div class="k">이번달 건수</div><div class="v">${mons.length}<small> 건</small></div></div>
-     <div class="stat clk" onclick="billSort='unpaid';renderBilling()" title="미수 먼저 정렬"><div class="k">미수금(전체)</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div></div>
+     <div class="stat clk" onclick="unpaidModal()" title="미수 상세 보기"><div class="k">미수금(전체)</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div></div>
    <div class="panel"><div class="ph">주문·수납 내역 <span style="display:flex;gap:6px;flex-wrap:wrap;font-weight:400;font-size:13px"><span class="srch">${MAG}<input id="srch_bill" placeholder="환자/에이전시/번호" value="${esc(billSearch)}" oninput="billSearch=this.value;renderBilling()"></span><input type="date" value="${billFrom}" onchange="billFrom=this.value;renderBilling()"><input type="date" value="${billTo}" onchange="billTo=this.value;renderBilling()"><select onchange="billSort=this.value;renderBilling()"><option value="recent"${billSort==='recent'?' selected':''}>최신순</option><option value="amt"${billSort==='amt'?' selected':''}>금액순</option><option value="unpaid"${billSort==='unpaid'?' selected':''}>미수 먼저</option></select></span></div><div class="pb">${blist.length?`<table><thead><tr><th>No</th><th>일자</th><th>환자</th><th>에이전시</th><th class="right">합계</th><th>할인</th><th>수납</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">내역이 없습니다.</div>'}</div></div>`;keepFocus('srch_bill');
 }
 async function markPaid(id,method){const {data:o}=await db.from('orders').select('total').eq('id',id).single();
@@ -1349,7 +1390,7 @@ async function renderStats(){
      <div class="stat clk" onclick="statTab='sales';renderStats()" title="매출 탭"><div class="k">당월 매출</div><div class="v" style="font-size:19px">${won(total)}</div><div>${delta(total,ptotal)}</div></div>
      <div class="stat clk" onclick="statTab='proc';renderStats()" title="시술 탭"><div class="k">시술 건수</div><div class="v">${cnt}<small> 건</small></div><div>${delta(cnt,pcnt)}</div></div>
      <div class="stat clk" onclick="statTab='sales';renderStats()" title="매출 탭"><div class="k">객단가</div><div class="v" style="font-size:19px">${won(avg)}</div><div>${delta(avg,pavg)}</div></div>
-     <div class="stat clk" onclick="billSort='unpaid';navTo('billing')" title="미수 먼저 보기"><div class="k">미수금</div><div class="v" style="font-size:18px;color:var(--danger)">${won(unpaid)}</div></div>
+     <div class="stat clk" onclick="unpaidModal()" title="미수 먼저 보기"><div class="k">미수금</div><div class="v" style="font-size:18px;color:var(--danger)">${won(unpaid)}</div></div>
      <div class="stat clk" onclick="statTab='pat';renderStats()" title="환자 탭"><div class="k">신규 환자</div><div class="v">${newP}<small> 명</small></div></div></div>`;
   m.innerHTML=`<div class="page-head"><div><h2>통계</h2><div class="sub">${periodLabel} · 매출·시술·유입·예약·환자 분석${useRange?' (직전 동일기간 대비)':''}</div></div>
      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="muted" style="font-size:12px">비교</span><button class="btn ghost sm" onclick="statPreset('day')">전일</button><button class="btn ghost sm" onclick="statPreset('week')">전주</button><button class="btn ghost sm" onclick="statPreset('month')">전월</button><button class="btn ghost sm" onclick="statPreset('year')">전년</button><span style="width:1px;height:18px;background:var(--line);margin:0 2px"></span><input type="month" value="${statMonth}" onchange="statMonth=this.value;statFrom='';statTo='';renderStats()" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px"><span class="muted" style="font-size:12px">또는</span><input type="date" value="${statFrom}" onchange="statFrom=this.value;renderStats()" title="시작일" style="padding:7px 9px;border:1px solid var(--line);border-radius:9px"><span class="muted">~</span><input type="date" value="${statTo}" onchange="statTo=this.value;renderStats()" title="종료일" style="padding:7px 9px;border:1px solid var(--line);border-radius:9px">${useRange?'<button class="btn ghost sm" onclick="statFrom=&quot;&quot;;statTo=&quot;&quot;;renderStats()">월로</button>':''}<button class="btn ghost" onclick="exportStatsCSV()">CSV</button><button class="btn ghost" onclick="window.print()">인쇄/PDF</button></div></div>
