@@ -1028,6 +1028,16 @@ async function rfPay(id){await db.from('referrer_settlements').update({status:'p
 
 /* ============ 통계 ============ */
 let statMonth=null,statTab='sales',statFrom='',statTo='';
+function statPreset(kind){
+  const now=new Date(), y=now.getFullYear(), mo=now.getMonth(), d=now.getDate();
+  const fmt=x=>{const yy=x.getFullYear(),mm=String(x.getMonth()+1).padStart(2,'0'),dd=String(x.getDate()).padStart(2,'0');return yy+'-'+mm+'-'+dd;};
+  const today=new Date(y,mo,d);
+  if(kind==='day'){ statFrom=fmt(today); statTo=fmt(today); }
+  else if(kind==='week'){ const dow=(today.getDay()+6)%7; statFrom=fmt(new Date(y,mo,d-dow)); statTo=fmt(new Date(y,mo,d-dow+6)); }
+  else if(kind==='month'){ statFrom=fmt(new Date(y,mo,1)); statTo=fmt(new Date(y,mo+1,0)); }
+  else if(kind==='year'){ statFrom=fmt(new Date(y,0,1)); statTo=fmt(new Date(y,11,31)); }
+  renderStats();
+}
 function statBar(label,val,max,sub){const pct=max?Math.round(val/max*100):0;return `<tr><td style="white-space:nowrap">${esc(label)}</td><td style="width:50%"><div style="background:#eef2f6;border-radius:5px;height:9px"><div style="width:${pct}%;background:linear-gradient(90deg,#14b8a6,#0f766e);height:9px;border-radius:5px"></div></div></td><td class="right"><b>${sub}</b></td></tr>`;}
 function sbars(entries,fmt,keepOrder){let arr=entries.slice();if(!keepOrder)arr.sort((a,b)=>b[1]-a[1]);const mx=Math.max(1,...arr.map(x=>x[1]));return arr.length?arr.map(([k,v])=>statBar(k,v,mx,fmt(v))).join(''):'<tr><td colspan=3 class="muted">데이터 없음</td></tr>';}
 function exportStatsCSV(){const rows=state._statExport||[];const head=['주문번호','일자','환자','에이전시','소개자','담당의','금액','할인','수납','결제수단'];const q=c=>`"${(c==null?'':String(c)).replace(/"/g,'""')}"`;const csv='﻿'+[head.map(q).join(',')].concat(rows.map(r=>r.map(q).join(','))).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='통계_'+((statFrom&&statTo)?statFrom+'_'+statTo:statMonth)+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);}
@@ -1119,7 +1129,7 @@ async function renderStats(){
      <div class="stat clk" onclick="billSort='unpaid';navTo('billing')" title="미수 먼저 보기"><div class="k">미수금</div><div class="v" style="font-size:18px;color:var(--danger)">${won(unpaid)}</div></div>
      <div class="stat clk" onclick="statTab='pat';renderStats()" title="환자 탭"><div class="k">신규 환자</div><div class="v">${newP}<small> 명</small></div></div></div>`;
   m.innerHTML=`<div class="page-head"><div><h2>통계</h2><div class="sub">${periodLabel} · 매출·시술·유입·예약·환자 분석${useRange?' (직전 동일기간 대비)':''}</div></div>
-     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input type="month" value="${statMonth}" onchange="statMonth=this.value;statFrom='';statTo='';renderStats()" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px"><span class="muted" style="font-size:12px">또는</span><input type="date" value="${statFrom}" onchange="statFrom=this.value;renderStats()" title="시작일" style="padding:7px 9px;border:1px solid var(--line);border-radius:9px"><span class="muted">~</span><input type="date" value="${statTo}" onchange="statTo=this.value;renderStats()" title="종료일" style="padding:7px 9px;border:1px solid var(--line);border-radius:9px">${useRange?'<button class="btn ghost sm" onclick="statFrom=&quot;&quot;;statTo=&quot;&quot;;renderStats()">월로</button>':''}<button class="btn ghost" onclick="exportStatsCSV()">CSV</button><button class="btn ghost" onclick="window.print()">인쇄/PDF</button></div></div>
+     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="muted" style="font-size:12px">비교</span><button class="btn ghost sm" onclick="statPreset('day')">전일</button><button class="btn ghost sm" onclick="statPreset('week')">전주</button><button class="btn ghost sm" onclick="statPreset('month')">전월</button><button class="btn ghost sm" onclick="statPreset('year')">전년</button><span style="width:1px;height:18px;background:var(--line);margin:0 2px"></span><input type="month" value="${statMonth}" onchange="statMonth=this.value;statFrom='';statTo='';renderStats()" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px"><span class="muted" style="font-size:12px">또는</span><input type="date" value="${statFrom}" onchange="statFrom=this.value;renderStats()" title="시작일" style="padding:7px 9px;border:1px solid var(--line);border-radius:9px"><span class="muted">~</span><input type="date" value="${statTo}" onchange="statTo=this.value;renderStats()" title="종료일" style="padding:7px 9px;border:1px solid var(--line);border-radius:9px">${useRange?'<button class="btn ghost sm" onclick="statFrom=&quot;&quot;;statTo=&quot;&quot;;renderStats()">월로</button>':''}<button class="btn ghost" onclick="exportStatsCSV()">CSV</button><button class="btn ghost" onclick="window.print()">인쇄/PDF</button></div></div>
    ${cards}${tabbar}${content}`;
 }
 
