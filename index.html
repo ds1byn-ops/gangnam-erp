@@ -1327,10 +1327,12 @@ async function renderStats(){
   const orders=allOrders.filter(o=>inP(o.order_date));
   const prev=allOrders.filter(o=>prevInP(o.order_date));
   const ids=orders.map(o=>o.id);let items=[];if(ids.length){const {data}=await db.from('order_items').select('*').in('order_id',ids);items=data||[];}
+  const pids=prev.map(o=>o.id);let pItems=[];if(pids.length){const {data}=await db.from('order_items').select('name,amount').in('order_id',pids);pItems=data||[];}
+  const prevProcAgg={};pItems.forEach(i=>{prevProcAgg[i.name]=(prevProcAgg[i.name]||0)+Number(i.amount||0);});
   const appts=(apptR.data||[]).filter(a=>inP(a.appointment_at));
   const patAll=patR.data||[];
   const procCat=Object.fromEntries(state.procedures.map(p=>[p.id,p.category]));
-  const AM=amap(),PMname=pmap();const RM=Object.fromEntries(state.referrers.map(r=>[r.id,r.name]));const RC=Object.fromEntries(state.referrers.map(r=>[r.id,r.channel||'기타']));
+  const AM=amap(),PMname=pmap();const RM=Object.fromEntries(state.referrers.map(r=>[r.id,r.name]));const RC=Object.fromEntries(state.referrers.map(r=>[r.id,r.channel||'기타']));const RT=Object.fromEntries(state.referrers.map(r=>[r.id,r.rtype||'기타']));
   const sum=a=>a.reduce((s,o)=>s+Number(o.total||0),0);
   const total=sum(orders),cnt=orders.length,avg=cnt?Math.round(total/cnt):0;
   const ptotal=sum(prev),pcnt=prev.length,pavg=pcnt?Math.round(ptotal/pcnt):0;
@@ -1351,6 +1353,7 @@ async function renderStats(){
   const gA={};orders.forEach(o=>{if(!o.agency_id)return;const n=AM[o.agency_id]||'-';gA[n]=(gA[n]||0)+Number(o.total||0);});
   const gR={};orders.forEach(o=>{if(!o.referrer_id)return;const n=RM[o.referrer_id]||'-';gR[n]=(gR[n]||0)+Number(o.total||0);});
   const gC={};orders.forEach(o=>{if(!o.referrer_id)return;const c=RC[o.referrer_id]||'기타';gC[c]=(gC[c]||0)+Number(o.total||0);});
+  const gT={};orders.forEach(o=>{if(!o.referrer_id)return;const t=RT[o.referrer_id]||'기타';gT[t]=(gT[t]||0)+Number(o.total||0);});
   const gN={};patAll.forEach(p=>{const n=p.nationality||'미상';gN[n]=(gN[n]||0)+1;});
   const stCnt={};appts.forEach(a=>{stCnt[a.status]=(stCnt[a.status]||0)+1;});
   const totalAppt=appts.length,noshow=stCnt['no_show']||0,doneA=stCnt['done']||0;
@@ -1370,11 +1373,12 @@ async function renderStats(){
       +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('카테고리별 매출',T(sbars(Object.entries(byCat),won)))}${P('결제수단별 매출',T(sbars(Object.entries(byMethod),won)))}</div>`
       +P('할인 분석',`<div class="kv" style="padding:10px 14px"><div class="k">총 할인액</div><div><b>${won(totDisc)}</b></div><div class="k">할인 적용</div><div>${discCnt}건 / 전체 ${cnt}건 (${discRate}%)</div></div>`);
   } else if(statTab==='proc'){
-    content=P('인기 시술 TOP 10',`<table><thead><tr><th>#</th><th>시술명</th><th class="right">수량</th><th class="right">매출</th></tr></thead><tbody>${topProc.map(([n,o],i)=>`<tr><td>${i+1}</td><td>${esc(n)}</td><td class="right">${o.qty}건</td><td class="right"><b>${won(o.amt)}</b></td></tr>`).join('')||'<tr><td colspan=4 class="muted">데이터 없음</td></tr>'}</tbody></table>`)
+    content=P('인기 시술 TOP 10 · 이전 기간 대비',`<table><thead><tr><th>#</th><th>시술명</th><th class="right">수량</th><th class="right">매출</th><th class="right">이전 대비</th></tr></thead><tbody>${topProc.map(([n,o],i)=>`<tr><td>${i+1}</td><td>${esc(n)}</td><td class="right">${o.qty}건</td><td class="right"><b>${won(o.amt)}</b></td><td class="right">${delta(o.amt,prevProcAgg[n]||0)}</td></tr>`).join('')||'<tr><td colspan=5 class="muted">데이터 없음</td></tr>'}</tbody></table>`)
       +P('카테고리별 매출',T(sbars(Object.entries(byCat),won)));
   } else if(statTab==='inflow'){
-    content=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('에이전시별 매출',T(sbars(Object.entries(gA),won)))}${P('소개자별 매출',T(sbars(Object.entries(gR),won)))}</div>`
-      +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('채널별 유입 매출',T(sbars(Object.entries(gC),won)))}${P('국적별 환자',T(sbars(Object.entries(gN),v=>v+'명')))}</div>`;
+    content=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('유입 유형별 매출 (왕홍·가이드·업체 등)',T(sbars(Object.entries(gT),won)))}${P('에이전시(회사)별 매출',T(sbars(Object.entries(gA),won)))}</div>`
+      +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('소개자별 매출',T(sbars(Object.entries(gR),won)))}${P('채널별 유입 매출',T(sbars(Object.entries(gC),won)))}</div>`
+      +P('국적별 환자',T(sbars(Object.entries(gN),v=>v+'명')));
   } else if(statTab==='appt'){
     content=`<div class="cards" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><div class="k">총 예약</div><div class="v">${totalAppt}<small> 건</small></div></div><div class="stat"><div class="k">노쇼율</div><div class="v" style="color:var(--danger)">${noshowRate}%</div><div class="cny">${noshow}건</div></div><div class="stat"><div class="k">이행률(완료)</div><div class="v" style="color:var(--ok)">${fulfill}%</div><div class="cny">${doneA}건</div></div></div>`
       +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('예약 상태 분포',T(sbars(Object.entries(stCnt).map(([k,v])=>[STATUS_LABEL[k]||k,v]),v=>v+'건')))}${P('요일별 예약',T(sbars(dows.map(d=>[d,gDow[d]||0]),v=>v+'건',true)))}</div>`
