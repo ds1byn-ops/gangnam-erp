@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>강남펄스 ERP</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"></script>
 <style>
   :root{
     --brand:#0f766e; --brand-2:#14b8a6; --ink:#0f172a; --muted:#64748b;
@@ -46,6 +47,7 @@
   .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
   .btn.danger{background:#fee2e2;color:var(--danger)}
   .btn.ok{background:#16a34a}
+  .btn.kakao{background:#FEE500;color:#3C1E1E}
   .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow)}
   .stat.clk{cursor:pointer;transition:border-color .15s,box-shadow .15s}
@@ -524,7 +526,7 @@ function renderQuote(){
          <div class="muted" id="q_codemsg" style="font-size:12px;margin-top:4px"></div>
        </div>
        <div id="q_tot" style="padding:4px 8px 8px"></div>
-       <div style="padding:0 8px 8px;display:flex;gap:8px"><button class="btn" style="flex:1" onclick="saveQuote()">견적 저장</button><button class="btn ghost" style="flex:1" onclick="printQuote()">견적서 출력</button></div>
+       <div style="padding:0 8px 8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" style="flex:1;min-width:90px" onclick="saveQuote()">견적 저장</button><button class="btn ghost" style="flex:1;min-width:90px" onclick="printQuote()">견적서 출력</button><button class="btn kakao" style="flex:1;min-width:110px" onclick="sendKakao()">카카오톡 전송</button></div>
      </div></div>
    </div>`;
   drawPrice();drawCart();
@@ -639,6 +641,64 @@ function printQuote(){
   if(!w){alert('팝업이 차단되었습니다. 브라우저에서 팝업을 허용한 뒤 다시 눌러주세요.');return;}
   w.document.write(html);w.document.close();w.focus();
   setTimeout(function(){w.print();},350);
+}
+
+/* ---- 카카오톡 전송 ---- */
+function kakaoKey(){return localStorage.getItem('kakao_js_key')||'';}
+function ensureKakao(){
+  const k=kakaoKey();
+  if(k&&window.Kakao&&!Kakao.isInitialized()){try{Kakao.init(k);}catch(e){}}
+  return !!(window.Kakao&&Kakao.isInitialized&&Kakao.isInitialized());
+}
+function quoteText(){
+  const p=state.patients.find(x=>x.id===el('q_pat').value);
+  const ag=state.agencies.find(x=>x.id===el('q_ag').value);
+  const doc=el('q_doc').value||'';
+  const sub=quoteCtx.subtotal,disc=quoteCtx.discount_amount,total=quoteCtx.total;
+  const now=new Date();
+  let t=`[${state.hospital_name}] 견적서\n`;
+  t+=`발행일: ${now.toLocaleDateString('ko-KR')}\n`;
+  t+=`환자: ${p?p.name:'-'}${doc?' / 담당의: '+doc:''}\n`;
+  if(ag)t+=`에이전시: ${ag.name}\n`;
+  t+=`──────────────\n`;
+  cart.forEach(c=>{const net=lineNet(c);const dpct=c.dpct||0;t+=`• ${c.name} ×${c.qty}${dpct?' ('+dpct+'%↓)':''} : ${won(net)}\n`;});
+  t+=`──────────────\n`;
+  t+=`소계: ${won(sub)}\n`;
+  if(disc>0)t+=`할인: -${won(disc)}\n`;
+  t+=`합계: ${won(total)} (${cny(total)})\n\n`;
+  t+=`※ 본 견적은 상담 기준 금액이며, 실제 시술 내용에 따라 변동될 수 있습니다.`;
+  return t;
+}
+async function sendKakao(){
+  if(!cart.length){alert('시술을 담아주세요');return;}
+  if(!el('q_pat').value){alert('환자를 선택하세요');return;}
+  calcQuote();
+  const text=quoteText();
+  // 1) 카카오 JS 키가 설정된 경우: 카카오톡 공유(수신자 선택 후 전송)
+  if(ensureKakao()){
+    try{
+      Kakao.Share.sendDefault({
+        objectType:'text',
+        text:text,
+        link:{mobileWebUrl:location.href,webUrl:location.href}
+      });
+      logAudit('카카오톡 견적 전송',`#${el('q_pat').value.slice(0,8)} ${won(quoteCtx.total)}`);
+      return;
+    }catch(e){/* 실패 시 아래 복사 방식으로 폴백 */}
+  }
+  // 2) 폴백: 견적 내용을 클립보드에 복사 → 카카오톡 대화창에 붙여넣기
+  let copied=false;
+  try{await navigator.clipboard.writeText(text);copied=true;}
+  catch(e){
+    const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    try{copied=document.execCommand('copy');}catch(_){}
+    document.body.removeChild(ta);
+  }
+  logAudit('카카오톡 견적 전송(복사)',`${won(quoteCtx.total)}`);
+  alert(copied
+    ? '견적 내용이 클립보드에 복사되었습니다.\n카카오톡 대화창에 붙여넣기(Ctrl+V) 후 전송하세요.'
+    : '견적 내용:\n\n'+text);
 }
 
 /* ============ CHARTS (EMR) ============ */
@@ -1155,6 +1215,8 @@ async function renderSettings(){
      <div class="grid2"><div class="field"><label>전화</label><input id="h_phone" value="${esc(c.phone||'')}"></div>
        <div class="field"><label>이메일</label><input id="h_email" value="${esc(c.email||'')}"></div></div>
      <div class="field"><label>주소</label><input id="h_addr" value="${esc(c.address||'')}"></div>
+     <div class="field"><label>카카오 JavaScript 키 <span class="muted" style="font-weight:400;font-size:12px">(견적 카카오톡 전송용 · 선택)</span></label><input id="h_kakao" value="${esc(kakaoKey())}" placeholder="비워두면 클립보드 복사 방식으로 전송"></div>
+     <div class="muted" style="font-size:12px;margin-top:-4px">Kakao Developers에서 앱 생성 후 JavaScript 키를 입력하고, 플랫폼에 현재 사이트 도메인을 등록하면 카카오톡으로 바로 전송됩니다.</div>
      <div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
    </div></div>`;
 }
@@ -1163,6 +1225,7 @@ async function saveSettings(){
   const contact={ceo:el('h_ceo').value||'',phone:el('h_phone').value||'',email:el('h_email').value||'',address:el('h_addr').value||''};
   const {error}=await db.from('hospitals').update({name,biz_no:el('h_biz').value||null,contact,updated_at:new Date().toISOString()}).eq('id',state.hospital_id);
   if(error){alert('저장 실패: '+error.message);return;}
+  const kk=(el('h_kakao').value||'').trim();if(kk)localStorage.setItem('kakao_js_key',kk);else localStorage.removeItem('kakao_js_key');
   state.hospital_name=name;el('hospName').textContent=name;logAudit('병원설정 저장',name);alert('저장되었습니다.');
 }
 
