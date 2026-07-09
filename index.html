@@ -1513,7 +1513,11 @@ async function genStatement(){
   const supply=vat?Math.round(total/1.1):total;const tax=vat?total-supply:0;
   const hc=(hosp&&hosp.contact)||{};
   const lineRows=lines.length?lines.map(l=>`<tr><td>${fdate(l.date)}</td><td>${esc(l.patient)}</td><td>${esc(l.name)}</td><td class="r">${won(l.amount)}</td></tr>`).join(''):'<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:20px">해당 기간 거래 내역이 없습니다.</td></tr>';
-  const html=`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>거래명세서 - ${esc(a.name)}</title>
+  const isPrelim=state.plan_tier!=='premium';
+  const wm=isPrelim?'<div style="position:fixed;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);font-size:120px;font-weight:900;color:rgba(220,38,38,.07);letter-spacing:24px;z-index:0;pointer-events:none">예 비</div>':'';
+  const titleBadge=isPrelim?' <span style="font-size:13px;color:#dc2626;border:1.5px solid #dc2626;border-radius:6px;padding:1px 8px;vertical-align:middle;letter-spacing:0;font-weight:700">예비</span>':'';
+  const prelimNote=isPrelim?'<div class="note" style="color:#dc2626;border:1px solid #fca5a5;border-radius:8px;padding:8px 10px;margin-top:10px">※ 본 문서는 <b>예비(가) 거래명세서</b>입니다. 국세청 정식 세금계산서 발행은 <b>프리미엄</b> 등급에서 지원됩니다.</div>':'';
+  const html=`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>거래명세서${isPrelim?'(예비)':''} - ${esc(a.name)}</title>
    <style>body{font-family:'Malgun Gothic','Pretendard',sans-serif;color:#0f172a;padding:30px;max-width:760px;margin:auto}
    h1{font-size:24px;text-align:center;margin:0 0 4px;letter-spacing:8px}.period{text-align:center;color:#64748b;font-size:13px;margin-bottom:18px}
    .party{display:flex;gap:14px;margin-bottom:14px}.party>div{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.7}
@@ -1523,8 +1527,8 @@ async function genStatement(){
    .sum{margin-top:12px;margin-left:auto;width:300px}.sum div{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}
    .sum .big{font-size:18px;font-weight:800;border-top:2px solid #0f172a;padding-top:8px;margin-top:4px}
    .note{margin-top:14px;color:#64748b;font-size:12px}.foot{margin-top:28px;text-align:center;color:#94a3b8;font-size:12px}
-   @media print{body{padding:0}}</style></head><body>
-   <h1>거 래 명 세 서</h1><div class="period">${from||''} ~ ${to||''}</div>
+   @media print{body{padding:0}}</style></head><body>${wm}
+   <h1 style="position:relative;z-index:1">거 래 명 세 서${titleBadge}</h1><div class="period">${from||''} ~ ${to||''}</div>
    <div class="party">
      <div><h3>공급자 (병원)</h3><b>${esc((hosp&&hosp.name)||state.hospital_name)}</b><br>사업자번호: ${esc((hosp&&hosp.biz_no)||'-')}<br>연락처: ${esc(hc.phone||hc.tel||'-')}</div>
      <div><h3>공급받는자 (에이전시)</h3><b>${esc(a.biz_company||a.name)}</b><br>사업자번호: ${esc(a.biz_no||'-')} / 대표: ${esc(a.biz_ceo||'-')}<br>${a.biz_type?'업태/종목: '+esc(a.biz_type)+'<br>':''}${a.biz_address?'주소: '+esc(a.biz_address)+'<br>':''}담당: ${esc(a.contact_name||'-')} ${a.phone?'('+esc(a.phone)+')':''}</div>
@@ -1532,6 +1536,7 @@ async function genStatement(){
    <table><thead><tr><th>일자</th><th>환자</th><th>시술명</th><th class="r">금액</th></tr></thead><tbody>${lineRows}</tbody></table>
    <div class="sum">${vat?`<div><span>공급가액</span><span>${won(supply)}</span></div><div><span>부가세(10%)</span><span>${won(tax)}</span></div>`:''}<div class="big"><span>합계 ${vat?'(VAT 포함)':'(VAT 별도)'}</span><span>${won(total)}</span></div></div>
    <div class="note">※ 상기 금액은 ${vat?'부가가치세가 포함된':'부가가치세 별도의'} 금액입니다. 본 명세서는 ${esc(a.name)}가 소개한 환자의 시술 거래 내역입니다.</div>
+   ${prelimNote}
    <div class="foot">${esc((hosp&&hosp.name)||state.hospital_name)} · 발행일 ${new Date().toLocaleDateString('ko-KR')}</div>
    </body></html>`;
   const w=window.open('','_blank','width=820,height=920');
