@@ -191,6 +191,7 @@
         <a data-view="staff" class="owner-only">직원 관리</a>
         <a data-view="settings" class="owner-only">병원 설정</a>
         <a data-view="audit" class="owner-only">관리자 로그</a>
+        <a data-view="subscription" class="owner-only">💳 구독·이용권</a>
         <div class="grp platform-only" style="display:none">플랫폼</div>
         <a data-view="platform" class="platform-only" style="display:none">🏢 플랫폼 관리</a>
       </nav>
@@ -214,6 +215,12 @@ const STATUS_LABEL={booked:'예약',confirmed:'확정',checked_in:'접수완료'
 const PAY_LABEL={unpaid:'미수납',partial:'부분납',paid:'완납',refunded:'환불'};
 const ORD_LABEL={quote:'견적',confirmed:'확정',done:'완료',cancelled:'취소'};
 const state={hospital_id:null,hospital_name:'강남펄스',staff:null,procedures:[],patients:[],agencies:[],discounts:[],packages:[],referrers:[]};
+const PLAN_LABEL={basic:'기본',advanced:'고급',premium:'프리미엄'};
+const TIER_MENUS={
+  basic:['dashboard','calendar','reception','patients','quote','charts','billing','staff','settings'],
+  advanced:['dashboard','calendar','reception','patients','quote','charts','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle'],
+  premium:['dashboard','calendar','reception','patients','quote','charts','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','audit']
+};
 
 const won=n=>'₩'+Number(n||0).toLocaleString('ko-KR');
 const cny=n=>'¥'+Math.round(Number(n||0)/KRW_PER_CNY).toLocaleString('ko-KR');
@@ -242,7 +249,7 @@ async function boot(){
   state.staff=staff;state.hospital_id=staff.hospital_id;
   fetch('https://api.ipify.org?format=json').then(r=>r.json()).then(j=>{state.ip=j.ip;}).catch(()=>{});
   const [{data:hosp},{data:procs},{data:ags},{data:dcs},{data:pkgs},{data:pkgItems}]=await Promise.all([
-    db.from('hospitals').select('name').eq('id',staff.hospital_id).single(),
+    db.from('hospitals').select('name,plan_tier,subscription_end').eq('id',staff.hospital_id).single(),
     db.from('procedures').select('*').eq('is_active',true).order('category').order('name'),
     db.from('agencies').select('*').order('name'),
     db.from('discount_codes').select('*').eq('is_active',true),
@@ -250,6 +257,7 @@ async function boot(){
     db.from('package_items').select('*').order('sort'),
   ]);
   if(hosp)state.hospital_name=hosp.name;
+  state.plan_tier=(hosp&&hosp.plan_tier)||'basic'; state.subscription_end=(hosp&&hosp.subscription_end)||null;
   state.procedures=procs||[];state.agencies=ags||[];state.discounts=dcs||[];
   state.packages=(pkgs||[]).map(p=>({...p,items:(pkgItems||[]).filter(i=>i.package_id===p.id)}));
   const {data:refs}=await db.from('referrers').select('*').eq('is_active',true).order('name');state.referrers=refs||[];
@@ -257,21 +265,72 @@ async function boot(){
   el('appVer').textContent=APP_VERSION;
   el('whoName').textContent=staff.name;
   el('whoRole').textContent=({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[staff.role]||staff.role;
-  const _allm=['dashboard','calendar','reception','patients','quote','charts','billing','stats','settlement','agencies','packages','referrers','refsettle','staff','settings','audit'];
-  let _allowed=(staff.role==='owner')?_allm:((Array.isArray(staff.menu_perms)&&staff.menu_perms.length)?staff.menu_perms.slice():roleMenus(staff.role));
-  if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings'&&k!=='audit');
+  const _allm=['dashboard','calendar','reception','patients','quote','charts','billing','stats','settlement','agencies','packages','referrers','refsettle','staff','settings','audit','subscription'];
+  let _allowed=(staff.role==='owner')?_allm.slice():((Array.isArray(staff.menu_perms)&&staff.menu_perms.length)?staff.menu_perms.slice():roleMenus(staff.role));
+  if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings'&&k!=='audit'&&k!=='subscription');
+  try{ const {data:pa}=await db.from('platform_admins').select('id').eq('id',user.id).maybeSingle(); state.isPlatformAdmin=!!pa; }catch(e){ state.isPlatformAdmin=false; }
+  // 구독 등급별 기능 제한 (플랫폼 관리자는 예외)
+  if(!state.isPlatformAdmin){ const _tset=TIER_MENUS[state.plan_tier]||TIER_MENUS.basic; _allowed=_allowed.filter(k=>k==='subscription'||_tset.includes(k)); }
   document.querySelectorAll('#nav a').forEach(a=>{a.style.display=_allowed.includes(a.dataset.view)?'':'none';});
   if(staff.role!=='owner')document.querySelectorAll('.nav .grp.owner-only').forEach(e=>e.style.display='none');
-  try{ const {data:pa}=await db.from('platform_admins').select('id').eq('id',user.id).maybeSingle(); state.isPlatformAdmin=!!pa; }catch(e){ state.isPlatformAdmin=false; }
   document.querySelectorAll('.platform-only').forEach(a=>{a.style.display=state.isPlatformAdmin?'':'none';});
   el('login').style.display='none';el('app').style.display='block';
   await loadPatients();navTo('dashboard');setTimeout(()=>logAudit('로그인'),800);
+  checkSubscription();
 }
 async function loadPatients(){const {data}=await db.from('patients').select('*').order('name');state.patients=data||[];}
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,platform:renderPlatform}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform}[v])();}
+
+/* ============ 구독 · 이용권 ============ */
+function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
+function planFeatures(tier){ return ({
+  basic:['대시보드 · 예약 캘린더 · 접수','환자 CRM · 상담견적 · 진료차트 · 수납'],
+  advanced:['기본 기능 전체','통계 리포트','에이전시/소개자 정산','거래처·패키지 관리 · 세금계산서'],
+  premium:['고급 기능 전체','관리자 로그(감사)','우선 기술지원']
+})[tier]||[]; }
+function renderSubscription(){
+  const m=el('main');
+  const tier=state.plan_tier||'basic', end=state.subscription_end, d=subDaysLeft();
+  const label=PLAN_LABEL[tier]||tier;
+  const badge={basic:'#64748b',advanced:'#0f766e',premium:'#7c3aed'}[tier]||'#64748b';
+  let ddText='기간 미설정', ddColor='#94a3b8';
+  if(d!==null){ if(d<0){ddText='만료됨 ('+(-d)+'일 경과)';ddColor='#dc2626';} else if(d===0){ddText='오늘 만료';ddColor='#dc2626';} else if(d<=7){ddText='D-'+d+' (만료 임박)';ddColor='#d97706';} else {ddText='D-'+d;ddColor='#0f766e';} }
+  const card=function(t,active){ const c=t==='premium'?'#7c3aed':(t==='advanced'?'#0f766e':'#64748b'); return '<div style="flex:1;min-width:180px;border:2px solid '+(active?c:'var(--line)')+';border-radius:12px;padding:14px;background:'+(active?'#fbfaff':'#fff')+'">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between"><b style="color:'+c+';font-size:15px">'+PLAN_LABEL[t]+'</b>'+(active?'<span class="tag" style="background:'+c+';color:#fff">현재</span>':'')+'</div>'
+    +'<ul style="margin:10px 0 0;padding-left:16px;font-size:12.5px;color:var(--muted);line-height:1.8">'+planFeatures(t).map(function(f){return '<li>'+esc(f)+'</li>';}).join('')+'</ul></div>'; };
+  m.innerHTML='<div class="page-head"><div><h2>💳 구독 · 이용권</h2><div class="sub">현재 구독 등급과 이용 기간</div></div></div>'
+    +'<div class="panel"><div class="pb" style="padding:16px"><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">'
+      +'<div><div class="muted" style="font-size:12px">현재 등급</div><div style="font-size:22px;font-weight:800;color:'+badge+'">'+label+'</div></div>'
+      +'<div style="border-left:1px solid var(--line);padding-left:16px"><div class="muted" style="font-size:12px">이용 기간</div><div style="font-size:14px;font-weight:600">'+(state.subscription_start?fdate(state.subscription_start)+' ~ ':'')+(end||'미설정')+'</div></div>'
+      +'<div style="border-left:1px solid var(--line);padding-left:16px"><div class="muted" style="font-size:12px">남은 기간</div><div style="font-size:18px;font-weight:800;color:'+ddColor+'">'+ddText+'</div></div>'
+      +'<div style="margin-left:auto;font-size:12px;color:var(--muted)">갱신·등급변경은 <b>팔로우코리아</b>에 문의하세요</div>'
+    +'</div></div></div>'
+    +((d!==null&&d<=7)?('<div class="panel" style="border:1px solid #fca5a5"><div class="pb" style="padding:14px 16px;color:#dc2626;font-size:13px;font-weight:600">⚠️ '+(d<0?'구독이 만료되었습니다.':(d===0?'오늘 구독이 만료됩니다.':'구독 만료 '+d+'일 전입니다.'))+' 팔로우코리아에 갱신을 요청하세요.</div></div>'):'')
+    +'<div class="panel"><div class="ph">등급별 제공 기능</div><div class="pb" style="padding:16px"><div style="display:flex;gap:12px;flex-wrap:wrap">'+card('basic',tier==='basic')+card('advanced',tier==='advanced')+card('premium',tier==='premium')+'</div></div></div>';
+}
+function checkSubscription(){
+  if(state.isPlatformAdmin) return;
+  const d=subDaysLeft(); if(d===null||d>7) return;
+  if(sessionStorage.getItem('sub_warned')==='1') return;
+  sessionStorage.setItem('sub_warned','1');
+  const msg=d<0?('구독이 <b>만료</b>되었습니다 ('+state.subscription_end+', '+(-d)+'일 경과).')
+    :d===0?('오늘 구독이 <b>만료</b>됩니다 ('+state.subscription_end+').')
+    :('구독 만료 <b>'+d+'일 전</b>입니다 (만료일 '+state.subscription_end+').');
+  showSubPopup(msg);
+}
+function showSubPopup(msgHtml){
+  const old=document.getElementById('subPopup'); if(old)old.remove();
+  const wrap=document.createElement('div'); wrap.id='subPopup';
+  wrap.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:20px';
+  wrap.innerHTML='<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">'
+    +'<div style="background:#dc2626;color:#fff;padding:14px 18px;font-weight:800;font-size:15px">⚠️ 구독 만료 안내</div>'
+    +'<div style="padding:18px;font-size:14px;line-height:1.7;color:#1e293b">'+msgHtml+'<br><br>서비스 중단을 막으려면 <b>팔로우코리아</b>에 구독 갱신을 요청하세요.</div>'
+    +'<div style="padding:0 18px 18px;text-align:right"><button class="btn" style="background:#dc2626" onclick="document.getElementById(\'subPopup\').remove()">확인</button></div></div>';
+  document.body.appendChild(wrap);
+}
 
 /* ============ 플랫폼 관리 콘솔 (platform admin) ============ */
 async function renderPlatform(){
@@ -285,23 +344,24 @@ async function renderPlatform(){
   state._platHosps=hosps||[];
   const cntByH={}; (staff||[]).forEach(function(s){ if(s.is_active) cntByH[s.hospital_id]=(cntByH[s.hospital_id]||0)+1; });
   const stOpt=function(cur){ return ['active','paused','trial'].map(function(s){ return '<option value="'+s+'"'+(s===cur?' selected':'')+'>'+({active:'활성',paused:'중지',trial:'체험'})[s]+'</option>'; }).join(''); };
-  const plOpt=function(cur){ return ['basic','pro'].map(function(s){ return '<option value="'+s+'"'+(s===cur?' selected':'')+'>'+s+'</option>'; }).join(''); };
+  const plOpt=function(cur){ return ['basic','advanced','premium'].map(function(s){ return '<option value="'+s+'"'+(s===cur?' selected':'')+'>'+PLAN_LABEL[s]+'</option>'; }).join(''); };
   const rows=(hosps||[]).map(function(h){
     const cnt=cntByH[h.id]||0, lim=(typeof h.staff_limit==='number')?h.staff_limit:3, over=cnt>=lim;
     return '<tr><td><b>'+esc(h.name)+'</b>'+(h.biz_no?'<div class="cny">'+esc(h.biz_no)+'</div>':'')+'</td>'
       +'<td><select onchange="platSetField(\''+h.id+'\',\'status\',this.value)" style="padding:5px;border:1px solid var(--line);border-radius:7px">'+stOpt(h.status)+'</select></td>'
       +'<td><select onchange="platSetField(\''+h.id+'\',\'plan_tier\',this.value)" style="padding:5px;border:1px solid var(--line);border-radius:7px">'+plOpt(h.plan_tier)+'</select></td>'
       +'<td class="right"><span style="color:'+(over?'#dc2626':'#0f766e')+';font-weight:700">'+cnt+'</span> / <input type="number" min="'+cnt+'" value="'+lim+'" onchange="platSetField(\''+h.id+'\',\'staff_limit\',this.value)" style="width:56px;padding:4px;border:1px solid var(--line);border-radius:6px;text-align:center"></td>'
+      +'<td><input type="date" value="'+(h.subscription_end||'')+'" onchange="platSetField(\''+h.id+'\',\'subscription_end\',this.value)" style="padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px"></td>'
       +'<td>'+fdate(h.created_at)+'</td>'
       +'<td class="right"><button class="btn sm ghost" onclick="platAccounts(\''+h.id+'\')">계정 관리</button></td></tr>';
   }).join('');
   m.innerHTML='<div class="page-head"><div><h2>🏢 플랫폼 관리</h2><div class="sub">전 병원 관리 (팔로우코리아 전용) · 총 '+(hosps||[]).length+'개 병원</div></div>'
     +'<button class="btn" onclick="obModal()">＋ 새 병원</button></div>'
-    +'<div class="panel"><div class="pb"><table><thead><tr><th>병원</th><th>상태</th><th>플랜</th><th class="right">계정/한도</th><th>가입일</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan=6 class="muted">병원이 없습니다.</td></tr>')+'</tbody></table></div></div>'
+    +'<div class="panel"><div class="pb"><table><thead><tr><th>병원</th><th>상태</th><th>플랜</th><th class="right">계정/한도</th><th>구독만료</th><th>가입일</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan=6 class="muted">병원이 없습니다.</td></tr>')+'</tbody></table></div></div>'
     +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· <b>상태</b> 활성/체험/중지 · <b>계정/한도</b> 활성계정수 / 무료한도(유료 시 상향)<br>· <b>계정 관리</b>에서 병원별 로그인 계정 추가·비번 재설정. 각 병원 원장은 자기 로그인에서 한도 내 직접 추가.</div></div>';
 }
 function platSetField(hid,field,val){
-  const patch={}; patch[field]=(field==='staff_limit')?(parseInt(val,10)||3):val; patch.updated_at=new Date().toISOString();
+  const patch={}; patch[field]=(field==='staff_limit')?(parseInt(val,10)||3):(val===''?null:val); patch.updated_at=new Date().toISOString();
   db.from('hospitals').update(patch).eq('id',hid).then(function(r){ if(r.error){alert('실패: '+r.error.message);} else { logAudit('플랫폼 병원설정',field+'='+patch[field]); } });
 }
 async function platAccounts(hid){
@@ -356,9 +416,11 @@ function obModal(){
     +fld('원장 비밀번호 * <button type="button" class="btn ghost sm" onclick="obGenPw()">자동생성</button>','<input id="ob_pw" '+inp+' placeholder="8자 이상">')
     +fld('원장 이름','<input id="ob_owner" '+inp+' placeholder="비우면 「병원명 원장」">')
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +fld('플랜','<select id="ob_plan" '+inp+'><option value="basic">basic</option><option value="pro">pro</option></select>')
-    +fld('상태','<select id="ob_status" '+inp+'><option value="trial">trial(체험)</option><option value="active">active(정식)</option><option value="paused">paused(중지)</option></select>')
-    +'</div><div id="ob_result" style="margin-top:10px"></div></div>'
+    +fld('플랜','<select id="ob_plan" '+inp+'><option value="basic">기본</option><option value="advanced">고급</option><option value="premium">프리미엄</option></select>')
+    +fld('상태','<select id="ob_status" '+inp+'><option value="trial">체험</option><option value="active">정식</option><option value="paused">중지</option></select>')
+    +'</div>'
+    +fld('구독 만료일 (선택)','<input type="date" id="ob_subend" '+inp+'>')
+    +'<div id="ob_result" style="margin-top:10px"></div></div>'
     +'<div class="mf"><button class="btn ghost" onclick="closeModal()">닫기</button><button class="btn" id="ob_btn" onclick="submitOnboard()">병원 + 원장계정 생성</button></div>',true);
 }
 async function submitOnboard(){
@@ -370,7 +432,8 @@ async function submitOnboard(){
   try{
     const { data, error } = await db.functions.invoke('onboard-hospital', { body:{
       hospital_name:name, biz_no:el('ob_biz').value.trim(), owner_email:email, owner_password:pw,
-      owner_name:el('ob_owner').value.trim(), plan_tier:el('ob_plan').value, status:el('ob_status').value } });
+      owner_name:el('ob_owner').value.trim(), plan_tier:el('ob_plan').value, status:el('ob_status').value,
+      subscription_end:(el('ob_subend')&&el('ob_subend').value)||null } });
     if(error){ let msg=error.message||String(error); try{ const ctx=await error.context.json(); if(ctx&&ctx.error)msg=ctx.error; }catch(_){} throw new Error(msg); }
     if(data&&data.error) throw new Error(data.error);
     el('ob_result').innerHTML='<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;font-size:13px;line-height:1.7"><b style="color:#16a34a">✅ 생성 완료</b><br>병원: <b>'+esc(data.hospital_name)+'</b> ('+esc(data.plan_tier)+' / '+esc(data.status)+')<br>원장 로그인: <b>'+esc(data.owner_email)+'</b><br>비밀번호: <code style="background:#e2e8f0;padding:2px 6px;border-radius:5px">'+esc(pw)+'</code><br><span class="muted" style="font-size:11px">이 계정으로 로그인하면 새 병원으로 들어갑니다.</span></div>';
