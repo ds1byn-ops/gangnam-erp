@@ -1177,7 +1177,7 @@ function zhTreat(nm){nm=String(nm||'');var M=[['울쎄라','超声刀'],['슈링
 async function orderReceipt(id){
 const [{data:o},{data:items}]=await Promise.all([db.from('orders').select('*').eq('id',id).single(),db.from('order_items').select('*').eq('order_id',id)]);
 if(!o){alert('주문을 찾을 수 없습니다.');return;}
-const p=state.patients.find(x=>x.id===o.patient_id)||{};var _pkz={};try{var _pk=await db.from('packages').select('name,name_zh');((_pk&&_pk.data)||[]).forEach(function(x){if(x.name_zh)_pkz[x.name]=x.name_zh;});}catch(e){}function pzh(nm){nm=String(nm||'');var k=nm.replace('[패키지] ','').trim();return _pkz[k]||_pkz[nm]||zhTreat(nm);}
+const p=state.patients.find(x=>x.id===o.patient_id)||{};var _pkz={};try{var _pk=await db.from('packages').select('name,name_zh');((_pk&&_pk.data)||[]).forEach(function(x){if(x.name_zh)_pkz[x.name]=x.name_zh;});var _pr=await db.from('procedures').select('name,name_zh');((_pr&&_pr.data)||[]).forEach(function(x){if(x.name_zh)_pkz[x.name]=x.name_zh;});}catch(e){}function pzh(nm){nm=String(nm||'');var k=nm.replace('[패키지] ','').trim();return _pkz[k]||_pkz[nm]||zhTreat(nm);}
 var hosp={};try{const h=await db.from('hospitals').select('*').eq('id',state.hospital_id).single();hosp=(h&&h.data)||{};}catch(e){}
 var E=esc;var gmap={'여':'여성 女','여성':'여성 女','F':'여성 女','female':'여성 女','남':'남성 男','남성':'남성 男','M':'남성 男','male':'남성 男'};
 var gender=gmap[(p.gender||'')]||(p.gender||'-');var nat=p.nationality||'-';var pname=(p.eng_name||p.name||'-');
