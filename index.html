@@ -1064,9 +1064,10 @@ function renderTaskList(){
   }).join('');
   const fbtn=function(k,l){return '<button class="btn sm '+(taskFilter===k?'':'ghost')+'" onclick="taskFilter=\''+k+'\';renderTaskList()">'+l+'</button>';};
   el('main').innerHTML='<div class="page-head"><div><h2>할일</h2><div class="sub">업무 등록 · 담당자 지정 · 완료/실행인 확인</div></div><button class="btn" onclick="taskModal()">+ 할일 추가</button></div>'
-    +'<div style="display:flex;gap:6px;margin-bottom:10px">'+fbtn('open','미완료')+fbtn('mine','내 담당')+fbtn('done','완료')+fbtn('all','전체')+'</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:10px">'+fbtn('open','미완료')+fbtn('mine','내 담당')+fbtn('done','완료')+fbtn('all','전체')+'<button class="btn sm ghost" style="margin-left:auto" onclick="exportTasksICS()">📅 ICS 내보내기</button>'+'</div>'
     +'<div class="panel"><div class="pb"><table><thead><tr><th>상태</th><th>업무</th><th>담당자</th><th>기한</th><th>기록</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan=6 class="muted" style="text-align:center;padding:20px">할일이 없습니다.</td></tr>')+'</tbody></table></div></div>';
 }
+function exportTasksICS(){var LL=(state._tasks||[]).filter(function(t){return t.due_date;});if(!LL.length){alert('기한이 지정된 할일이 없습니다.');return;}function cs(s){return String(s||'').split(',').join(' ').split(';').join(' ');}var a=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//gangnampulse//todo','CALSCALE:GREGORIAN'];LL.forEach(function(t){a.push('BEGIN:VEVENT');a.push('UID:'+(t.id||Math.random())+'@gangnampulse');a.push('DTSTART;VALUE=DATE:'+String(t.due_date).split('-').join(''));a.push('SUMMARY:'+cs('[할일] '+(t.title||'')));a.push('DESCRIPTION:'+cs((t.detail||'')+(t.assignee_name?(' 담당:'+t.assignee_name):'')));a.push('END:VEVENT');});a.push('END:VCALENDAR');var blob=new Blob([a.join('\r\n')],{type:'text/calendar;charset=utf-8'});var el=document.createElement('a');el.href=URL.createObjectURL(blob);el.download='강남펄스_할일_'+new Date().toLocaleDateString('sv-SE')+'.ics';document.body.appendChild(el);el.click();document.body.removeChild(el);}
 function taskModal(id){
   const t=id?(state._tasks||[]).find(function(x){return x.id===id;}):null;
   const staffOpts='<option value="">담당자 미지정</option>'+(state._staffCache||[]).map(function(s){return '<option value="'+s.id+'" '+(t&&t.assignee_id===s.id?'selected':'')+'>'+esc(s.name)+'</option>';}).join('');
