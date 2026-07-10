@@ -244,6 +244,22 @@ async function doLogin(e){e.preventDefault();const b=el('loginBtn');b.disabled=t
   if(error){el('loginErr').textContent='로그인 실패: '+(error.message||error);b.disabled=false;return;}await boot();}
 async function doLogout(){await db.auth.signOut();location.reload();}
 
+async function enforceDeviceLimit(){
+try{
+if(state.isPlatformAdmin) return true;
+var tier=state.plan_tier||'basic';
+var limit=tier==='premium'?999999:(tier==='advanced'?3:1);
+var did=localStorage.getItem('gp_device_id');
+if(!did){did=((window.crypto&&crypto.randomUUID)?crypto.randomUUID():('d'+Date.now()+Math.random().toString(36).slice(2)));localStorage.setItem('gp_device_id',did);}
+var sid=state.staff.id;
+var res=await db.from('staff_devices').select('device_id').eq('staff_id',sid);
+var devs=(res&&res.data)||[];
+var exists=devs.some(function(d){return d.device_id===did;});
+if(!exists && devs.length>=limit) return false;
+await db.from('staff_devices').upsert({staff_id:sid,device_id:did,device_label:(navigator.userAgent||'').slice(0,120),last_seen:new Date().toISOString()},{onConflict:'staff_id,device_id'});
+return true;
+}catch(e){return true;}
+}
 async function boot(){
   const {data:{user}}=await db.auth.getUser();
   if(!user){el('login').style.display='flex';el('app').style.display='none';return;}
@@ -271,7 +287,7 @@ async function boot(){
   const _allm=['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','stats','settlement','agencies','packages','referrers','refsettle','staff','settings','audit','subscription'];
   let _allowed=(staff.role==='owner')?_allm.slice():((Array.isArray(staff.menu_perms)&&staff.menu_perms.length)?staff.menu_perms.slice():roleMenus(staff.role));
   if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings'&&k!=='audit'&&k!=='subscription');
-  try{ const {data:pa}=await db.from('platform_admins').select('id').eq('id',user.id).maybeSingle(); state.isPlatformAdmin=!!pa; }catch(e){ state.isPlatformAdmin=false; }
+  try{ const {data:pa}=await db.from('platform_admins').select('id').eq('id',user.id).maybeSingle(); state.isPlatformAdmin=!!pa; }catch(e){ state.isPlatformAdmin=false; } if(!(await enforceDeviceLimit())){ try{await db.auth.signOut();}catch(_e){} el('login').style.display='flex'; el('app').style.display='none'; var _lm=({basic:'1',advanced:'3',premium:'무제한'})[state.plan_tier]||'1'; if(el('loginErr'))el('loginErr').textContent='이 계정의 허용 기기 수('+_lm+'대)를 초과했습니다. 기존 기기에서 로그아웃 후 이용하세요.'; return; }
   // 구독 등급별 기능 제한 (플랫폼 관리자는 예외)
   if(!state.isPlatformAdmin){ const _tset=TIER_MENUS[state.plan_tier]||TIER_MENUS.basic; _allowed=_allowed.filter(k=>k==='subscription'||_tset.includes(k)); }
   document.querySelectorAll('#nav a').forEach(a=>{a.style.display=_allowed.includes(a.dataset.view)?'':'none';});
@@ -290,9 +306,9 @@ function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a'
 /* ============ 구독 · 이용권 ============ */
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
 function planFeatures(tier){ return ({
-  basic:['대시보드 · 예약 · 접수','환자 CRM · 상담견적 · 진료차트','수납 · 매출 관리','견적 발송(카톡·위챗) 월 100건','세금계산서·명세서 월 30건','직원 계정 3개'],
-  advanced:['기본 기능 전체','통계 리포트','에이전시 · 소개자 정산','거래처 · 패키지 관리','예비 세금계산서 · 명세서 발행','견적 발송 월 1,000건','세금계산서·명세서 월 100건','직원 계정 5개'],
-  premium:['고급 기능 전체','세금계산서 국세청 자동발행','정산 자동마감 · 명세서 일괄발송','예약 자동 리마인더 (알림톡·위챗)','다지점 통합 관리','견적 발송 · 발급 무제한','직원 계정 무제한','우선 기술지원']
+  basic:['대시보드 · 예약 · 접수','환자 CRM · 상담견적 · 진료차트','수납 · 매출 관리','견적 발송(카톡·위챗) 월 100건','세금계산서·명세서 월 30건','직원 계정 3개','지정 기기 1대'],
+  advanced:['기본 기능 전체','통계 리포트','에이전시 · 소개자 정산','거래처 · 패키지 관리','예비 세금계산서 · 명세서 발행','견적 발송 월 1,000건','세금계산서·명세서 월 100건','직원 계정 5개','지정 기기 3대'],
+  premium:['고급 기능 전체','세금계산서 국세청 자동발행','정산 자동마감 · 명세서 일괄발송','예약 자동 리마인더 (알림톡·위챗)','다지점 통합 관리','견적 발송 · 발급 무제한','직원 계정 무제한','우선 기술지원','지정 기기 무제한']
 })[tier]||[]; }
 async function renderSubscription(){
   const m=el('main');
