@@ -218,7 +218,7 @@ const PAY_LABEL={unpaid:'미수납',partial:'부분납',paid:'완납',refunded:'
 const ORD_LABEL={quote:'견적',confirmed:'확정',done:'완료',cancelled:'취소'};
 const state={hospital_id:null,hospital_name:'강남펄스',staff:null,procedures:[],patients:[],agencies:[],discounts:[],packages:[],referrers:[]};
 const PLAN_LABEL={basic:'기본',advanced:'고급',premium:'프리미엄'};
-const PLAN_PRICE={basic:100000,advanced:250000,premium:500000};
+const PLAN_PRICE={basic:50000,advanced:100000,premium:150000};
 const TIER_MENUS={
   basic:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings'],
   advanced:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle'],
@@ -291,7 +291,7 @@ function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a'
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
 function planFeatures(tier){ return ({
   basic:['대시보드 · 예약 · 접수','환자 CRM · 상담견적 · 진료차트','수납 · 매출 관리','견적 발송(카톡·위챗) 월 100건','세금계산서·명세서 월 30건','직원 계정 3개'],
-  advanced:['기본 기능 전체','통계 리포트','에이전시 · 소개자 정산','거래처 · 패키지 관리','예비 세금계산서 · 명세서 발행','견적 발송 월 1,000건','세금계산서·명세서 월 200건','직원 계정 5개'],
+  advanced:['기본 기능 전체','통계 리포트','에이전시 · 소개자 정산','거래처 · 패키지 관리','예비 세금계산서 · 명세서 발행','견적 발송 월 1,000건','세금계산서·명세서 월 100건','직원 계정 5개'],
   premium:['고급 기능 전체','세금계산서 국세청 자동발행','정산 자동마감 · 명세서 일괄발송','예약 자동 리마인더 (알림톡·위챗)','다지점 통합 관리','견적 발송 · 발급 무제한','직원 계정 무제한','우선 기술지원']
 })[tier]||[]; }
 async function renderSubscription(){
@@ -1658,7 +1658,7 @@ async function renderSettings(){
      <div class="field"><label>주소</label><input id="h_addr" value="${esc(c.address||'')}"></div>
      <div class="field"><label>카카오 JavaScript 키 <span class="muted" style="font-weight:400;font-size:12px">(견적 카카오톡 전송용 · 선택)</span></label><input id="h_kakao" value="${esc(kakaoKey())}" placeholder="비워두면 클립보드 복사 방식으로 전송"></div>
      <div class="muted" style="font-size:12px;margin-top:-4px">Kakao Developers에서 앱 생성 후 JavaScript 키를 입력하고, 플랫폼에 현재 사이트 도메인을 등록하면 카카오톡으로 바로 전송됩니다.</div>
-     <div class="field" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label><input type="checkbox" id="h_alimtalk" ${localStorage.getItem('alimtalk_on')==='1'?'checked':''}> 알림톡 자동발송 사용 <span class="muted" style="font-weight:400;font-size:12px">(솔라피 연동 · 환자 전화번호로 자동 전송)</span></label></div>
+     <div class="field" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" style="width:auto;margin:0;padding:0;border:0;flex:none" id="h_alimtalk" ${localStorage.getItem('alimtalk_on')==='1'?'checked':''}> 알림톡 자동발송 사용 <span class="muted" style="font-weight:400;font-size:12px">(솔라피 연동 · 환자 전화번호로 자동 전송)</span></label></div>
      <div class="field"><label>알림톡 템플릿 ID</label><input id="h_alimtalk_tpl" value="${esc(localStorage.getItem('alimtalk_template')||'')}" placeholder="솔라피 승인 템플릿 ID (비우면 서버 기본값 사용)"></div>
      <div class="muted" style="font-size:12px;margin-top:-4px">API 키·시크릿은 보안상 앱에 저장하지 않고 Supabase Edge Function 시크릿(SOLAPI_*)에 등록합니다. 발송에 실패하면 자동으로 클립보드 복사 방식으로 전환됩니다.</div>
      <div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
