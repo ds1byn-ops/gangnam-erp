@@ -180,7 +180,7 @@
         <a data-view="charts">진료차트</a>
         <a data-view="tasks">할일</a>
         <a data-view="files">자료실</a>
-        <a data-view="billing">수납 · 매출</a>
+        <a data-view="billing">수납 · 영수증</a>
         <div class="grp">매출 · 정산</div>
         <a data-view="stats">통계</a>
         <a data-view="settlement">에이전시 정산</a>
@@ -1161,9 +1161,9 @@ async function renderBilling(){
     <td>${esc(AM[o.agency_id]||'-')}</td><td class="right">${won(o.total)}</td>
     <td>${o.discount_amount>0?`<span style="color:var(--danger)">-${won(o.discount_amount)}</span>`:'-'}</td>
     <td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span>${o.pay_status==='paid'?methodBadge(o.pay_method):''}</td>
-    <td class="right"><button class="btn sm ghost" onclick="orderDetail('${o.id}')">상세</button>
+    <td class="right"><button class="btn sm ghost" onclick="orderDetail('${o.id}')">상세</button><button class="btn sm ghost" onclick="orderReceipt('${o.id}')">영수증</button>
       ${o.pay_status!=='paid'?`<button class="btn sm ok" onclick="markPaid('${o.id}','카드')">카드</button> <button class="btn sm ok" onclick="markPaid('${o.id}','현금')">현금</button>`:''}</td></tr>`).join('');
-  m.innerHTML=`<div class="page-head"><div><h2>수납·매출</h2><div class="sub">${now.getFullYear()}년 ${now.getMonth()+1}월</div></div>
+  m.innerHTML=`<div class="page-head"><div><h2>수납·영수증</h2><div class="sub">${now.getFullYear()}년 ${now.getMonth()+1}월</div></div>
      <button class="btn" onclick="navTo('quote')">+ 견적 작성</button></div>
    <div class="cards" style="grid-template-columns:repeat(3,1fr)">
      <div class="stat clk" onclick="billSort='amt';renderBilling()" title="금액순 정렬"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
@@ -1173,6 +1173,20 @@ async function renderBilling(){
 }
 async function markPaid(id,method){const {data:o}=await db.from('orders').select('total').eq('id',id).single();
   await db.from('orders').update({pay_status:'paid',paid_amount:o.total,pay_method:method||null,updated_at:new Date().toISOString()}).eq('id',id);logAudit('수납('+(method||'')+')',won(o.total));renderBilling();}
+async function orderReceipt(id){
+const [{data:o},{data:items}]=await Promise.all([db.from('orders').select('*').eq('id',id).single(),db.from('order_items').select('*').eq('order_id',id)]);
+if(!o){alert('주문을 찾을 수 없습니다.');return;}
+const p=state.patients.find(x=>x.id===o.patient_id)||{};
+var hosp={};try{const h=await db.from('hospitals').select('*').eq('id',state.hospital_id).single();hosp=(h&&h.data)||{};}catch(e){}
+var E=esc;var gmap={'여':'여성 女','여성':'여성 女','F':'여성 女','female':'여성 女','남':'남성 男','남성':'남성 男','M':'남성 男','male':'남성 男'};
+var gender=gmap[(p.gender||'')]||(p.gender||'-');var nat=p.nationality||'-';var pname=(p.eng_name||p.name||'-');
+var itemRows=(items||[]).map(function(i){return '<div class="itm">'+E(i.name||'')+((i.qty>1)?(' <span class="q">x'+i.qty+'</span>'):'')+'</div>';}).join('')||'<div class="itm">-</div>';
+var amt=Number(o.total||0);var today=new Date();var issueStr=today.getFullYear()+'년 '+(today.getMonth()+1)+'월 '+today.getDate()+'일';
+var clinic=(hosp.name||state.hospital_name||'병원');var addr=(hosp.address||'');var tel=(hosp.phone||hosp.tel||'');
+var html='<html><head><meta charset="utf-8"><title>영수증_'+E(pname)+'_'+today.toLocaleDateString('sv-SE')+'</title><style>*{box-sizing:border-box;margin:0;padding:0;font-family:\'Malgun Gothic\',\'Microsoft YaHei\',sans-serif;}body{padding:40px;color:#1b2a4a;background:#fff;}.wrap{max-width:720px;margin:0 auto;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;box-shadow:0 6px 30px rgba(15,77,51,.06);}.hd{background:linear-gradient(135deg,#0f4d33,#1a6b4a);color:#fff;padding:26px 30px;text-align:center;}.hd .t{font-size:30px;font-weight:800;letter-spacing:8px;}.hd .z{font-size:16px;opacity:.85;letter-spacing:6px;margin-top:2px;}.hd .c{margin-top:10px;font-size:13px;opacity:.9;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #e2e8e3;padding:12px 16px;font-size:14px;vertical-align:middle;}th{background:#f7f8fa;width:150px;text-align:center;color:#0f4d33;font-weight:700;line-height:1.5;}th small{display:block;font-weight:500;color:#6b7280;font-size:12px;}.itm{padding:3px 0;}.q{color:#b8923a;font-size:12px;}.amt{font-size:22px;font-weight:800;color:#0f4d33;}.ft{padding:26px 30px;text-align:center;}.ft .cf{color:#374151;font-size:13px;line-height:1.8;}.ft .dt{margin:14px 0 6px;font-size:13px;color:#374151;}.ft .cl{font-size:26px;font-weight:800;letter-spacing:2px;color:#1b2a4a;}.ft .ad{font-size:12px;color:#6b7280;margin-top:6px;line-height:1.6;}</style></head><body><div class="wrap"><div class="hd"><div class="t">영수증</div><div class="z">发票</div><div class="c">'+E(clinic)+'</div></div><table><tbody><tr><th>성명<small>姓名</small></th><td>'+E(pname)+((p.name&&p.eng_name)?(' <span style="color:#888;font-size:12px">('+E(p.name)+')</span>'):'')+'</td></tr><tr><th>국적<small>国籍</small></th><td>'+E(nat)+'</td></tr><tr><th>성별<small>性别</small></th><td>'+E(gender)+'</td></tr><tr><th>생년월일<small>出生年月日</small></th><td>'+E(p.birth_date||'-')+'</td></tr><tr><th>일자<small>日期</small></th><td>'+E((typeof fdate==="function"?fdate(o.order_date):o.order_date)||'-')+'</td></tr><tr><th>항목<small>项目</small></th><td>'+itemRows+'</td></tr><tr><th>금액<small>金额</small></th><td><span class="amt">KRW '+amt.toLocaleString()+'</span></td></tr></tbody></table><div class="ft"><div class="cf">상기 확인 사항은 사실과 틀림없음을 확인합니다.<br>上述确认事项与事实无误。</div><div class="dt">'+issueStr+'</div><div class="cl">'+E(clinic)+'</div><div class="ad">'+(addr?E(addr)+'<br>':'')+(tel?('TEL '+E(tel)):'')+'</div></div></div></body></html>';
+var w=window.open('','_blank','width=840,height=1040');if(!w){alert('팝업이 차단되었습니다. 팝업을 허용해주세요.');return;}
+w.document.write(html);w.document.close();w.focus();setTimeout(function(){w.print();},400);if(typeof logAudit==='function')logAudit('영수증 출력',pname);
+}
 async function orderDetail(id){
   openModal('<div class="mb loading">불러오는 중…</div>');
   const [{data:o},{data:items}]=await Promise.all([db.from('orders').select('*').eq('id',id).single(),db.from('order_items').select('*').eq('order_id',id)]);
