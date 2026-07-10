@@ -266,7 +266,7 @@ async function boot(){
   const {data:staff}=await db.from('staff_accounts').select('id,name,role,hospital_id').eq('id',user.id).single();
   if(!staff){el('loginErr').textContent='스태프 계정이 없습니다.';return;}
   state.staff=staff;state.hospital_id=staff.hospital_id;
-  fetch('https://api.ipify.org?format=json').then(r=>r.json()).then(j=>{state.ip=j.ip;}).catch(()=>{});
+  fetch('https://ipwho.is/').then(r=>r.json()).then(j=>{if(j){if(j.ip)state.ip=j.ip;if(j.country_code)state.country=j.country_code;}}).catch(()=>{});
   const [{data:hosp},{data:procs},{data:ags},{data:dcs},{data:pkgs},{data:pkgItems}]=await Promise.all([
     db.from('hospitals').select('name,plan_tier,subscription_end').eq('id',staff.hospital_id).single(),
     db.from('procedures').select('*').eq('is_active',true).order('category').order('name'),
@@ -1575,7 +1575,7 @@ async function renderStats(){
 }
 
 /* ============ 감사 로그 ============ */
-async function logAudit(action,detail){try{await db.from('audit_logs').insert({hospital_id:state.hospital_id,staff_id:state.staff?state.staff.id:null,staff_name:state.staff?state.staff.name:null,menu:curView,action:action,detail:detail?String(detail):null,ip:state.ip||null});}catch(e){}}
+async function logAudit(action,detail){try{await db.from('audit_logs').insert({hospital_id:state.hospital_id,staff_id:state.staff?state.staff.id:null,staff_name:state.staff?state.staff.name:null,menu:curView,action:action,detail:detail?String(detail):null,ip:state.ip,country:state.country||null||null});}catch(e){}}
 function menuLabel(k){const x=(typeof MENUS!=='undefined')?MENUS.find(y=>y.k===k):null;return x?x.label:(k||'-');}
 let alFrom='',alTo='';
 async function renderAudit(){
@@ -1592,7 +1592,8 @@ async function renderAudit(){
    <div class="panel"><div class="pb" id="alTable"></div></div>`;
   drawAudit(state._audit);
 }
-function drawAudit(list){const t=el('alTable');t.innerHTML=list.length?`<table><thead><tr><th>시각</th><th>직원</th><th>메뉴</th><th>행위</th><th>상세</th><th>IP</th></tr></thead><tbody>${list.map(l=>`<tr><td style="white-space:nowrap">${new Date(l.created_at).toLocaleString('ko-KR')}</td><td><b>${esc(l.staff_name||'-')}</b></td><td>${esc(menuLabel(l.menu))}</td><td>${esc(l.action)}</td><td class="muted">${esc(l.detail||'')}</td><td class="muted">${esc(l.ip||'-')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">로그가 없습니다.</div>';}
+function flagEmoji(cc){if(!cc||cc.length!==2)return '';try{return String.fromCodePoint.apply(null,[...cc.toUpperCase()].map(function(c){return 127397+c.charCodeAt(0);}))+' ';}catch(e){return '';}}
+function drawAudit(list){const t=el('alTable');t.innerHTML=list.length?`<table><thead><tr><th>시각</th><th>직원</th><th>메뉴</th><th>행위</th><th>상세</th><th>IP</th></tr></thead><tbody>${list.map(l=>`<tr><td style="white-space:nowrap">${new Date(l.created_at).toLocaleString('ko-KR')}</td><td><b>${esc(l.staff_name||'-')}</b></td><td>${esc(menuLabel(l.menu))}</td><td>${esc(l.action)}</td><td class="muted">${esc(l.detail||'')}</td><td class="muted">${flagEmoji(l.country)+esc(l.ip||'-')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">로그가 없습니다.</div>';}
 function filterAudit(){const q=(el('alSrch').value||'').toLowerCase();drawAudit((state._audit||[]).filter(l=>!q||(l.staff_name||'').toLowerCase().includes(q)||(l.action||'').toLowerCase().includes(q)||menuLabel(l.menu).toLowerCase().includes(q)||(l.detail||'').toLowerCase().includes(q)));}
 function exportAuditCSV(){const rows=(state._audit||[]).map(l=>[new Date(l.created_at).toLocaleString('ko-KR'),l.staff_name||'',menuLabel(l.menu),l.action,l.detail||'',l.ip||'']);const head=['시각','직원','메뉴','행위','상세','IP'];const q=c=>`"${(c==null?'':String(c)).replace(/"/g,'""')}"`;const csv='﻿'+[head.map(q).join(',')].concat(rows.map(r=>r.map(q).join(','))).join('\n');const b=new Blob([csv],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='감사로그.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);}
 
@@ -1680,6 +1681,7 @@ async function toggleStaff(id,active){await db.from('staff_accounts').update({is
 async function renderSettings(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const {data:h}=await db.from('hospitals').select('*').eq('id',state.hospital_id).single();
+let _geo={enabled:true,allowed_countries:['KR']};try{const _gr=await db.from('geo_config').select('*').eq('id',1).single();if(_gr&&_gr.data)_geo=_gr.data;}catch(e){}
   const c=(h&&h.contact)||{};
   m.innerHTML=`<div class="page-head"><div><h2>병원 설정</h2><div class="sub">병원 기본정보 · 세금계산서/거래명세서에 사용됩니다</div></div></div>
    <div class="panel" style="max-width:640px"><div class="pb" style="padding:18px">
@@ -1699,10 +1701,11 @@ async function renderSettings(){
      <div class="field" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" style="width:auto;margin:0;padding:0;border:0;flex:none" id="h_alimtalk" ${localStorage.getItem('alimtalk_on')==='1'?'checked':''}> 알림톡 자동발송 사용 <span class="muted" style="font-weight:400;font-size:12px">(솔라피 연동 · 환자 전화번호로 자동 전송)</span></label></div>
      <div class="field"><label>알림톡 템플릿 ID</label><input id="h_alimtalk_tpl" value="${esc(localStorage.getItem('alimtalk_template')||'')}" placeholder="솔라피 승인 템플릿 ID (비우면 서버 기본값 사용)"></div>
      <div class="muted" style="font-size:12px;margin-top:-4px">API 키·시크릿은 보안상 앱에 저장하지 않고 Supabase Edge Function 시크릿(SOLAPI_*)에 등록합니다. 발송에 실패하면 자동으로 클립보드 복사 방식으로 전환됩니다.</div>
-     <div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
+     ${state.isPlatformAdmin?('<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>🌏 국가별 접속 제한 (플랫폼 관리자)</label><label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer"><input type="checkbox" id="geo_enabled" '+(_geo.enabled?'checked':'')+' style="width:auto"> 국가 차단 사용 (끄면 전 세계 허용)</label><div style="font-size:12px;color:#6b7280;margin-top:4px">허용 국가 코드 (쉼표 구분, 예: KR,CN,US)</div><input id="geo_allowed" value="'+((_geo.allowed_countries||['KR']).join(','))+'" placeholder="KR"><div class="muted" style="font-size:11px;margin-top:4px">한국(KR)은 항상 허용 · 저장 후 Netlify 반영 1~2분</div><button class="btn" style="margin-top:8px" onclick="saveGeoConfig()">국가 설정 저장</button></div>'):''}<div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
    </div></div>`;
 }
 function hsImg(inputId,dataId,prevId){var f=document.getElementById(inputId);var file=f&&f.files&&f.files[0];if(!file)return;if(file.size>1500000)alert('이미지가 큽니다(1.5MB 이하 권장). 저장은 되지만 느릴 수 있어요.');var rd=new FileReader();rd.onload=function(){var d=rd.result;var dh=document.getElementById(dataId);if(dh)dh.value=d;var pv=document.getElementById(prevId);if(pv){pv.src=d;pv.style.display='';}};rd.readAsDataURL(file);}
+async function saveGeoConfig(){var en=el('geo_enabled')?el('geo_enabled').checked:true;var arr=((el('geo_allowed')||{}).value||'').split(',').map(function(x){return x.trim().toUpperCase();}).filter(Boolean);if(arr.indexOf('KR')<0)arr.unshift('KR');const {error}=await db.from('geo_config').update({enabled:en,allowed_countries:arr,updated_at:new Date().toISOString()}).eq('id',1);if(error){alert('저장 실패: '+error.message);return;}try{logAudit('국가 접속제한 변경',{enabled:en,allowed:arr});}catch(e){}alert('저장되었습니다. Netlify 반영까지 1~2분 걸립니다.');}
 async function saveSettings(){
   const name=el('h_name').value.trim();if(!name){alert('병원명을 입력하세요');return;}
   const contact={ceo:el('h_ceo').value||'',phone:el('h_phone').value||'',email:el('h_email').value||'',address:el('h_addr').value||'',logo:(el('h_logo_data')&&el('h_logo_data').value)||'',seal:(el('h_seal_data')&&el('h_seal_data').value)||''};
