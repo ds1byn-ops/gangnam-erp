@@ -1071,7 +1071,7 @@ function renderTaskList(){
   const rows=list.map(function(t){
     const overdue=t.status!=='done'&&t.due_date&&t.due_date<today;
     return '<tr><td>'+(stBadge[t.status]||t.status)+'</td>'
-      +'<td><b>'+esc(t.title)+'</b>'+(t.detail?'<div class="muted" style="font-size:12px">'+esc(t.detail)+'</div>':'')+'</td>'
+      +'<td>'+(t.category?'<span class="tag" style="font-size:10px;background:#eef2f6;color:#475569;margin-right:4px">'+esc(t.category)+'</span>':'')+'<b>'+esc(t.title)+'</b>'+(t.detail?'<div class="muted" style="font-size:12px">'+esc(t.detail)+'</div>':'')+'</td>'
       +'<td>'+esc(t.assignee_name||'-')+'</td>'
       +'<td'+(overdue?' style="color:var(--danger);font-weight:700"':'')+'>'+(t.due_date||'-')+(overdue?' ⚠':'')+'</td>'
       +'<td class="muted" style="font-size:12px">'+(t.status==='done'?('완료: '+esc(t.done_by_name||'')+' '+(t.done_at?fdate(t.done_at):'')):('등록: '+esc(t.created_by_name||'')))+'</td>'
@@ -1091,7 +1091,7 @@ function taskModal(id){
   const ip='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
   openModal('<div class="mh">'+(t?'할일 수정':'할일 추가')+'<span onclick="closeModal()">✕</span></div><div class="mb">'
     +'<div class="field"><label>업무 내용 *</label><input id="tk_title" '+ip+' value="'+(t?esc(t.title):'')+'"></div>'
-    +'<div class="field"><label>상세</label><textarea id="tk_detail" '+ip+' rows="2">'+(t?esc(t.detail||''):'')+'</textarea></div>'
+    +'<div class="field"><label>구분</label><select id="tk_cat"><option value="">(미지정)</option>'+['상담','예약','정산','마케팅','기타'].map(function(cc){return '<option'+((t&&t.category===cc)?' selected':'')+'>'+cc+'</option>';}).join('')+'</select></div>'+'<div class="field"><label>상세</label><textarea id="tk_detail" '+ip+' rows="2">'+(t?esc(t.detail||''):'')+'</textarea></div>'
     +'<div class="grid2"><div class="field"><label>담당자</label><select id="tk_assignee" '+ip+'>'+staffOpts+'</select></div>'
     +'<div class="field"><label>기한</label><input type="date" id="tk_due" '+ip+' value="'+(t&&t.due_date?t.due_date:'')+'"></div></div>'
     +'</div><div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button>'+(t?'<button class="btn ghost" style="color:var(--danger)" onclick="deleteTask(\''+t.id+'\')">삭제</button>':'')+'<button class="btn" onclick="saveTask('+(t?'\''+t.id+'\'':'null')+')">저장</button></div>',true);
@@ -1101,7 +1101,7 @@ async function saveTask(id){
   const asId=el('tk_assignee').value||null;
   const asName=asId?(((state._staffCache||[]).find(function(s){return s.id===asId;})||{}).name||null):null;
   const me=state.staff||{};
-  const row={title:title,detail:el('tk_detail').value.trim()||null,assignee_id:asId,assignee_name:asName,due_date:el('tk_due').value||null,updated_at:new Date().toISOString()};
+  const row={title:title,detail:el('tk_detail').value.trim()||null,assignee_id:asId,category:(el('tk_cat')?el('tk_cat').value||null:null),assignee_name:asName,due_date:el('tk_due').value||null,updated_at:new Date().toISOString()};
   let res;
   if(id){ res=await db.from('tasks').update(row).eq('id',id); }
   else { row.hospital_id=state.hospital_id; row.status='todo'; row.created_by=me.id; row.created_by_name=me.name; res=await db.from('tasks').insert(row); }
