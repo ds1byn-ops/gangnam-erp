@@ -264,6 +264,28 @@ const PLAT_URL='https://qfncxamqeiyxkbjxwtoi.supabase.co';
 const PLAT_KEY='sb_publishable_qaah2ieLZHqjBFsvi6Zwag_QsKYhWhV';
 const platDb=supabase.createClient(PLAT_URL,PLAT_KEY);
 let _platToken=null;
+async function platEnsureToken(){
+var h;try{const r=await db.from('hospitals').select('contact').eq('id',state.hospital_id).single();h=r.data;}catch(e){}
+var c=(h&&h.contact)||{};if(!c.plat_id||!c.plat_pw)return null;
+var lr;try{lr=await platDb.rpc('hospital_login',{p_id:c.plat_id,p_password:c.plat_pw});}catch(e){lr={};}
+if(lr.data&&lr.data.ok){_platToken=lr.data.token;return _platToken;}
+return null;
+}
+async function syncOrdersToPlatform(){
+if(!confirm('이번 달 주문·시술 내역을 플랫폼으로 전송할까요?'))return;
+var tok=await platEnsureToken();
+if(!tok){alert('플랫폼 연동이 안 됐습니다. 병원 설정 → 플랫폼 연동에서 ID/비밀번호를 등록하세요.');return;}
+var now=new Date();var from=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);
+var od;try{od=await db.from('orders').select('*').gte('order_date',from);}catch(e){od={};}
+var orders=((od&&od.data)||[]).filter(function(o){return o.status!=='cancelled';});
+if(!orders.length){alert('전송할 주문이 없습니다.');return;}
+var PM=pmap();var AM=amap();var ok=0,fail=0;
+for(var i=0;i<orders.length;i++){var o=orders[i];
+var data={patient:PM[o.patient_id]||'',agency:AM[o.agency_id]||'',doctor:o.doctor||'',amount:Number(o.total||0),discount:Number(o.discount_amount||0),date:o.order_date,order_no:o.order_no,pay_status:o.pay_status,status:o.status};
+try{var res=await platDb.rpc('hosp_sync_booking',{p_token:tok,p_src_id:String(o.id),p_data:data});if(res&&res.data&&res.data.ok)ok++;else fail++;}catch(e){fail++;}
+}
+alert('플랫폼 전송 완료 — 성공 '+ok+'건, 실패 '+fail+'건');
+}
 async function renderPlatformQuotes(){
 const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
 var h;try{const r=await db.from('hospitals').select('contact').eq('id',state.hospital_id).single();h=r.data;}catch(e){}
@@ -1198,7 +1220,7 @@ async function renderBilling(){
     <td class="right"><button class="btn sm ghost" onclick="orderDetail('${o.id}')">상세</button><button class="btn sm ghost" onclick="orderReceipt('${o.id}')">영수증</button>
       ${o.pay_status!=='paid'?`<button class="btn sm ok" onclick="markPaid('${o.id}','카드')">카드</button> <button class="btn sm ok" onclick="markPaid('${o.id}','현금')">현금</button>`:''}</td></tr>`).join('');
   m.innerHTML=`<div class="page-head"><div><h2>수납·영수증</h2><div class="sub">${now.getFullYear()}년 ${now.getMonth()+1}월</div></div>
-     <button class="btn" onclick="navTo('quote')">+ 견적 작성</button></div>
+     <button class="btn ghost" style="margin-right:6px" onclick="syncOrdersToPlatform()">🌐 플랫폼 동기화</button><button class="btn" onclick="navTo('quote')">+ 견적 작성</button></div>
    <div class="cards" style="grid-template-columns:repeat(3,1fr)">
      <div class="stat clk" onclick="billSort='amt';renderBilling()" title="금액순 정렬"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
      <div class="stat clk" onclick="billSort='recent';renderBilling()" title="최신순 정렬"><div class="k">이번달 건수</div><div class="v">${mons.length}<small> 건</small></div></div>
