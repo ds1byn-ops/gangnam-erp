@@ -316,7 +316,7 @@ async function renderPlatformQuotes(){
 const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
 var h;try{const r=await db.from('hospitals').select('contact').eq('id',state.hospital_id).single();h=r.data;}catch(e){}
 var c=(h&&h.contact)||{};var pid=c.plat_id,ppw=c.plat_pw;
-var head='<div class="page-head"><div><h2>🌐 플랫폼 문의</h2><div class="sub">글로벌·중국 플랫폼에서 들어온 견적문의</div></div><button class="btn" onclick="renderPlatformQuotes()">새로고침</button></div>';
+var head='<div class="page-head"><div><h2>플랫폼 문의</h2><div class="sub">글로벌·중국 플랫폼에서 들어온 견적문의</div></div><button class="btn" onclick="renderPlatformQuotes()">새로고침</button></div>';
 if(!pid||!ppw){m.innerHTML=head+'<div class="panel"><div class="pb" style="padding:20px;color:#64748b">병원 설정 → 플랫폼 연동에서 플랫폼 병원 ID/비밀번호를 먼저 등록하세요.</div></div>';return;}
 var lr;try{lr=await platDb.rpc('hospital_login',{p_id:pid,p_password:ppw});}catch(e){lr={};}
 if(!lr.data||!lr.data.ok){m.innerHTML=head+'<div class="panel"><div class="pb" style="padding:20px;color:var(--danger)">플랫폼 로그인 실패 — 병원 설정의 플랫폼 ID/비밀번호를 확인하세요.</div></div>';return;}
@@ -406,7 +406,7 @@ async function renderSubscription(){
       +feats
       +'</div>';
   };
-  m.innerHTML='<div class="page-head"><div><h2>💳 구독 · 이용권</h2><div class="sub">현재 구독 등급과 이용 기간</div></div></div>'
+  m.innerHTML='<div class="page-head"><div><h2>구독 · 이용권</h2><div class="sub">현재 구독 등급과 이용 기간</div></div></div>'
     +'<div class="panel"><div class="pb" style="padding:16px"><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">'
       +'<div><div class="muted" style="font-size:12px">현재 등급</div><div style="font-size:22px;font-weight:800;color:'+badge+'">'+label+'</div></div>'
       +'<div style="border-left:1px solid var(--line);padding-left:16px"><div class="muted" style="font-size:12px">이용 기간</div><div style="font-size:14px;font-weight:600">'+(state.subscription_start?fdate(state.subscription_start)+' ~ ':'')+(end||'미설정')+'</div></div>'
@@ -414,7 +414,7 @@ async function renderSubscription(){
       +'<div style="margin-left:auto;font-size:12px;color:var(--muted)">갱신·등급변경은 <b>팔로우코리아</b>에 문의하세요</div>'
     +'</div></div></div>'
     +usagePanel
-    +((d!==null&&d<=7)?('<div class="panel" style="border:1px solid #fca5a5"><div class="pb" style="padding:14px 16px;color:#dc2626;font-size:13px;font-weight:600">⚠️ '+(d<0?'구독이 만료되었습니다.':(d===0?'오늘 구독이 만료됩니다.':'구독 만료 '+d+'일 전입니다.'))+' 팔로우코리아에 갱신을 요청하세요.</div></div>'):'')
+    +((d!==null&&d<=7)?('<div class="panel" style="border:1px solid #fca5a5"><div class="pb" style="padding:14px 16px;color:#dc2626;font-size:13px;font-weight:600">'+(d<0?'구독이 만료되었습니다.':(d===0?'오늘 구독이 만료됩니다.':'구독 만료 '+d+'일 전입니다.'))+' 팔로우코리아에 갱신을 요청하세요.</div></div>'):'')
     +'<div class="panel"><div class="ph">구독 등급 안내</div><div class="pb" style="padding:16px"><div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch">'+card('basic',tier==='basic')+card('advanced',tier==='advanced')+card('premium',tier==='premium')+'</div><div class="muted" style="font-size:11.5px;margin-top:14px">※ 부가세 별도 · 등급 변경/결제는 팔로우코리아에 문의 · 자동화 기능(세금계산서 자동발행·정산 자동마감·예약 리마인더)은 순차 제공</div></div></div>';
 }
 /* ===== 단일 세션: 한 계정은 한 기기에서만 (새 로그인 시 기존 기기 자동 로그아웃) ===== */
@@ -452,7 +452,7 @@ function showSubPopup(msgHtml){
   const wrap=document.createElement('div'); wrap.id='subPopup';
   wrap.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:20px';
   wrap.innerHTML='<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">'
-    +'<div style="background:#dc2626;color:#fff;padding:14px 18px;font-weight:800;font-size:15px">⚠️ 구독 만료 안내</div>'
+    +'<div style="background:#dc2626;color:#fff;padding:14px 18px;font-weight:800;font-size:15px">구독 만료 안내</div>'
     +'<div style="padding:18px;font-size:14px;line-height:1.7;color:#1e293b">'+msgHtml+'<br><br>서비스 중단을 막으려면 <b>팔로우코리아</b>에 구독 갱신을 요청하세요.</div>'
     +'<div style="padding:0 18px 18px;text-align:right"><button class="btn" style="background:#dc2626" onclick="document.getElementById(\'subPopup\').remove()">확인</button></div></div>';
   document.body.appendChild(wrap);
@@ -481,7 +481,7 @@ async function renderPlatform(){
       +'<td>'+fdate(h.created_at)+'</td>'
       +'<td class="right"><button class="btn sm ghost" onclick="platAccounts(\''+h.id+'\')">계정 관리</button></td></tr>';
   }).join('');
-  m.innerHTML='<div class="page-head"><div><h2>🏢 플랫폼 관리</h2><div class="sub">전 병원 관리 (팔로우코리아 전용) · 총 '+(hosps||[]).length+'개 병원</div></div>'
+  m.innerHTML='<div class="page-head"><div><h2>플랫폼 관리</h2><div class="sub">전 병원 관리 (팔로우코리아 전용) · 총 '+(hosps||[]).length+'개 병원</div></div>'
     +'<button class="btn" onclick="obModal()">＋ 새 병원</button></div>'
     +'<div class="panel"><div class="pb"><table><thead><tr><th>병원</th><th>상태</th><th>플랜</th><th class="right">계정/한도</th><th>구독만료</th><th>가입일</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan=6 class="muted">병원이 없습니다.</td></tr>')+'</tbody></table></div></div>'
     +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· <b>상태</b> 활성/체험/중지 · <b>계정/한도</b> 활성계정수 / 무료한도(유료 시 상향)<br>· <b>계정 관리</b>에서 병원별 로그인 계정 추가·비번 재설정. 각 병원 원장은 자기 로그인에서 한도 내 직접 추가.</div></div>';
@@ -514,11 +514,11 @@ async function platAddStaff(hid){
     const {data,error}=await db.functions.invoke('create-staff',{body:{name,email,password:pw,role,hospital_id:hid}});
     if(error){let msg=error.message||error;try{const c=await error.context.json();if(c&&c.error)msg=c.error;}catch(_){}throw new Error(msg);}
     if(data&&data.error)throw new Error(data.error);
-    el('pa_result').innerHTML='<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px;font-size:12.5px">✅ 생성: <b>'+esc(email)+'</b> / <code style="background:#e2e8f0;padding:1px 5px;border-radius:4px">'+esc(pw)+'</code></div>';
+    el('pa_result').innerHTML='<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px;font-size:12.5px">생성: <b>'+esc(email)+'</b> / <code style="background:#e2e8f0;padding:1px 5px;border-radius:4px">'+esc(pw)+'</code></div>';
     logAudit('플랫폼 계정추가',email);
     ['pa_name','pa_email','pa_pw'].forEach(function(id){var e=el(id);if(e)e.value='';});
     renderPlatform();
-  }catch(e){ el('pa_result').innerHTML='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px;color:#dc2626;font-size:12.5px">❌ '+esc(e.message||String(e))+'</div>'; }
+  }catch(e){ el('pa_result').innerHTML='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px;color:#dc2626;font-size:12.5px">'+esc(e.message||String(e))+'</div>'; }
   btn.disabled=false;btn.textContent=o;
 }
 async function platResetPw(uid,name){
@@ -562,11 +562,11 @@ async function submitOnboard(){
       subscription_end:(el('ob_subend')&&el('ob_subend').value)||null } });
     if(error){ let msg=error.message||String(error); try{ const ctx=await error.context.json(); if(ctx&&ctx.error)msg=ctx.error; }catch(_){} throw new Error(msg); }
     if(data&&data.error) throw new Error(data.error);
-    el('ob_result').innerHTML='<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;font-size:13px;line-height:1.7"><b style="color:#16a34a">✅ 생성 완료</b><br>병원: <b>'+esc(data.hospital_name)+'</b> ('+esc(data.plan_tier)+' / '+esc(data.status)+')<br>원장 로그인: <b>'+esc(data.owner_email)+'</b><br>비밀번호: <code style="background:#e2e8f0;padding:2px 6px;border-radius:5px">'+esc(pw)+'</code><br><span class="muted" style="font-size:11px">이 계정으로 로그인하면 새 병원으로 들어갑니다.</span></div>';
+    el('ob_result').innerHTML='<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;font-size:13px;line-height:1.7"><b style="color:#16a34a">생성 완료</b><br>병원: <b>'+esc(data.hospital_name)+'</b> ('+esc(data.plan_tier)+' / '+esc(data.status)+')<br>원장 로그인: <b>'+esc(data.owner_email)+'</b><br>비밀번호: <code style="background:#e2e8f0;padding:2px 6px;border-radius:5px">'+esc(pw)+'</code><br><span class="muted" style="font-size:11px">이 계정으로 로그인하면 새 병원으로 들어갑니다.</span></div>';
     logAudit('병원 온보딩', name+' / '+email);
     ['ob_name','ob_biz','ob_email','ob_pw','ob_owner'].forEach(function(id){const e=el(id);if(e)e.value='';});
     renderPlatform();
-  }catch(e){ el('ob_result').innerHTML='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:12px;color:#dc2626;font-size:13px">❌ '+esc(e.message||String(e))+'</div>'; }
+  }catch(e){ el('ob_result').innerHTML='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:12px;color:#dc2626;font-size:13px">'+esc(e.message||String(e))+'</div>'; }
   btn.disabled=false; btn.textContent=old;
 }
 function openModal(html,lg){el('modal').className='modal'+(lg?' lg':'');el('modal').innerHTML=html;el('modalBg').style.display='flex';}
@@ -611,7 +611,7 @@ async function renderDashboard(){
     Object.keys(last).forEach(pid=>{const lv=new Date(last[pid]).getTime();const days=Math.floor((nowMs-lv)/86400000);if(days>=recallDays){const rem=remAfter[pid];if(!rem||new Date(rem).getTime()<lv)due.push({pid:pid,lv:last[pid],days:days});}});
     due.sort((a,b)=>b.days-a.days);
     const rows=due.slice(0,50).map(d=>`<tr><td>${esc(PM[d.pid]||'-')}</td><td>${fdate(d.lv)}</td><td class="right"><b style="color:var(--danger)">${d.days}일</b></td><td><button class="btn sm wechat" onclick="revisitMsg('${d.pid}')">위챗 안내</button> <button class="btn sm ghost" onclick="logRevisit('${d.pid}','${d.lv}')">발송 기록</button></td></tr>`).join('');
-    revisitPanel=`<div class="panel"><div class="ph">🔔 재방문 도래 (${due.length}명 · ${recallDays}일+ 경과) <span class="muted" style="font-size:11px;font-weight:400">마지막 방문 기준 · 위챗 안내 후 '발송 기록'</span></div><div class="pb">${due.length?`<table><thead><tr><th>환자</th><th>마지막 방문</th><th class="right">경과</th><th>액션</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">재방문 도래 환자가 없습니다.</div>'}</div></div>`;
+    revisitPanel=`<div class="panel"><div class="ph">재방문 도래 (${due.length}명 · ${recallDays}일+ 경과) <span class="muted" style="font-size:11px;font-weight:400">마지막 방문 기준 · 위챗 안내 후 '발송 기록'</span></div><div class="pb">${due.length?`<table><thead><tr><th>환자</th><th>마지막 방문</th><th class="right">경과</th><th>액션</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">재방문 도래 환자가 없습니다.</div>'}</div></div>`;
   }
   m.innerHTML=`
    <div class="page-head"><div><h2>대시보드</h2>
@@ -1177,7 +1177,7 @@ async function renderFiles(){
   if(paths.length && canViewFiles()){ const {data:us}=await db.storage.from('attachments').createSignedUrls(paths,3600); (us||[]).forEach(function(u,i){ if(u&&u.signedUrl)urlMap[paths[i]]=u.signedUrl; }); }
   const cards=list.map(function(a){
     const url=urlMap[a.file_path]; const isImg=((a.mime||'').indexOf('image')===0)||/\.(jpg|jpeg|png|gif|webp)$/i.test(a.file_name||'');
-    const thumb=(isImg&&url)?'<a href="'+url+'" target="_blank"><img src="'+url+'" style="width:100%;height:130px;object-fit:cover;display:block"></a>':'<div style="height:130px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#64748b;font-size:13px">'+(url?'<a href="'+url+'" target="_blank">📄 파일 열기</a>':'미리보기 없음')+'</div>';
+    const thumb=(isImg&&url)?'<a href="'+url+'" target="_blank"><img src="'+url+'" style="width:100%;height:130px;object-fit:cover;display:block"></a>':'<div style="height:130px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#64748b;font-size:13px">'+(url?'<a href="'+url+'" target="_blank">파일 열기</a>':'미리보기 없음')+'</div>';
     return '<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;width:180px">'+thumb
       +'<div style="padding:8px 10px"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(a.file_name||'-')+'</div>'
       +'<div class="muted" style="font-size:11px">'+esc(a.category)+((a.patient_id&&PM[a.patient_id])?' · '+esc(PM[a.patient_id]):'')+'</div>'
@@ -1193,7 +1193,7 @@ async function renderFiles(){
       +'<input type="file" id="af_file" accept="image/*,.pdf" style="font-size:13px">'+catSel+patSel
       +'<button class="btn" id="af_btn" onclick="uploadFile()">업로드</button>'
       +'<span class="muted" style="font-size:11px">이미지/PDF · 10MB 이하</span></div></div>'
-    +'<div style="display:flex;gap:6px;margin:12px 0">'+fbtn('all','전체')+fbtn('전후사진','전후사진')+fbtn('행정','행정')+fbtn('기타','기타')+'<button class="btn sm" style="background:var(--brand);color:#fff;margin-left:8px" onclick="openCompare()">🔍 전후 비교</button><span style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;color:#555"><label>기간</label><input type="date" id="af_from" onchange="renderFiles()" style="padding:3px 5px"><span>~</span><input type="date" id="af_to" onchange="renderFiles()" style="padding:3px 5px"><button class="btn sm ghost" onclick="fileDateReset()">초기화</button></span>'+'</div>'
+    +'<div style="display:flex;gap:6px;margin:12px 0">'+fbtn('all','전체')+fbtn('전후사진','전후사진')+fbtn('행정','행정')+fbtn('기타','기타')+'<button class="btn sm" style="background:var(--brand);color:#fff;margin-left:8px" onclick="openCompare()">전후 비교</button><span style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;color:#555"><label>기간</label><input type="date" id="af_from" onchange="renderFiles()" style="padding:3px 5px"><span>~</span><input type="date" id="af_to" onchange="renderFiles()" style="padding:3px 5px"><button class="btn sm ghost" onclick="fileDateReset()">초기화</button></span>'+'</div>'
     +'<div style="display:flex;gap:12px;flex-wrap:wrap">'+(cards||'<div class="muted" style="padding:20px">자료가 없습니다.</div>')+'</div>';
 }
 async function uploadFile(){
@@ -1201,7 +1201,8 @@ async function uploadFile(){
   if(f.size>10*1024*1024){alert('10MB 이하만 업로드 가능합니다');return;}
   const cat=el('af_cat').value, pid=el('af_pat').value||null, me=state.staff||{};
   const safe=f.name.replace(/[^\w.\-]/g,'_');
-  const path=state.hospital_id+'/'+cat+'/'+Date.now()+'_'+safe;
+  const _cslug=({'전후사진':'photo','행정':'admin','기타':'etc'})[cat]||'etc';
+  const path=state.hospital_id+'/'+_cslug+'/'+Date.now()+'_'+safe;
   const btn=el('af_btn'); btn.disabled=true; const o=btn.textContent; btn.textContent='업로드 중…';
   const up=await db.storage.from('attachments').upload(path,f,{contentType:f.type||undefined,upsert:false});
   if(up.error){ alert('업로드 실패: '+up.error.message); btn.disabled=false; btn.textContent=o; return; }
@@ -1226,7 +1227,7 @@ async function openCompare(){
   var pm=pmap();var opts=Object.keys(pats).map(function(id){return '<option value="'+id+'">'+esc(pm[id]||id)+'</option>';}).join('');
   if(!opts){alert('환자 연결된 전후사진이 없습니다.\n자료실 업로드 시 "환자 연결"을 선택하세요.');return;}
   _cmpL=null;_cmpR=null;
-  openModal('<div style="font-size:16px;font-weight:800;margin-bottom:10px">🔍 전후 사진 비교</div><div class="field"><label>환자</label><select id="cmp_pat" onchange="renderCompare(this.value)" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%">'+opts+'</select></div><div id="cmp_body" style="margin-top:10px">불러오는 중…</div><div class="mf" style="margin-top:10px"><button class="btn ghost" onclick="closeModal()">닫기</button></div>',true);
+  openModal('<div style="font-size:16px;font-weight:800;margin-bottom:10px">전후 사진 비교</div><div class="field"><label>환자</label><select id="cmp_pat" onchange="renderCompare(this.value)" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%">'+opts+'</select></div><div id="cmp_body" style="margin-top:10px">불러오는 중…</div><div class="mf" style="margin-top:10px"><button class="btn ghost" onclick="closeModal()">닫기</button></div>',true);
   renderCompare(Object.keys(pats)[0]);
 }
 async function renderCompare(pid){
@@ -1277,7 +1278,7 @@ function renderTaskList(){
     return '<tr><td>'+(stBadge[t.status]||t.status)+'</td>'
       +'<td>'+(t.category?'<span class="tag" style="font-size:10px;background:#eef2f6;color:#475569;margin-right:4px">'+esc(t.category)+'</span>':'')+'<b>'+esc(t.title)+'</b>'+(t.detail?'<div class="muted" style="font-size:12px">'+esc(t.detail)+'</div>':'')+'</td>'
       +'<td>'+esc(t.assignee_name||'-')+'</td>'
-      +'<td'+(overdue?' style="color:var(--danger);font-weight:700"':'')+'>'+(t.due_date||'-')+(overdue?' ⚠':'')+'</td>'
+      +'<td'+(overdue?' style="color:var(--danger);font-weight:700"':'')+'>'+(t.due_date||'-')+(overdue?' ':'')+'</td>'
       +'<td class="muted" style="font-size:12px">'+(t.status==='done'?('완료: '+esc(t.done_by_name||'')+' '+(t.done_at?fdate(t.done_at):'')):('등록: '+esc(t.created_by_name||'')))+'</td>'
       +'<td class="right" style="white-space:nowrap">'
         +(t.status!=='done'?'<button class="btn sm" onclick="setTaskStatus(\''+t.id+'\',\''+(t.status==='todo'?'doing':'todo')+'\')">'+(t.status==='todo'?'시작':'대기로')+'</button> <button class="btn sm ok" onclick="setTaskStatus(\''+t.id+'\',\'done\')">완료</button>':'<button class="btn sm ghost" onclick="setTaskStatus(\''+t.id+'\',\'todo\')">되돌리기</button>')
@@ -1285,7 +1286,7 @@ function renderTaskList(){
   }).join('');
   const fbtn=function(k,l){return '<button class="btn sm '+(taskFilter===k?'':'ghost')+'" onclick="taskFilter=\''+k+'\';renderTaskList()">'+l+'</button>';};
   el('main').innerHTML='<div class="page-head"><div><h2>할일</h2><div class="sub">업무 등록 · 담당자 지정 · 완료/실행인 확인</div></div><button class="btn" onclick="taskModal()">+ 할일 추가</button></div>'
-    +'<div style="display:flex;gap:6px;margin-bottom:10px">'+fbtn('open','미완료')+fbtn('mine','내 담당')+fbtn('done','완료')+fbtn('all','전체')+'<button class="btn sm ghost" style="margin-left:auto" onclick="exportTasksICS()">📅 ICS 내보내기</button>'+'</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:10px">'+fbtn('open','미완료')+fbtn('mine','내 담당')+fbtn('done','완료')+fbtn('all','전체')+'<button class="btn sm ghost" style="margin-left:auto" onclick="exportTasksICS()">ICS 내보내기</button>'+'</div>'
     +'<div class="panel"><div class="pb"><table><thead><tr><th>상태</th><th>업무</th><th>담당자</th><th>기한</th><th>기록</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan=6 class="muted" style="text-align:center;padding:20px">할일이 없습니다.</td></tr>')+'</tbody></table></div></div>';
 }
 function exportTasksICS(){var LL=(state._tasks||[]).filter(function(t){return t.due_date;});if(!LL.length){alert('기한이 지정된 할일이 없습니다.');return;}function cs(s){return String(s||'').split(',').join(' ').split(';').join(' ');}var a=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//gangnampulse//todo','CALSCALE:GREGORIAN'];LL.forEach(function(t){a.push('BEGIN:VEVENT');a.push('UID:'+(t.id||Math.random())+'@gangnampulse');a.push('DTSTART;VALUE=DATE:'+String(t.due_date).split('-').join(''));a.push('SUMMARY:'+cs('[할일] '+(t.title||'')));a.push('DESCRIPTION:'+cs((t.detail||'')+(t.assignee_name?(' 담당:'+t.assignee_name):'')));a.push('END:VEVENT');});a.push('END:VCALENDAR');var blob=new Blob([a.join('\r\n')],{type:'text/calendar;charset=utf-8'});var el=document.createElement('a');el.href=URL.createObjectURL(blob);el.download='강남펄스_할일_'+new Date().toLocaleDateString('sv-SE')+'.ics';document.body.appendChild(el);el.click();document.body.removeChild(el);}
@@ -1384,7 +1385,7 @@ async function renderBilling(){
     <td class="right"><button class="btn sm ghost" onclick="orderDetail('${o.id}')">상세</button><button class="btn sm ghost" onclick="orderReceipt('${o.id}')">영수증</button>
       ${o.pay_status!=='paid'?`<button class="btn sm ok" onclick="markPaid('${o.id}','카드')">카드</button> <button class="btn sm ok" onclick="markPaid('${o.id}','현금')">현금</button>`:''}</td></tr>`).join('');
   m.innerHTML=`<div class="page-head"><div><h2>수납·영수증</h2><div class="sub">${now.getFullYear()}년 ${now.getMonth()+1}월</div></div>
-     <button class="btn ghost" style="margin-right:6px" onclick="syncOrdersToPlatform()">🌐 플랫폼 동기화</button><button class="btn" onclick="navTo('quote')">+ 견적 작성</button></div>
+     <button class="btn ghost" style="margin-right:6px" onclick="syncOrdersToPlatform()">플랫폼 동기화</button><button class="btn" onclick="navTo('quote')">+ 견적 작성</button></div>
    <div class="cards" style="grid-template-columns:repeat(3,1fr)">
      <div class="stat clk" onclick="billSort='amt';renderBilling()" title="금액순 정렬"><div class="k">이번달 매출</div><div class="v">${won(monSales)}</div><div class="cny">${cny(monSales)}</div></div>
      <div class="stat clk" onclick="billSort='recent';renderBilling()" title="최신순 정렬"><div class="k">이번달 건수</div><div class="v">${mons.length}<small> 건</small></div></div>
@@ -1864,7 +1865,7 @@ async function renderStaff(){
     ? `<button class="btn ghost" style="opacity:.65" onclick="alert('무료 계정 한도(${limit}개)에 도달했습니다.\\n추가 계정은 팔로우코리아(플랫폼 관리자)에게 문의하세요.')">+ 직원 추가 (한도 초과)</button>`
     : `<button class="btn" onclick="staffModal()">+ 직원 추가</button>`;
   const platformCtl=state.isPlatformAdmin
-    ? `<div class="panel"><div class="ph">🔧 플랫폼 관리자 · 계정 한도 (유료 추가)</div><div class="pb" style="padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="muted" style="font-size:13px">이 병원 무료 계정 한도</span><input id="staff_limit_in" type="number" min="1" value="${limit}" style="width:90px;padding:7px 9px;border:1px solid var(--line);border-radius:8px"><button class="btn sm" onclick="saveStaffLimit()">한도 저장</button><span class="muted" style="font-size:12px">현재 활성 ${activeCnt}명 · 유료 결제 확인 후 한도를 올려주세요</span></div></div>`
+    ? `<div class="panel"><div class="ph">플랫폼 관리자 · 계정 한도 (유료 추가)</div><div class="pb" style="padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="muted" style="font-size:13px">이 병원 무료 계정 한도</span><input id="staff_limit_in" type="number" min="1" value="${limit}" style="width:90px;padding:7px 9px;border:1px solid var(--line);border-radius:8px"><button class="btn sm" onclick="saveStaffLimit()">한도 저장</button><span class="muted" style="font-size:12px">현재 활성 ${activeCnt}명 · 유료 결제 확인 후 한도를 올려주세요</span></div></div>`
     : '';
   m.innerHTML=`<div class="page-head"><div><h2>직원 관리</h2><div class="sub">권한: 원장 / 매니저 / 데스크 / 열람 · ${isPremium?'계정 무제한 (프리미엄)':'무료 계정 '+limit+'개'}</div></div>
      <div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;font-weight:700;color:${atLimit?'#dc2626':'#0f766e'}">계정 ${activeCnt} / ${isPremium?'무제한':limit+'명'}${atLimit?' · 한도 초과':''}</span>${addBtn}</div></div>
@@ -1909,7 +1910,7 @@ let _devs=[];try{const _dr=await db.from('staff_devices').select('*').order('las
 let _stf={};try{const _sr=await db.from('staff_accounts').select('id,name');((_sr&&_sr.data)||[]).forEach(function(x){_stf[x.id]=x.name;});}catch(e){}
   const c=(h&&h.contact)||{};
   let _myDid=getDeviceId();let _myReg=_devs.some(function(d){return d.device_id===_myDid&&d.staff_id===state.staff.id;});
-  let _thisDevHtml='<div style="background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:10px">'+(_myReg?('<span style="color:#059669;font-weight:700">✅ 이 기기는 등록되어 있습니다.</span><button class="btn sm ghost" style="color:var(--danger);margin-left:8px" onclick="unregisterThisDevice()">이 기기 등록 해제</button>'):('<div style="margin-bottom:7px">이 기기는 아직 <b>등록되지 않았습니다.</b> 이 기기를 등록하시겠습니까?</div><button class="btn sm" style="background:var(--brand);color:#fff" onclick="registerThisDevice()">＋ 이 기기 등록</button>'))+'</div>';
+  let _thisDevHtml='<div style="background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:10px">'+(_myReg?('<span style="color:#059669;font-weight:700">이 기기는 등록되어 있습니다.</span><button class="btn sm ghost" style="color:var(--danger);margin-left:8px" onclick="unregisterThisDevice()">이 기기 등록 해제</button>'):('<div style="margin-bottom:7px">이 기기는 아직 <b>등록되지 않았습니다.</b> 이 기기를 등록하시겠습니까?</div><button class="btn sm" style="background:var(--brand);color:#fff" onclick="registerThisDevice()">＋ 이 기기 등록</button>'))+'</div>';
   m.innerHTML=`<div class="page-head"><div><h2>병원 설정</h2><div class="sub">병원 기본정보 · 세금계산서/거래명세서에 사용됩니다</div></div></div>
    <div class="panel" style="max-width:640px"><div class="pb" style="padding:18px">
      <div class="field"><label>병원명 *</label><input id="h_name" value="${esc(h?h.name:'')}"></div>
@@ -1928,8 +1929,8 @@ let _stf={};try{const _sr=await db.from('staff_accounts').select('id,name');((_s
      <div class="field" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" style="width:auto;margin:0;padding:0;border:0;flex:none" id="h_alimtalk" ${localStorage.getItem('alimtalk_on')==='1'?'checked':''}> 알림톡 자동발송 사용 <span class="muted" style="font-weight:400;font-size:12px">(솔라피 연동 · 환자 전화번호로 자동 전송)</span></label></div>
      <div class="field"><label>알림톡 템플릿 ID</label><input id="h_alimtalk_tpl" value="${esc(localStorage.getItem('alimtalk_template')||'')}" placeholder="솔라피 승인 템플릿 ID (비우면 서버 기본값 사용)"></div>
      <div class="muted" style="font-size:12px;margin-top:-4px">API 키·시크릿은 보안상 앱에 저장하지 않고 Supabase Edge Function 시크릿(SOLAPI_*)에 등록합니다. 발송에 실패하면 자동으로 클립보드 복사 방식으로 전환됩니다.</div>
-     <div class="field" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label>🔔 재방문 리마인드 주기 (일)</label><input id="h_recall" type="number" min="0" value="${(c.recall_days!=null?c.recall_days:90)}" placeholder="90"><div class="muted" style="font-size:12px;margin-top:-4px">마지막 방문 후 이 일수가 지난 환자를 대시보드 '재방문 도래'에 표시 (0=사용 안 함)</div></div>
-     ${state.isPlatformAdmin?('<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>🌏 국가별 접속 제한 (플랫폼 관리자)</label><label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer"><input type="checkbox" id="geo_enabled" '+(_geo.enabled?'checked':'')+' style="width:auto"> 국가 차단 사용 (끄면 전 세계 허용)</label><div style="font-size:12px;color:#6b7280;margin-top:4px">허용 국가 코드 (쉼표 구분, 예: KR,CN,US)</div><input id="geo_allowed" value="'+((_geo.allowed_countries||['KR']).join(','))+'" placeholder="KR"><div class="muted" style="font-size:11px;margin-top:4px">한국(KR)은 항상 허용 · 저장 후 Netlify 반영 1~2분</div><button class="btn" style="margin-top:8px" onclick="saveGeoConfig()">국가 설정 저장</button></div>'):''}<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>💻 등록 기기 관리 ${state.isPlatformAdmin?'(전체 직원)':'(내 기기)'}</label><div style="font-size:12px;color:#6b7280;margin-bottom:8px">이 기기에서 로그인한 뒤 아래 <b>'＋ 이 기기 등록'</b>을 누르면 등록됩니다. 등급별 허용 대수 — 기본 1대 · 고급 3대 · 프리미엄 무제한.</div>${_thisDevHtml}${deviceListHtml(_devs,_stf)}</div><div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>🌐 플랫폼 연동 (글로벌·중국)</label><div style="font-size:12px;color:#6b7280;margin-bottom:6px">플랫폼 병원포털 계정을 등록하면 "플랫폼 문의" 메뉴로 견적문의가 들어옵니다.</div><div class="grid2"><div class="field"><label>플랫폼 병원 ID</label><input id="h_plat_id" value="${esc(c.plat_id||'')}"></div><div class="field"><label>플랫폼 비밀번호</label><input id="h_plat_pw" type="password" value="${esc(c.plat_pw||'')}"></div></div></div><div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
+     <div class="field" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label>재방문 리마인드 주기 (일)</label><input id="h_recall" type="number" min="0" value="${(c.recall_days!=null?c.recall_days:90)}" placeholder="90"><div class="muted" style="font-size:12px;margin-top:-4px">마지막 방문 후 이 일수가 지난 환자를 대시보드 '재방문 도래'에 표시 (0=사용 안 함)</div></div>
+     ${state.isPlatformAdmin?('<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>국가별 접속 제한 (플랫폼 관리자)</label><label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer"><input type="checkbox" id="geo_enabled" '+(_geo.enabled?'checked':'')+' style="width:auto"> 국가 차단 사용 (끄면 전 세계 허용)</label><div style="font-size:12px;color:#6b7280;margin-top:4px">허용 국가 코드 (쉼표 구분, 예: KR,CN,US)</div><input id="geo_allowed" value="'+((_geo.allowed_countries||['KR']).join(','))+'" placeholder="KR"><div class="muted" style="font-size:11px;margin-top:4px">한국(KR)은 항상 허용 · 저장 후 Netlify 반영 1~2분</div><button class="btn" style="margin-top:8px" onclick="saveGeoConfig()">국가 설정 저장</button></div>'):''}<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>등록 기기 관리 ${state.isPlatformAdmin?'(전체 직원)':'(내 기기)'}</label><div style="font-size:12px;color:#6b7280;margin-bottom:8px">이 기기에서 로그인한 뒤 아래 <b>'＋ 이 기기 등록'</b>을 누르면 등록됩니다. 등급별 허용 대수 — 기본 1대 · 고급 3대 · 프리미엄 무제한.</div>${_thisDevHtml}${deviceListHtml(_devs,_stf)}</div><div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>플랫폼 연동 (글로벌·중국)</label><div style="font-size:12px;color:#6b7280;margin-bottom:6px">플랫폼 병원포털 계정을 등록하면 "플랫폼 문의" 메뉴로 견적문의가 들어옵니다.</div><div class="grid2"><div class="field"><label>플랫폼 병원 ID</label><input id="h_plat_id" value="${esc(c.plat_id||'')}"></div><div class="field"><label>플랫폼 비밀번호</label><input id="h_plat_pw" type="password" value="${esc(c.plat_pw||'')}"></div></div></div><div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
    </div></div>`;
 }
 function hsImg(inputId,dataId,prevId){var f=document.getElementById(inputId);var file=f&&f.files&&f.files[0];if(!file)return;if(file.size>1500000)alert('이미지가 큽니다(1.5MB 이하 권장). 저장은 되지만 느릴 수 있어요.');var rd=new FileReader();rd.onload=function(){var d=rd.result;var dh=document.getElementById(dataId);if(dh)dh.value=d;var pv=document.getElementById(prevId);if(pv){pv.src=d;pv.style.display='';}};rd.readAsDataURL(file);}
@@ -1958,7 +1959,7 @@ function stmtModal(agencyId){stmtCtx.agencyId=agencyId;const a=state.agencies.fi
       <div class="field"><label>종료일</label><input id="st_to" type="date" value="${to}"></div></div>
     <div class="field"><label><input type="checkbox" id="st_vat" checked> 금액에 부가세 포함(VAT 포함)으로 표기</label></div>
     <div class="muted" style="font-size:12px">해당 에이전시가 소개한 환자의 시술 내역을 기간별로 모아 거래명세서를 생성합니다.</div></div>
-    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="genStatement()">명세서 출력</button><button class="btn" onclick="genStatement('excel')" style="background:#1D6F42;border-color:#1D6F42">📊 엑셀</button></div>`);}
+    <div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="genStatement()">명세서 출력</button><button class="btn" onclick="genStatement('excel')" style="background:#1D6F42;border-color:#1D6F42">엑셀</button></div>`);}
 async function genStatement(mode){
   const a=state.agencies.find(x=>x.id===stmtCtx.agencyId);if(!a)return;
   if(!await useQuota('doc','명세서 발급')) return;
