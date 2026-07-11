@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="140" viewBox="0 0 440 140" role="img" aria-label="GLOVI 글로비병원 로고">
+  <title>GLOVI 글로비병원</title>
+  <!-- symbol: glow ring forming a G -->
+  <g transform="translate(70,70)">
+    <circle cx="0" cy="0" r="34" fill="none" stroke="#C9A24B" stroke-width="8"
+            stroke-linecap="round" stroke-dasharray="160 214" transform="rotate(48)"/>
+    <line x1="34" y1="0" x2="10" y2="0" stroke="#C9A24B" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="0" cy="0" r="6" fill="#1F3864"/>
+  </g>
+  <!-- wordmark -->
+  <text x="128" y="72" font-family="Georgia, 'Times New Roman', serif" font-size="46"
+        font-weight="600" letter-spacing="6" fill="#1F3864">GLOVI</text>
+  <text x="130" y="100" font-family="'Malgun Gothic','Segoe UI',sans-serif" font-size="15"
+        letter-spacing="8" fill="#8A6D2B">글로비병원</text>
+  <text x="130" y="120" font-family="'Segoe UI',sans-serif" font-size="10.5"
+        letter-spacing="3" fill="#6B7280">GLOVI PLASTIC · DERMATOLOGY</text>
+</svg>
