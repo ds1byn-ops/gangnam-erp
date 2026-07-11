@@ -1107,6 +1107,7 @@ function chartView(id){const c=(state._charts||[]).find(x=>x.id===id);if(!c)retu
 /* ===== 자료실 (이미지·행정 첨부) ===== */
 let fileCat='all';
 function fileDateReset(){var a=document.getElementById('af_from'),b=document.getElementById('af_to');if(a)a.value='';if(b)b.value='';renderFiles();}
+function canViewFiles(){return !!(state.isPlatformAdmin||['owner','manager','desk'].indexOf((state.staff||{}).role)>=0);}
 async function renderFiles(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const {data:att}=await db.from('attachments').select('*').order('created_at',{ascending:false});
@@ -1114,7 +1115,7 @@ async function renderFiles(){
   const PM=pmap();
   let list=state._att.slice(); if(fileCat!=='all') list=list.filter(function(a){return a.category===fileCat;}); var _ff=(el('af_from')||{}).value||'';var _ft=(el('af_to')||{}).value||'';if(_ff||_ft)list=list.filter(function(a){var _d=(a.created_at||'').slice(0,10);if(_ff&&_d<_ff)return false;if(_ft&&_d>_ft)return false;return true;});
   const paths=list.map(function(a){return a.file_path;}); let urlMap={};
-  if(paths.length && state.isPlatformAdmin){ const {data:us}=await db.storage.from('attachments').createSignedUrls(paths,3600); (us||[]).forEach(function(u,i){ if(u&&u.signedUrl)urlMap[paths[i]]=u.signedUrl; }); }
+  if(paths.length && canViewFiles()){ const {data:us}=await db.storage.from('attachments').createSignedUrls(paths,3600); (us||[]).forEach(function(u,i){ if(u&&u.signedUrl)urlMap[paths[i]]=u.signedUrl; }); }
   const cards=list.map(function(a){
     const url=urlMap[a.file_path]; const isImg=((a.mime||'').indexOf('image')===0)||/\.(jpg|jpeg|png|gif|webp)$/i.test(a.file_name||'');
     const thumb=(isImg&&url)?'<a href="'+url+'" target="_blank"><img src="'+url+'" style="width:100%;height:130px;object-fit:cover;display:block"></a>':'<div style="height:130px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#64748b;font-size:13px">'+(url?'<a href="'+url+'" target="_blank">📄 파일 열기</a>':'미리보기 없음')+'</div>';
@@ -1128,12 +1129,12 @@ async function renderFiles(){
   const catSel='<select id="af_cat" style="'+ip+'"><option>전후사진</option><option>행정</option><option>기타</option></select>';
   const patSel='<select id="af_pat" style="'+ip+'"><option value="">환자 연결(선택)</option>'+(state.patients||[]).map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('')+'</select>';
   const fbtn=function(k,l){return '<button class="btn sm '+(fileCat===k?'':'ghost')+'" onclick="fileCat=\''+k+'\';renderFiles()">'+l+'</button>';};
-  m.innerHTML='<div class="page-head"><div><h2>자료실</h2><div class="sub">시술 전후 사진 · 행정 자료 첨부 (병원별 비공개)'+(state.isPlatformAdmin?'':' · <b style="color:#dc2626">다운로드·열람은 팔로우코리아 마스터만 가능</b>')+'</div></div></div>'
+  m.innerHTML='<div class="page-head"><div><h2>자료실</h2><div class="sub">시술 전후 사진 · 행정 자료 첨부 (병원별 비공개)'+(canViewFiles()?'':' · <b style="color:#dc2626">사진 열람은 원장·매니저·데스크만 가능</b>')+'</div></div></div>'
     +'<div class="panel"><div class="pb" style="padding:14px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
       +'<input type="file" id="af_file" accept="image/*,.pdf" style="font-size:13px">'+catSel+patSel
       +'<button class="btn" id="af_btn" onclick="uploadFile()">업로드</button>'
       +'<span class="muted" style="font-size:11px">이미지/PDF · 10MB 이하</span></div></div>'
-    +'<div style="display:flex;gap:6px;margin:12px 0">'+fbtn('all','전체')+fbtn('전후사진','전후사진')+fbtn('행정','행정')+fbtn('기타','기타')+'<span style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;color:#555"><label>기간</label><input type="date" id="af_from" onchange="renderFiles()" style="padding:3px 5px"><span>~</span><input type="date" id="af_to" onchange="renderFiles()" style="padding:3px 5px"><button class="btn sm ghost" onclick="fileDateReset()">초기화</button></span>'+'</div>'
+    +'<div style="display:flex;gap:6px;margin:12px 0">'+fbtn('all','전체')+fbtn('전후사진','전후사진')+fbtn('행정','행정')+fbtn('기타','기타')+'<button class="btn sm" style="background:var(--brand);color:#fff;margin-left:8px" onclick="openCompare()">🔍 전후 비교</button><span style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;color:#555"><label>기간</label><input type="date" id="af_from" onchange="renderFiles()" style="padding:3px 5px"><span>~</span><input type="date" id="af_to" onchange="renderFiles()" style="padding:3px 5px"><button class="btn sm ghost" onclick="fileDateReset()">초기화</button></span>'+'</div>'
     +'<div style="display:flex;gap:12px;flex-wrap:wrap">'+(cards||'<div class="muted" style="padding:20px">자료가 없습니다.</div>')+'</div>';
 }
 async function uploadFile(){
@@ -1157,6 +1158,42 @@ async function deleteAttachment(id,path){
   if(error){alert('실패: '+error.message);return;}
   logAudit('자료 삭제'); renderFiles();
 }
+/* ===== 전후 사진 비교 뷰어 ===== */
+let _cmpUrls={},_cmpL=null,_cmpR=null,_cmpPid='';
+async function openCompare(){
+  if(!canViewFiles()){alert('사진 열람 권한이 없습니다.');return;}
+  if(!(state._att||[]).length){var r=await db.from('attachments').select('*').order('created_at',{ascending:false});state._att=r.data||[];}
+  var pats={};(state._att||[]).forEach(function(a){if(a.category==='전후사진'&&a.patient_id&&(((a.mime||'').indexOf('image')===0)||/\.(jpg|jpeg|png|gif|webp)$/i.test(a.file_name||'')))pats[a.patient_id]=true;});
+  var pm=pmap();var opts=Object.keys(pats).map(function(id){return '<option value="'+id+'">'+esc(pm[id]||id)+'</option>';}).join('');
+  if(!opts){alert('환자 연결된 전후사진이 없습니다.\n자료실 업로드 시 "환자 연결"을 선택하세요.');return;}
+  _cmpL=null;_cmpR=null;
+  openModal('<div style="font-size:16px;font-weight:800;margin-bottom:10px">🔍 전후 사진 비교</div><div class="field"><label>환자</label><select id="cmp_pat" onchange="renderCompare(this.value)" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%">'+opts+'</select></div><div id="cmp_body" style="margin-top:10px">불러오는 중…</div><div class="mf" style="margin-top:10px"><button class="btn ghost" onclick="closeModal()">닫기</button></div>',true);
+  renderCompare(Object.keys(pats)[0]);
+}
+async function renderCompare(pid){
+  _cmpPid=pid;
+  var photos=(state._att||[]).filter(function(a){return a.category==='전후사진'&&a.patient_id===pid&&(((a.mime||'').indexOf('image')===0)||/\.(jpg|jpeg|png|gif|webp)$/i.test(a.file_name||''));});
+  var body=el('cmp_body');if(!body)return;
+  if(!photos.length){body.innerHTML='<div class="muted">이 환자의 전후사진이 없습니다.</div>';return;}
+  var paths=photos.map(function(a){return a.file_path;});
+  var us=((await db.storage.from('attachments').createSignedUrls(paths,3600)).data)||[];
+  _cmpUrls={};us.forEach(function(u,i){if(u&&u.signedUrl)_cmpUrls[paths[i]]=u.signedUrl;});
+  var sorted=photos.slice().sort(function(a,b){return (a.created_at||'').localeCompare(b.created_at||'');});
+  if(!_cmpL||!_cmpUrls[_cmpL])_cmpL=sorted[0].file_path;
+  if(!_cmpR||!_cmpUrls[_cmpR])_cmpR=sorted[sorted.length-1].file_path;
+  var strip=photos.map(function(a){var u=_cmpUrls[a.file_path];if(!u)return '';var sel=(a.file_path===_cmpL?'전':(a.file_path===_cmpR?'후':''));return '<div style="flex:none;text-align:center"><div style="position:relative"><img src="'+u+'" style="width:74px;height:74px;object-fit:cover;border-radius:8px;border:2px solid '+(sel?'var(--brand)':'#e5e7eb')+';cursor:pointer" onclick="pickCmp(\''+a.file_path+'\')">'+(sel?'<span style="position:absolute;top:2px;left:2px;background:var(--brand);color:#fff;font-size:10px;padding:1px 5px;border-radius:6px">'+sel+'</span>':'')+'</div><div style="font-size:9px;color:#94a3b8">'+fdate(a.created_at)+'</div></div>';}).join('');
+  body.innerHTML='<div style="font-size:11px;color:#6b7280;margin-bottom:6px">썸네일 클릭 → 전(좌)·후(우) 지정 · 슬라이더로 겹쳐보기</div>'
+   +'<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px">'+strip+'</div>'
+   +'<div style="position:relative;width:100%;max-width:420px;margin:8px auto 0;aspect-ratio:3/4;overflow:hidden;border-radius:10px;background:#000;user-select:none">'
+   +'<img src="'+(_cmpUrls[_cmpL]||'')+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain">'
+   +'<img id="cmpR" src="'+(_cmpUrls[_cmpR]||'')+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;clip-path:inset(0 50% 0 0)">'
+   +'<div id="cmpHandle" style="position:absolute;top:0;bottom:0;left:50%;width:3px;background:#fff;box-shadow:0 0 4px rgba(0,0,0,.6);pointer-events:none"></div>'
+   +'<span style="position:absolute;bottom:6px;left:8px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:2px 8px;border-radius:10px">전</span>'
+   +'<span style="position:absolute;bottom:6px;right:8px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:2px 8px;border-radius:10px">후</span></div>'
+   +'<input type="range" min="0" max="100" value="50" oninput="cmpSlide(this.value)" style="width:100%;max-width:420px;display:block;margin:8px auto 0">';
+}
+function pickCmp(path){ if(_cmpL===path){_cmpL=null;} else if(_cmpR===path){_cmpR=null;} else if(!_cmpL){_cmpL=path;} else if(!_cmpR){_cmpR=path;} else {_cmpL=_cmpR;_cmpR=path;} renderCompare(_cmpPid); }
+function cmpSlide(v){var r=el('cmpR'),h=el('cmpHandle');if(r)r.style.clipPath='inset(0 '+(100-v)+'% 0 0)';if(h)h.style.left=v+'%';}
 
 /* ===== 할일(숙제) ===== */
 let taskFilter='open';
