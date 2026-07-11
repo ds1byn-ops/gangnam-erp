@@ -1744,6 +1744,25 @@ async function rfPay(id){await db.from('referrer_settlements').update({status:'p
 
 /* ============ 통계 ============ */
 let statMonth=null,statTab='sales',statFrom='',statTo='';
+const REPORT_CSS=`.repdoc{max-width:800px;margin:0 auto;color:#1f2937;font-family:'Malgun Gothic','맑은 고딕',sans-serif}
+.repdoc *{box-sizing:border-box}
+.repdoc .rephead{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid var(--brand,#1F3864);padding-bottom:10px;margin-bottom:16px}
+.repdoc .reph1{font-size:22px;font-weight:800;color:var(--brand,#1F3864)}
+.repdoc .reph2{font-size:14px;color:var(--muted,#64748b);margin-top:2px}
+.repdoc .repfk{font-size:12px;color:#8A6D2B;font-weight:700}
+.repdoc .repkpi{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}
+.repdoc .repk{border:1px solid var(--line,#e5e7eb);border-radius:8px;padding:8px 6px;text-align:center}
+.repdoc .repkk{font-size:11px;color:var(--muted,#64748b)}
+.repdoc .repkv{font-size:16px;font-weight:800;margin-top:2px}
+.repdoc .reps{font-size:14px;font-weight:700;margin:16px 0 6px;color:var(--brand,#1F3864)}
+.repdoc .repcols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.repdoc table{width:100%;border-collapse:collapse;font-size:12px}
+.repdoc th,.repdoc td{border-bottom:1px solid var(--line,#e5e7eb);padding:5px 6px;text-align:left}
+.repdoc .right{text-align:right}
+.repdoc .muted{color:var(--muted,#64748b)}
+.repdoc .reppred{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.repdoc .repp{border:1px solid var(--line,#e5e7eb);border-radius:8px;padding:10px 12px;background:#f8fafc}
+.repdoc .repfoot{margin-top:20px;font-size:11px;color:var(--muted,#64748b);border-top:1px solid var(--line,#e5e7eb);padding-top:8px}`;
 function statPreset(kind){
   const now=new Date(), y=now.getFullYear(), mo=now.getMonth(), d=now.getDate();
   const fmt=x=>{const yy=x.getFullYear(),mm=String(x.getMonth()+1).padStart(2,'0'),dd=String(x.getDate()).padStart(2,'0');return yy+'-'+mm+'-'+dd;};
@@ -1854,12 +1873,38 @@ async function renderStats(){
     var gc={S:'#C9A24B',A:'#16a34a',B:'#2563eb',C:'#94a3b8'};
     var stbl='<table><thead><tr><th>에이전시</th><th class="right">유입</th><th class="right">예약</th><th class="right">노쇼율</th><th class="right">시술</th><th class="right">매출</th><th class="right">객단가</th><th class="right">전환율</th><th class="right">품질</th></tr></thead><tbody>'+(rowsA.map(function(r){return '<tr><td><b>'+esc(r.name)+'</b></td><td class="right">'+r.inflow+'</td><td class="right">'+r.appt+'</td><td class="right" style="color:'+(r.ns>0.2?'var(--danger)':'inherit')+'">'+Math.round(r.ns*100)+'%</td><td class="right">'+r.ord+'</td><td class="right"><b>'+won(r.rev)+'</b></td><td class="right">'+won(r.avg)+'</td><td class="right">'+Math.round(r.conv*100)+'%</td><td class="right"><span style="display:inline-block;min-width:36px;padding:2px 8px;border-radius:20px;background:'+gc[r.grade]+';color:#fff;font-weight:800;font-size:12px">'+r.grade+' '+r.score+'</span></td></tr>';}).join('')||'<tr><td colspan=9 class="muted">데이터 없음</td></tr>')+'</tbody></table>';
     content=P('모집 전환 퍼널 · '+periodLabel,funnel)+P('에이전시 품질 스코어',stbl)+'<div class="muted" style="font-size:11px;padding:2px 6px">품질점수 = 전환율40 + 노쇼낮음25 + 매출기여20 + 객단가15 · 등급 S(80+)/A(65+)/B(50+)/C</div>';
+  } else if(statTab==='report'){
+    // 마케팅 ROI (에이전시별 매출 대비 지급수수료)
+    var agRoi=state.agencies.map(function(a){
+      var rev=orders.filter(function(o){return o.agency_id===a.id;}).reduce(function(s,o){return s+Number(o.total||0);},0);
+      var rate=a.commission_rate!=null?Number(a.commission_rate):(a.is_followkorea?15:10);
+      var comm=Math.round(rev*rate/100);return {name:a.name,rev:rev,rate:rate,comm:comm,net:rev-comm,roi:comm?rev/comm:0};
+    }).filter(function(r){return r.rev>0;}).sort(function(a,b){return b.net-a.net;});
+    var totRoiRev=agRoi.reduce(function(s,r){return s+r.rev;},0),totComm=agRoi.reduce(function(s,r){return s+r.comm;},0);
+    // 예측 (최근 6개월 선형회귀)
+    var ys=months.map(function(x){return x.sum;});var nY=ys.length;var mxi=(nY-1)/2;var myv=ys.reduce(function(a,b){return a+b;},0)/nY;
+    var num=0,den=0;ys.forEach(function(v,i){num+=(i-mxi)*(v-myv);den+=(i-mxi)*(i-mxi);});var slope=den?num/den:0;
+    var nextPred=Math.max(0,Math.round(myv+slope*(nY-mxi)));var growth=myv?Math.round(slope/myv*100):0;
+    var avg3=Math.round(ys.slice(-3).reduce(function(a,b){return a+b;},0)/Math.min(3,nY));
+    var expRevisit=Math.round(newP*revisitRate/100);
+    var kpi=[['당월 매출',won(total)],['시술 건수',cnt+'건'],['객단가',won(avg)],['신규 환자',newP+'명'],['재방문율',revisitRate+'%'],['NPS',npsScore!=null?String(npsScore):'—']];
+    var top5=topProc.slice(0,5);
+    var repBody='<div class="repdoc">'
+     +'<div class="rephead"><div><div class="reph1">'+esc(state.hospital_name||'')+' 월간 경영 리포트</div><div class="reph2">'+periodLabel+'</div></div><div class="repfk">FOLLOWKOREA · 강남펄스</div></div>'
+     +'<div class="repkpi">'+kpi.map(function(k){return '<div class="repk"><div class="repkk">'+k[0]+'</div><div class="repkv">'+k[1]+'</div></div>';}).join('')+'</div>'
+     +'<div class="reps">최근 6개월 매출 추이</div>'+trendChart
+     +'<div class="repcols"><div><div class="reps">인기 시술 TOP 5</div><table><thead><tr><th>시술</th><th class="right">건</th><th class="right">매출</th></tr></thead><tbody>'+(top5.map(function(p){return '<tr><td>'+esc(p[0])+'</td><td class="right">'+p[1].qty+'</td><td class="right">'+won(p[1].amt)+'</td></tr>';}).join('')||'<tr><td colspan="3" class="muted">데이터 없음</td></tr>')+'</tbody></table></div>'
+     +'<div><div class="reps">에이전시 마케팅 ROI</div><table><thead><tr><th>에이전시</th><th class="right">매출</th><th class="right">수수료</th><th class="right">순매출</th><th class="right">ROI</th></tr></thead><tbody>'+(agRoi.map(function(r){return '<tr><td>'+esc(r.name)+'</td><td class="right">'+won(r.rev)+'</td><td class="right">'+won(r.comm)+' <span class="muted">'+r.rate+'%</span></td><td class="right"><b>'+won(r.net)+'</b></td><td class="right">'+(r.roi?r.roi.toFixed(1)+'x':'-')+'</td></tr>';}).join('')||'<tr><td colspan="5" class="muted">유입 없음</td></tr>')+(agRoi.length?'<tr style="border-top:2px solid #cbd5e1"><td><b>합계</b></td><td class="right"><b>'+won(totRoiRev)+'</b></td><td class="right"><b>'+won(totComm)+'</b></td><td class="right"><b>'+won(totRoiRev-totComm)+'</b></td><td class="right">'+(totComm?(totRoiRev/totComm).toFixed(1)+'x':'-')+'</td></tr>':'')+'</tbody></table></div></div>'
+     +'<div class="reps">다음 달 예측</div><div class="reppred"><div class="repp"><div class="repkk">예상 매출 (추세선)</div><div class="repkv">'+won(nextPred)+'</div><div class="muted" style="font-size:11px;margin-top:2px">월 성장률 '+(growth>=0?'+':'')+growth+'% · 최근 3개월 평균 '+won(avg3)+'</div></div><div class="repp"><div class="repkk">예상 재방문 (신규 기준)</div><div class="repkv">'+expRevisit+'명</div><div class="muted" style="font-size:11px;margin-top:2px">재방문율 '+revisitRate+'% 적용</div></div></div>'
+     +'<div class="repfoot">본 리포트는 '+periodLabel+' 기준 자동 생성되었습니다. 예측치는 참고용이며 실제 정산·실적과 다를 수 있습니다.</div></div>';
+    state._reportHTML=repBody;
+    content='<style>'+REPORT_CSS+'</style><div style="margin-bottom:12px"><button class="btn" onclick="openReportPDF()">리포트 PDF 저장 / 인쇄</button></div>'+repBody;
   } else {
     content=`<div class="cards" style="grid-template-columns:repeat(4,1fr)"><div class="stat"><div class="k">전체 환자</div><div class="v">${patAll.length}<small> 명</small></div></div><div class="stat"><div class="k">재방문율</div><div class="v">${revisitRate}%</div><div class="cny">2회+ ${revisit}명</div></div><div class="stat"><div class="k">NPS ${avgNpsAll?'(평균 '+avgNpsAll+')':''}</div><div class="v" style="color:#f59e0b">${npsScore!=null?npsScore:'—'}</div><div class="cny">${_rvAll.length}건 응답</div></div><div class="stat"><div class="k">당월 신규</div><div class="v">${newP}<small> 명</small></div></div></div>`
       +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('국적별 환자',T(sbars(Object.entries(gN),v=>v+'명')))}${P('성별 분포',T(sbars(Object.entries(gGender),v=>v+'명')))}</div>`
       +P('환자 LTV TOP 10 (누적 결제)',`<table><thead><tr><th>#</th><th>환자</th><th class="right">누적</th></tr></thead><tbody>${ltv.map(([n,v],i)=>`<tr><td>${i+1}</td><td>${esc(n)}</td><td class="right"><b>${won(v)}</b></td></tr>`).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>'}</tbody></table>`);
   }
-  const TABS=[['sales','매출'],['proc','시술'],['inflow','유입'],['appt','예약'],['agency','에이전시'],['pat','환자']];
+  const TABS=[['sales','매출'],['proc','시술'],['inflow','유입'],['appt','예약'],['agency','에이전시'],['pat','환자'],['report','리포트']];
   const tabbar='<div class="stat-tabs">'+TABS.map(([k,l])=>`<button class="${statTab===k?'on':''}" onclick="statTab='${k}';renderStats()">${l}</button>`).join('')+'</div>';
   const cards=`<div class="cards" style="grid-template-columns:repeat(5,1fr)">
      <div class="stat clk" onclick="statTab='sales';renderStats()" title="매출 탭"><div class="k">당월 매출</div><div class="v" style="font-size:19px">${won(total)}</div><div>${delta(total,ptotal)}</div></div>
@@ -1870,6 +1915,16 @@ async function renderStats(){
   m.innerHTML=`<div class="page-head"><div><h2>통계</h2><div class="sub">${periodLabel} · 매출·시술·유입·예약·환자 분석${useRange?' (직전 동일기간 대비)':''}</div></div>
      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="muted" style="font-size:12px">비교</span><button class="btn ghost sm" onclick="statPreset('day')">전일</button><button class="btn ghost sm" onclick="statPreset('week')">전주</button><button class="btn ghost sm" onclick="statPreset('month')">전월</button><button class="btn ghost sm" onclick="statPreset('year')">전년</button><span style="width:1px;height:18px;background:var(--line);margin:0 2px"></span><input type="month" value="${statMonth}" onchange="statMonth=this.value;statFrom='';statTo='';renderStats()" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px"><span class="muted" style="font-size:12px">또는</span><input type="date" value="${statFrom}" onchange="statFrom=this.value;renderStats()" title="시작일" style="padding:7px 9px;border:1px solid var(--line);border-radius:9px"><span class="muted">~</span><input type="date" value="${statTo}" onchange="statTo=this.value;renderStats()" title="종료일" style="padding:7px 9px;border:1px solid var(--line);border-radius:9px">${useRange?'<button class="btn ghost sm" onclick="statFrom=&quot;&quot;;statTo=&quot;&quot;;renderStats()">월로</button>':''}<button class="btn ghost" onclick="exportStatsCSV()">CSV</button><button class="btn ghost" onclick="window.print()">인쇄/PDF</button></div></div>
    ${cards}${tabbar}${content}`;
+}
+function openReportPDF(){
+  var body=(typeof state!=='undefined'&&state._reportHTML)||'';
+  if(!body){alert('리포트 탭을 먼저 여세요.');return;}
+  var w=window.open('','_report','width=920,height=1040');
+  if(!w){alert('팝업이 차단되었습니다. 브라우저에서 팝업을 허용한 뒤 다시 시도하세요.');return;}
+  var css=":root{--brand:#1F3864;--muted:#64748b;--line:#e5e7eb}body{margin:0;padding:24px;background:#fff}"+REPORT_CSS+"@media print{body{padding:0}}";
+  w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>월간 경영 리포트</title><style>'+css+'</style></head><body>'+body+'<'+'/body></html>');
+  w.document.close();
+  setTimeout(function(){try{w.focus();w.print();}catch(e){}},400);
 }
 
 /* ============ 감사 로그 ============ */
