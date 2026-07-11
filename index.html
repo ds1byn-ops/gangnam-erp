@@ -364,7 +364,7 @@ async function boot(){
   checkSubscription();
   startSingleSession(user.id);
 }
-async function loadPatients(){const {data}=await db.from('patients').select('*').order('name');state.patients=data||[];}
+async function loadPatients(){const {data}=await db.from('patients_dec').select('*').order('name');state.patients=data||[];}
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
@@ -748,7 +748,7 @@ async function patientDetail(id){
   openModal('<div class="mb loading">불러오는 중…</div>',true);const p=state.patients.find(x=>x.id===id);const AM=amap();
   const [ord,ch,ap,nt]=await Promise.all([
     db.from('orders').select('*').eq('patient_id',id).order('order_date',{ascending:false}),
-    db.from('charts').select('*').eq('patient_id',id).order('visit_at',{ascending:false}),
+    db.from('charts_dec').select('*').eq('patient_id',id).order('visit_at',{ascending:false}),
     db.from('appointments').select('*').eq('patient_id',id).order('appointment_at',{ascending:false}).limit(20),
     db.from('patient_notes').select('*').eq('patient_id',id).order('created_at',{ascending:false}),
   ]);
@@ -1071,7 +1071,7 @@ async function sendKakao(){
 /* ============ CHARTS (EMR) ============ */
 async function renderCharts(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
-  const {data}=await db.from('charts').select('*').order('visit_at',{ascending:false}).limit(200);
+  const {data}=await db.from('charts_dec').select('*').order('visit_at',{ascending:false}).limit(200);
   state._charts=data||[];const PM=pmap();
   let clist=(data||[]).filter(c=>{if(!chSearch)return true;const q=chSearch.toLowerCase();return (PM[c.patient_id]||'').toLowerCase().includes(q)||(c.doctor||'').toLowerCase().includes(q)||(c.chief_complaint||'').toLowerCase().includes(q);});
   clist.sort((a,b)=>chSort==='patient'?(PM[a.patient_id]||'').localeCompare(PM[b.patient_id]||''):chSort==='doctor'?(a.doctor||'').localeCompare(b.doctor||''):new Date(b.visit_at)-new Date(a.visit_at));
@@ -1602,7 +1602,7 @@ async function renderStats(){
   const [ordR,apptR,patR]=await Promise.all([
     db.from('orders').select('id,order_no,order_date,total,discount_amount,pay_status,pay_method,agency_id,referrer_id,patient_id,doctor,status'),
     db.from('appointments').select('appointment_at,status,doctor,patient_id'),
-    db.from('patients').select('*'),
+    db.from('patients_dec').select('*'),
   ]);
   const allOrders=(ordR.data||[]).filter(o=>o.status!=='cancelled');
   const orders=allOrders.filter(o=>inP(o.order_date));
