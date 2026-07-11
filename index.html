@@ -362,6 +362,7 @@ async function boot(){
   el('login').style.display='none';el('app').style.display='block';
   await loadPatients();navTo('dashboard');setTimeout(()=>logAudit('로그인'),800);
   checkSubscription();
+  startSingleSession(user.id);
 }
 async function loadPatients(){const {data}=await db.from('patients').select('*').order('name');state.patients=data||[];}
 
@@ -415,6 +416,26 @@ async function renderSubscription(){
     +usagePanel
     +((d!==null&&d<=7)?('<div class="panel" style="border:1px solid #fca5a5"><div class="pb" style="padding:14px 16px;color:#dc2626;font-size:13px;font-weight:600">⚠️ '+(d<0?'구독이 만료되었습니다.':(d===0?'오늘 구독이 만료됩니다.':'구독 만료 '+d+'일 전입니다.'))+' 팔로우코리아에 갱신을 요청하세요.</div></div>'):'')
     +'<div class="panel"><div class="ph">구독 등급 안내</div><div class="pb" style="padding:16px"><div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch">'+card('basic',tier==='basic')+card('advanced',tier==='advanced')+card('premium',tier==='premium')+'</div><div class="muted" style="font-size:11.5px;margin-top:14px">※ 부가세 별도 · 등급 변경/결제는 팔로우코리아에 문의 · 자동화 기능(세금계산서 자동발행·정산 자동마감·예약 리마인더)은 순차 제공</div></div></div>';
+}
+/* ===== 단일 세션: 한 계정은 한 기기에서만 (새 로그인 시 기존 기기 자동 로그아웃) ===== */
+let _sessNonce=null,_sessTimer=null;
+async function startSingleSession(uid){
+  try{
+    _sessNonce=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():(String(Date.now())+Math.random());
+    await db.from('active_sessions').upsert({user_id:uid,nonce:_sessNonce,device_label:(navigator.userAgent||'').slice(0,80),updated_at:new Date().toISOString()},{onConflict:'user_id'});
+  }catch(e){}
+  if(_sessTimer)clearInterval(_sessTimer);
+  _sessTimer=setInterval(async function(){
+    try{
+      const {data}=await db.from('active_sessions').select('nonce').eq('user_id',uid).maybeSingle();
+      if(data&&data.nonce&&_sessNonce&&data.nonce!==_sessNonce){
+        clearInterval(_sessTimer);_sessTimer=null;
+        try{await db.auth.signOut();}catch(e){}
+        alert('다른 기기에서 이 계정으로 로그인되어, 이 기기는 로그아웃됩니다.');
+        location.reload();
+      }
+    }catch(e){}
+  },20000);
 }
 function checkSubscription(){
   if(state.isPlatformAdmin) return;
