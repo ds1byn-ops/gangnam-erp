@@ -775,11 +775,12 @@ async function savePatient(id){const name=el('p_name').value.trim();if(!name){al
   logAudit('환자 '+(id?'수정':'등록'),name);await loadPatients();closeModal();if(id){patientDetail(id);}else{renderPatients();}}
 async function patientDetail(id){
   openModal('<div class="mb loading">불러오는 중…</div>',true);const p=state.patients.find(x=>x.id===id);const AM=amap();
-  const [ord,ch,ap,nt]=await Promise.all([
+  const [ord,ch,ap,nt,rv]=await Promise.all([
     db.from('orders').select('*').eq('patient_id',id).order('order_date',{ascending:false}),
     db.from('charts_dec').select('*').eq('patient_id',id).order('visit_at',{ascending:false}),
     db.from('appointments').select('*').eq('patient_id',id).order('appointment_at',{ascending:false}).limit(20),
     db.from('patient_notes').select('*').eq('patient_id',id).order('created_at',{ascending:false}),
+    db.from('patient_reviews').select('*').eq('patient_id',id).order('created_at',{ascending:false}),
   ]);
   const nonCancel=(ord.data||[]).filter(o=>o.status!=='cancelled');const vcnt=nonCancel.length;
   const spent=nonCancel.reduce((s,o)=>s+Number(o.total||0),0);
@@ -787,6 +788,8 @@ async function patientDetail(id){
   const chRows=(ch.data||[]).map(c=>`<tr><td>${fdate(c.visit_at)}</td><td>${esc(c.doctor||'-')}</td><td class="muted">${esc((c.chief_complaint||'').slice(0,26))}</td></tr>`).join('');
   const apRows=(ap.data||[]).map(a=>`<tr><td>${fdt(a.appointment_at)}</td><td>${esc(a.doctor||'-')}</td><td><span class="tag t-${a.status}">${STATUS_LABEL[a.status]}</span></td></tr>`).join('');
   const notes=(nt.data||[]);
+  const revs=(rv.data||[]);const _nv=revs.filter(r=>r.nps!=null).map(r=>r.nps);const avgNps=_nv.length?(_nv.reduce((s,v)=>s+v,0)/_nv.length).toFixed(1):null;
+  const rvRows=revs.length?revs.map(r=>`<div style="border-left:3px solid #f59e0b;padding:3px 0 3px 10px;margin-bottom:8px"><div style="font-size:12px;color:var(--muted)">${r.nps!=null?('NPS '+r.nps+'/10 · '):''}${new Date(r.created_at).toLocaleDateString('ko-KR')}${r.created_by_name?' · '+esc(r.created_by_name):''}</div>${r.comment?`<div style="white-space:pre-wrap">${esc(r.comment)}</div>`:''}</div>`).join(''):'<div class="muted">기록된 만족도가 없습니다.</div>';
   const noteRows=notes.length?notes.map(n=>`<div style="border-left:3px solid var(--brand);padding:3px 0 3px 10px;margin-bottom:8px"><div style="font-size:12px;color:var(--muted)">${esc(n.category||'')} · ${new Date(n.created_at).toLocaleString('ko-KR')}${n.author?' · '+esc(n.author):''}</div><div style="white-space:pre-wrap">${esc(n.note)}</div></div>`).join(''):'<div class="muted">상담 메모가 없습니다.</div>';
   const tags=(p.tags||[]).map(tg=>`<span class="tag" style="background:#e0f2f1;color:#0f766e;margin-right:4px">${esc(tg)}</span>`).join('');
   openModal(`<div class="mh">${esc(p.name)} <span class="muted" style="font-weight:400;font-size:13px">${esc(p.eng_name||'')}</span>${spent>=10000000?' <span class="tag" style="background:#fef3c7;color:#b45309">VIP</span>':''}<span onclick="closeModal()">✕</span></div><div class="mb">
@@ -810,10 +813,37 @@ async function patientDetail(id){
       ${noteRows}</div>
     <div class="detail-sec"><h4>상담·견적 (${(ord.data||[]).length})</h4>${(ord.data||[]).length?`<table>${ordRows}</table>`:'<div class="muted">없음</div>'}</div>
     <div class="detail-sec"><h4>예약 (${(ap.data||[]).length})</h4>${(ap.data||[]).length?`<table>${apRows}</table>`:'<div class="muted">없음</div>'}</div>
-    <div class="detail-sec"><h4>진료차트 (${(ch.data||[]).length})</h4>${(ch.data||[]).length?`<table>${chRows}</table>`:'<div class="muted">없음</div>'}</div></div>
+    <div class="detail-sec"><h4>진료차트 (${(ch.data||[]).length})</h4>${(ch.data||[]).length?`<table>${chRows}</table>`:'<div class="muted">없음</div>'}</div>
+    <div class="detail-sec"><h4>만족도·리뷰 (${revs.length})${avgNps?' · 평균 NPS <b style="color:#f59e0b">'+avgNps+'</b>':''}</h4>${rvRows}</div></div>
     <div class="mf"><button class="btn ghost" onclick="closeModal()">닫기</button>
       <button class="btn ghost" onclick="patientModal('${id}')">정보 수정</button>
+      <button class="btn ghost wechat" onclick="reviewRequest('${id}')">리뷰 요청</button>
+      <button class="btn ghost" onclick="reviewModal('${id}')">만족도 기록</button>
       <button class="btn" onclick="closeModal();startQuote('${id}')">견적 작성</button></div>`);
+}
+/* ===== 만족도·리뷰 ===== */
+function reviewModal(pid){
+  const p=(state.patients||[]).find(x=>x.id===pid)||{};
+  openModal(`<div class="mh">만족도 기록 · ${esc(p.name||'')}<span onclick="patientDetail('${pid}')">✕</span></div><div class="mb">
+    <div class="field"><label>NPS 점수 (0~10) <span class="muted" style="font-weight:400;font-size:12px">추천 의향</span></label><input id="rv_nps" type="number" min="0" max="10" placeholder="0~10"></div>
+    <div class="field"><label>후기 · 코멘트</label><textarea id="rv_comment" rows="3" placeholder="환자 후기·특이사항 (선택)" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px"></textarea></div></div>
+    <div class="mf"><button class="btn ghost" onclick="patientDetail('${pid}')">취소</button><button class="btn" onclick="saveReview('${pid}')">저장</button></div>`);
+}
+async function saveReview(pid){
+  var nps=(el('rv_nps')&&el('rv_nps').value!=='')?parseInt(el('rv_nps').value,10):null;
+  if(nps!=null&&(nps<0||nps>10)){alert('NPS는 0~10 사이로 입력하세요');return;}
+  var cm=((el('rv_comment')&&el('rv_comment').value)||'').trim()||null;
+  if(nps==null&&!cm){alert('NPS 점수 또는 코멘트를 입력하세요');return;}
+  const {error}=await db.from('patient_reviews').insert({hospital_id:state.hospital_id,patient_id:pid,nps:nps,comment:cm,created_by:(state.staff||{}).id,created_by_name:(state.staff||{}).name});
+  if(error){alert('저장 실패: '+error.message);return;}
+  try{logAudit('만족도 기록',nps!=null?('NPS '+nps):'코멘트');}catch(e){}
+  patientDetail(pid);
+}
+async function reviewRequest(pid){
+  const p=(state.patients||[]).find(x=>x.id===pid)||{};const nm=p.name||'',hosp=state.hospital_name||'';
+  var msg='【'+hosp+'】\n您好'+(nm?('，'+nm):'')+'！\n感谢您选择我们。为提供更好的服务，诚邀您对本次就诊进行评价（满分10分）并留下宝贵意见。\n您的反馈对我们非常重要，期待您的再次光临！';
+  var ok=false;try{await navigator.clipboard.writeText(msg);ok=true;}catch(e){try{var ta=document.createElement('textarea');ta.value=msg;document.body.appendChild(ta);ta.select();ok=document.execCommand('copy');document.body.removeChild(ta);}catch(_){}}
+  alert(ok?'리뷰 요청(중문)이 복사되었습니다.\n위챗으로 전송 후, 환자 응답은 "만족도 기록"에 입력하면 통계에 반영됩니다.':'복사 실패:\n\n'+msg);
 }
 async function addNote(id){const note=(el('pn_note').value||'').trim();if(!note)return;
   const {error}=await db.from('patient_notes').insert({hospital_id:state.hospital_id,patient_id:id,category:el('pn_cat').value,note,author:state.staff?state.staff.name:null});
@@ -1665,11 +1695,15 @@ async function renderStats(){
   const anchor=useRange?new Date(peX.getTime()-86400000):new Date(y,mo,1);
   const ay=anchor.getFullYear(),am=anchor.getMonth();
   const periodLabel=useRange?(statFrom+' ~ '+statTo):(y+'년 '+(mo+1)+'월');
-  const [ordR,apptR,patR]=await Promise.all([
+  const [ordR,apptR,patR,rvR]=await Promise.all([
     db.from('orders').select('id,order_no,order_date,total,discount_amount,pay_status,pay_method,agency_id,referrer_id,patient_id,doctor,status'),
     db.from('appointments').select('appointment_at,status,doctor,patient_id'),
     db.from('patients_dec').select('*'),
+    db.from('patient_reviews').select('nps'),
   ]);
+  const _rvAll=(rvR.data||[]).filter(r=>r.nps!=null);
+  const npsScore=_rvAll.length?Math.round((_rvAll.filter(r=>r.nps>=9).length-_rvAll.filter(r=>r.nps<=6).length)/_rvAll.length*100):null;
+  const avgNpsAll=_rvAll.length?(_rvAll.reduce((s,r)=>s+r.nps,0)/_rvAll.length).toFixed(1):null;
   const allOrders=(ordR.data||[]).filter(o=>o.status!=='cancelled');
   const orders=allOrders.filter(o=>inP(o.order_date));
   const prev=allOrders.filter(o=>prevInP(o.order_date));
@@ -1746,7 +1780,7 @@ async function renderStats(){
     var stbl='<table><thead><tr><th>에이전시</th><th class="right">유입</th><th class="right">예약</th><th class="right">노쇼율</th><th class="right">시술</th><th class="right">매출</th><th class="right">객단가</th><th class="right">전환율</th><th class="right">품질</th></tr></thead><tbody>'+(rowsA.map(function(r){return '<tr><td><b>'+esc(r.name)+'</b></td><td class="right">'+r.inflow+'</td><td class="right">'+r.appt+'</td><td class="right" style="color:'+(r.ns>0.2?'var(--danger)':'inherit')+'">'+Math.round(r.ns*100)+'%</td><td class="right">'+r.ord+'</td><td class="right"><b>'+won(r.rev)+'</b></td><td class="right">'+won(r.avg)+'</td><td class="right">'+Math.round(r.conv*100)+'%</td><td class="right"><span style="display:inline-block;min-width:36px;padding:2px 8px;border-radius:20px;background:'+gc[r.grade]+';color:#fff;font-weight:800;font-size:12px">'+r.grade+' '+r.score+'</span></td></tr>';}).join('')||'<tr><td colspan=9 class="muted">데이터 없음</td></tr>')+'</tbody></table>';
     content=P('모집 전환 퍼널 · '+periodLabel,funnel)+P('에이전시 품질 스코어',stbl)+'<div class="muted" style="font-size:11px;padding:2px 6px">품질점수 = 전환율40 + 노쇼낮음25 + 매출기여20 + 객단가15 · 등급 S(80+)/A(65+)/B(50+)/C</div>';
   } else {
-    content=`<div class="cards" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><div class="k">전체 환자</div><div class="v">${patAll.length}<small> 명</small></div></div><div class="stat"><div class="k">재방문율</div><div class="v">${revisitRate}%</div><div class="cny">2회+ ${revisit}명</div></div><div class="stat"><div class="k">당월 신규</div><div class="v">${newP}<small> 명</small></div></div></div>`
+    content=`<div class="cards" style="grid-template-columns:repeat(4,1fr)"><div class="stat"><div class="k">전체 환자</div><div class="v">${patAll.length}<small> 명</small></div></div><div class="stat"><div class="k">재방문율</div><div class="v">${revisitRate}%</div><div class="cny">2회+ ${revisit}명</div></div><div class="stat"><div class="k">NPS ${avgNpsAll?'(평균 '+avgNpsAll+')':''}</div><div class="v" style="color:#f59e0b">${npsScore!=null?npsScore:'—'}</div><div class="cny">${_rvAll.length}건 응답</div></div><div class="stat"><div class="k">당월 신규</div><div class="v">${newP}<small> 명</small></div></div></div>`
       +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">${P('국적별 환자',T(sbars(Object.entries(gN),v=>v+'명')))}${P('성별 분포',T(sbars(Object.entries(gGender),v=>v+'명')))}</div>`
       +P('환자 LTV TOP 10 (누적 결제)',`<table><thead><tr><th>#</th><th>환자</th><th class="right">누적</th></tr></thead><tbody>${ltv.map(([n,v],i)=>`<tr><td>${i+1}</td><td>${esc(n)}</td><td class="right"><b>${won(v)}</b></td></tr>`).join('')||'<tr><td colspan=3 class="muted">데이터 없음</td></tr>'}</tbody></table>`);
   }
