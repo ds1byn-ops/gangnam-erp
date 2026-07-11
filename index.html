@@ -581,12 +581,15 @@ async function renderDashboard(){
   const ds=new Date(y,mo,now.getDate()).toISOString(),de=new Date(y,mo,now.getDate()+1).toISOString();
   const ms=new Date(y,mo,1).toISOString(),me=new Date(y,mo+1,1).toISOString();
   const trendStart=new Date(y,mo-5,1).toISOString();
-  const [appt,monOrders,pat,recent,trend]=await Promise.all([
+  const [appt,monOrders,pat,recent,trend,allOrd,rvLogs,hospC]=await Promise.all([
     db.from('appointments').select('*').gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at'),
     db.from('orders').select('total,pay_status,order_date,status').gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
     db.from('patients').select('id',{count:'exact',head:true}),
     db.from('orders').select('*').order('order_date',{ascending:false}).limit(6),
     db.from('orders').select('total,order_date,status').gte('order_date',trendStart).neq('status','cancelled'),
+    db.from('orders').select('patient_id,order_date').neq('status','cancelled'),
+    db.from('revisit_logs').select('patient_id,created_at'),
+    db.from('hospitals').select('contact').eq('id',state.hospital_id).single(),
   ]);
   const appts=appt.data||[],mons=monOrders.data||[];
   const monSales=mons.reduce((s,o)=>s+Number(o.total||0),0);
@@ -599,6 +602,17 @@ async function renderDashboard(){
      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${x.sum?(Math.round(x.sum/10000)+'만'):''}</div>
      <div style="width:58%;background:linear-gradient(180deg,#14b8a6,#0f766e);border-radius:6px 6px 0 0;height:${Math.round(x.sum/maxSum*130)}px;min-height:${x.sum?4:0}px"></div>
      <div style="font-size:12px;color:var(--muted);margin-top:6px">${x.label}</div></div>`).join('')}</div>`;
+  let revisitPanel='';
+  const recallDays=(((hospC.data||{}).contact||{}).recall_days);
+  if(recallDays && recallDays>0){
+    const last={};(allOrd.data||[]).forEach(o=>{if(!o.patient_id)return;if(!last[o.patient_id]||o.order_date>last[o.patient_id])last[o.patient_id]=o.order_date;});
+    const remAfter={};(rvLogs.data||[]).forEach(l=>{if(!remAfter[l.patient_id]||l.created_at>remAfter[l.patient_id])remAfter[l.patient_id]=l.created_at;});
+    const nowMs=Date.now();const due=[];
+    Object.keys(last).forEach(pid=>{const lv=new Date(last[pid]).getTime();const days=Math.floor((nowMs-lv)/86400000);if(days>=recallDays){const rem=remAfter[pid];if(!rem||new Date(rem).getTime()<lv)due.push({pid:pid,lv:last[pid],days:days});}});
+    due.sort((a,b)=>b.days-a.days);
+    const rows=due.slice(0,50).map(d=>`<tr><td>${esc(PM[d.pid]||'-')}</td><td>${fdate(d.lv)}</td><td class="right"><b style="color:var(--danger)">${d.days}일</b></td><td><button class="btn sm wechat" onclick="revisitMsg('${d.pid}')">위챗 안내</button> <button class="btn sm ghost" onclick="logRevisit('${d.pid}','${d.lv}')">발송 기록</button></td></tr>`).join('');
+    revisitPanel=`<div class="panel"><div class="ph">🔔 재방문 도래 (${due.length}명 · ${recallDays}일+ 경과) <span class="muted" style="font-size:11px;font-weight:400">마지막 방문 기준 · 위챗 안내 후 '발송 기록'</span></div><div class="pb">${due.length?`<table><thead><tr><th>환자</th><th>마지막 방문</th><th class="right">경과</th><th>액션</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">재방문 도래 환자가 없습니다.</div>'}</div></div>`;
+  }
   m.innerHTML=`
    <div class="page-head"><div><h2>대시보드</h2>
      <div class="sub">${esc(state.hospital_name)} · ${now.toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'})}</div></div></div>
@@ -608,6 +622,7 @@ async function renderDashboard(){
      <div class="stat clk" onclick="unpaidModal()" title="미수 먼저 보기"><div class="k">미수금</div><div class="v" style="color:var(--danger)">${won(unpaid)}</div></div>
      <div class="stat clk" onclick="navTo('patients')" title="환자 CRM으로"><div class="k">전체 환자</div><div class="v">${pat.count||0}<small> 명</small></div></div>
    </div>
+   ${revisitPanel}
    <div class="panel"><div class="ph">최근 6개월 매출 추이</div>${chart}</div>
    <div class="panel"><div class="ph">오늘 예약 <button class="btn sm" onclick="navTo('reception')">접수 →</button></div>
      <div class="pb">${appts.length?`<table><thead><tr><th>시간</th><th>환자</th><th>담당</th><th>상태</th></tr></thead><tbody>${
@@ -619,6 +634,20 @@ async function renderDashboard(){
      }</tbody></table>`:'<div class="empty">견적이 없습니다.</div>'}</div></div>`;
 }
 
+/* ===== 재방문 안내 ===== */
+async function revisitMsg(pid){
+  const p=(state.patients||[]).find(x=>x.id===pid);if(!p){alert('환자 정보를 찾을 수 없습니다.');return;}
+  const nm=p.name||'',hosp=state.hospital_name||'';
+  var msg='【'+hosp+'】\n您好'+(nm?('，'+nm):'')+'！\n距离您上次到院已过一段时间，为维持效果，建议您进行复诊或补充护理。\n如需预约或咨询，请随时与我们联系，期待您的再次光临。';
+  var ok=false;try{await navigator.clipboard.writeText(msg);ok=true;}catch(e){try{var ta=document.createElement('textarea');ta.value=msg;document.body.appendChild(ta);ta.select();ok=document.execCommand('copy');document.body.removeChild(ta);}catch(_){}}
+  alert(ok?'재방문 안내(중문)가 복사되었습니다.\n위챗 대화창에 붙여넣기(Ctrl+V) 후 전송하세요.\n\n전송하셨으면 "발송 기록"을 눌러주세요.':'복사 실패. 아래 내용을 직접 복사하세요:\n\n'+msg);
+}
+async function logRevisit(pid,refDate){
+  const {error}=await db.from('revisit_logs').insert({hospital_id:state.hospital_id,patient_id:pid,ref_order_date:refDate||null,channel:'wechat',sent_by:(state.staff||{}).id,sent_by_name:(state.staff||{}).name});
+  if(error){alert('기록 실패: '+error.message);return;}
+  try{logAudit('재방문 안내 발송',(pmap()[pid]||''));}catch(e){}
+  renderDashboard();
+}
 /* ============ CALENDAR ============ */
 let calYM=null;
 async function renderCalendar(){
@@ -1865,6 +1894,7 @@ let _stf={};try{const _sr=await db.from('staff_accounts').select('id,name');((_s
      <div class="field" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" style="width:auto;margin:0;padding:0;border:0;flex:none" id="h_alimtalk" ${localStorage.getItem('alimtalk_on')==='1'?'checked':''}> 알림톡 자동발송 사용 <span class="muted" style="font-weight:400;font-size:12px">(솔라피 연동 · 환자 전화번호로 자동 전송)</span></label></div>
      <div class="field"><label>알림톡 템플릿 ID</label><input id="h_alimtalk_tpl" value="${esc(localStorage.getItem('alimtalk_template')||'')}" placeholder="솔라피 승인 템플릿 ID (비우면 서버 기본값 사용)"></div>
      <div class="muted" style="font-size:12px;margin-top:-4px">API 키·시크릿은 보안상 앱에 저장하지 않고 Supabase Edge Function 시크릿(SOLAPI_*)에 등록합니다. 발송에 실패하면 자동으로 클립보드 복사 방식으로 전환됩니다.</div>
+     <div class="field" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label>🔔 재방문 리마인드 주기 (일)</label><input id="h_recall" type="number" min="0" value="${(c.recall_days!=null?c.recall_days:90)}" placeholder="90"><div class="muted" style="font-size:12px;margin-top:-4px">마지막 방문 후 이 일수가 지난 환자를 대시보드 '재방문 도래'에 표시 (0=사용 안 함)</div></div>
      ${state.isPlatformAdmin?('<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>🌏 국가별 접속 제한 (플랫폼 관리자)</label><label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer"><input type="checkbox" id="geo_enabled" '+(_geo.enabled?'checked':'')+' style="width:auto"> 국가 차단 사용 (끄면 전 세계 허용)</label><div style="font-size:12px;color:#6b7280;margin-top:4px">허용 국가 코드 (쉼표 구분, 예: KR,CN,US)</div><input id="geo_allowed" value="'+((_geo.allowed_countries||['KR']).join(','))+'" placeholder="KR"><div class="muted" style="font-size:11px;margin-top:4px">한국(KR)은 항상 허용 · 저장 후 Netlify 반영 1~2분</div><button class="btn" style="margin-top:8px" onclick="saveGeoConfig()">국가 설정 저장</button></div>'):''}<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>💻 등록 기기 관리 ${state.isPlatformAdmin?'(전체 직원)':'(내 기기)'}</label><div style="font-size:12px;color:#6b7280;margin-bottom:8px">이 기기에서 로그인한 뒤 아래 <b>'＋ 이 기기 등록'</b>을 누르면 등록됩니다. 등급별 허용 대수 — 기본 1대 · 고급 3대 · 프리미엄 무제한.</div>${_thisDevHtml}${deviceListHtml(_devs,_stf)}</div><div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>🌐 플랫폼 연동 (글로벌·중국)</label><div style="font-size:12px;color:#6b7280;margin-bottom:6px">플랫폼 병원포털 계정을 등록하면 "플랫폼 문의" 메뉴로 견적문의가 들어옵니다.</div><div class="grid2"><div class="field"><label>플랫폼 병원 ID</label><input id="h_plat_id" value="${esc(c.plat_id||'')}"></div><div class="field"><label>플랫폼 비밀번호</label><input id="h_plat_pw" type="password" value="${esc(c.plat_pw||'')}"></div></div></div><div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
    </div></div>`;
 }
@@ -1876,7 +1906,7 @@ async function deleteDevice(id){if(!confirm('이 기기를 삭제할까요? (해
 async function saveGeoConfig(){var en=el('geo_enabled')?el('geo_enabled').checked:true;var arr=((el('geo_allowed')||{}).value||'').split(',').map(function(x){return x.trim().toUpperCase();}).filter(Boolean);if(arr.indexOf('KR')<0)arr.unshift('KR');const {error}=await db.from('geo_config').update({enabled:en,allowed_countries:arr,updated_at:new Date().toISOString()}).eq('id',1);if(error){alert('저장 실패: '+error.message);return;}try{logAudit('국가 접속제한 변경',{enabled:en,allowed:arr});}catch(e){}alert('저장되었습니다. Netlify 반영까지 1~2분 걸립니다.');}
 async function saveSettings(){
   const name=el('h_name').value.trim();if(!name){alert('병원명을 입력하세요');return;}
-  const contact={ceo:el('h_ceo').value||'',phone:el('h_phone').value||'',email:el('h_email').value||'',address:el('h_addr').value||'',logo:(el('h_logo_data')&&el('h_logo_data').value)||'',seal:(el('h_seal_data')&&el('h_seal_data').value)||'',plat_id:(el('h_plat_id')?el('h_plat_id').value||'':''),plat_pw:(el('h_plat_pw')?el('h_plat_pw').value||'':'')};
+  const contact={ceo:el('h_ceo').value||'',phone:el('h_phone').value||'',email:el('h_email').value||'',address:el('h_addr').value||'',logo:(el('h_logo_data')&&el('h_logo_data').value)||'',seal:(el('h_seal_data')&&el('h_seal_data').value)||'',plat_id:(el('h_plat_id')?el('h_plat_id').value||'':''),plat_pw:(el('h_plat_pw')?el('h_plat_pw').value||'':''),recall_days:(el('h_recall')?(parseInt(el('h_recall').value,10)||0):90)};
   const {error}=await db.from('hospitals').update({name,biz_no:el('h_biz').value||null,contact,updated_at:new Date().toISOString()}).eq('id',state.hospital_id);
   if(error){alert('저장 실패: '+error.message);return;}
   const kk=(el('h_kakao').value||'').trim();if(kk)localStorage.setItem('kakao_js_key',kk);else localStorage.removeItem('kakao_js_key');
