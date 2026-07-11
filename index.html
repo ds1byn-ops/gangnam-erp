@@ -330,7 +330,11 @@ async function boot(){
   const {data:{user}}=await db.auth.getUser();
   if(!user){el('login').style.display='flex';el('app').style.display='none';return;}
   const {data:staff}=await db.from('staff_accounts').select('id,name,role,hospital_id').eq('id',user.id).single();
-  if(!staff){el('loginErr').textContent='스태프 계정이 없습니다.';return;}
+  if(!staff){
+    const {data:agu}=await db.from('agency_users').select('id').eq('id',user.id).maybeSingle();
+    if(agu){ return bootAgencyPortal(); }
+    el('loginErr').textContent='스태프 계정이 없습니다.';return;
+  }
   state.staff=staff;state.hospital_id=staff.hospital_id;
   fetch('https://ipwho.is/').then(r=>r.json()).then(j=>{if(j){if(j.ip)state.ip=j.ip;if(j.country_code)state.country=j.country_code;}}).catch(()=>{});
   const [{data:hosp},{data:procs},{data:ags},{data:dcs},{data:pkgs},{data:pkgItems}]=await Promise.all([
@@ -365,6 +369,60 @@ async function boot(){
   startSingleSession(user.id);
 }
 async function loadPatients(){const {data}=await db.from('patients_dec').select('*').order('name');state.patients=data||[];}
+
+/* ============ 에이전시 전용 포털 ============ */
+async function bootAgencyPortal(){
+  el('loginErr').textContent='';
+  const {data:sum,error}=await db.rpc('agency_portal_summary');
+  if(error||!sum||!sum.agency){el('loginErr').textContent='포털 데이터를 불러오지 못했습니다.'+(error?' ('+error.message+')':'');return;}
+  el('login').style.display='none';el('app').style.display='none';
+  renderAgencyPortal(sum);
+}
+function renderAgencyPortal(sum){
+  window._agSummary=sum;
+  const ag=sum.agency,monthly=sum.monthly||[],setl=sum.settlements||[];
+  const totRev=monthly.reduce((s,m)=>s+Number(m.revenue||0),0);
+  const totOrders=monthly.reduce((s,m)=>s+Number(m.orders||0),0);
+  const paidSum=setl.filter(s=>s.status==='paid').reduce((s,x)=>s+Number(x.payout||0),0);
+  const pendSum=setl.filter(s=>s.status!=='paid').reduce((s,x)=>s+Number(x.payout||0),0);
+  const stB=s=>s==='paid'?'<span class="tag t-paid">지급완료</span>':s==='scheduled'?'<span class="tag t-confirmed">지급예정</span>':'<span class="tag t-unpaid">승인대기</span>';
+  let host=el('agencyPortal');
+  if(!host){host=document.createElement('div');host.id='agencyPortal';host.style.cssText='min-height:100vh;background:#f5f6f8';document.body.appendChild(host);}
+  host.style.display='block';
+  host.innerHTML=`<div style="max-width:960px;margin:0 auto;padding:22px 16px 70px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px;border-bottom:2px solid var(--brand,#1F3864);padding-bottom:14px">
+      <div><div style="font-size:13px;color:#8A6D2B">${esc(ag.hospital||'')} 파트너 포털</div>
+        <h1 style="margin:2px 0 0;font-size:24px;color:var(--brand,#1F3864)">${esc(ag.name)}${ag.is_followkorea?' <span class="tag t-confirmed" style="vertical-align:middle">FK</span>':''}</h1></div>
+      <button class="btn ghost" onclick="agencyLogout()">로그아웃</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:20px">
+      <div class="stat"><div class="k">누적 유입 건수</div><div class="v">${totOrders}<small> 건</small></div></div>
+      <div class="stat"><div class="k">누적 매출</div><div class="v">${won(totRev)}</div></div>
+      <div class="stat"><div class="k">지급 완료</div><div class="v">${won(paidSum)}</div></div>
+      <div class="stat"><div class="k">지급 예정·대기</div><div class="v">${won(pendSum)}</div></div>
+    </div>
+    <div class="panel"><div class="ph">월별 실적</div><div class="pb">
+      <table><thead><tr><th>월</th><th class="right">유입 건수</th><th class="right">환자 수</th><th class="right">매출</th></tr></thead>
+      <tbody>${monthly.length?monthly.map(m=>`<tr><td>${esc(m.period)}</td><td class="right">${m.orders}건</td><td class="right">${m.patients}명</td><td class="right">${won(m.revenue)}</td></tr>`).join(''):'<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">실적 데이터가 없습니다.</td></tr>'}</tbody></table>
+    </div></div>
+    <div class="panel" style="margin-top:16px"><div class="ph">정산 내역 <button class="btn sm ghost" style="font-weight:400" onclick="agencyCsv()">명세 CSV</button></div><div class="pb">
+      <table><thead><tr><th>정산월</th><th class="right">수수료</th><th class="right">부가세</th><th class="right">지급액</th><th>상태</th><th>지급일</th></tr></thead>
+      <tbody>${setl.length?setl.map(s=>`<tr><td>${esc(s.period)}</td><td class="right">${won(s.total_amount)}</td><td class="right">${won(s.vat_amount)}</td><td class="right"><b>${won(s.payout)}</b></td><td>${stB(s.status)}${s.tax_issued?' <span class="tag" style="background:#eef2ff;color:#4338ca">계산서</span>':''}</td><td>${s.paid_at||'-'}</td></tr>`).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">정산 내역이 없습니다.</td></tr>'}</tbody></table>
+    </div></div>
+    <div class="muted" style="font-size:12px;margin-top:14px">본 포털은 귀사 유입 실적과 정산 내역만 표시됩니다. 정산 상태는 병원의 승인·지급 처리에 따라 갱신됩니다. 문의는 담당 병원으로 연락 주세요.</div>
+  </div>`;
+}
+function agencyLogout(){db.auth.signOut().then(()=>location.reload());}
+function agencyCsv(){
+  const sum=window._agSummary;if(!sum)return;const s=sum.settlements||[];
+  if(!s.length){alert('정산 내역이 없습니다.');return;}
+  const q=c=>`"${(c==null?'':String(c)).replace(/"/g,'""')}"`;
+  const stk={paid:'지급완료',scheduled:'지급예정',unpaid:'승인대기'};
+  const head=['정산월','수수료','부가세','지급액','상태','지급일'];
+  const rows=s.map(x=>[x.period,x.total_amount,x.vat_amount,x.payout,stk[x.status]||x.status,x.paid_at||'']);
+  const csv='﻿'+[head.map(q).join(',')].concat(rows.map(r=>r.map(q).join(','))).join('\n');
+  const b=new Blob([csv],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='정산명세_'+(sum.agency.name||'agency')+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);
+}
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
