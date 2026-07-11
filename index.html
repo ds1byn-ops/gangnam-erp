@@ -924,6 +924,27 @@ function quoteText(){
   t+=`※ 본 견적은 상담 기준 금액이며, 실제 시술 내용에 따라 변동될 수 있습니다.`;
   return t;
 }
+/* ---- 위챗 전송용 중문 견적 ---- */
+function quoteTextZh(){
+  const p=state.patients.find(x=>x.id===el('q_pat').value);
+  const ag=state.agencies.find(x=>x.id===el('q_ag').value);
+  const doc=el('q_doc').value||'';
+  const sub=quoteCtx.subtotal,disc=quoteCtx.discount_amount,total=quoteCtx.total;
+  const now=new Date();
+  const zhName=c=>{const pr=state.procedures.find(x=>x.id===c.procedure_id);return (pr&&pr.name_zh)?pr.name_zh:(c.name||'').replace('[패키지]','[套餐]');};
+  let t=`【${state.hospital_name}】报价单\n`;
+  t+=`日期: ${now.toLocaleDateString('zh-CN')}\n`;
+  t+=`客户: ${p?p.name:'-'}${doc?' / 主诊医生: '+doc:''}\n`;
+  if(ag)t+=`代理: ${ag.name}\n`;
+  t+=`──────────────\n`;
+  cart.forEach(c=>{const net=lineNet(c);const dpct=c.dpct||0;t+=`• ${zhName(c)} ×${c.qty}${dpct?' ('+dpct+'%↓)':''} : ${won(net)}\n`;});
+  t+=`──────────────\n`;
+  t+=`小计: ${won(sub)}\n`;
+  if(disc>0)t+=`优惠: -${won(disc)}\n`;
+  t+=`合计: ${won(total)}（${cny(total)}）\n\n`;
+  t+=`※ 本报价为咨询参考金额，最终费用将根据实际手术方案确定。`;
+  return t;
+}
 async function useQuota(kind,labelName){
   try{
     const {data,error}=await db.rpc('use_quota',{p_kind:kind});
@@ -937,7 +958,7 @@ async function sendWechat(){
   if(!el('q_pat').value){alert('환자를 선택하세요');return;}
   calcQuote();
   if(!await useQuota('msg','견적 발송')) return;
-  const text=quoteText();
+  const text=quoteTextZh();
   let copied=false;
   try{await navigator.clipboard.writeText(text);copied=true;}
   catch(e){
