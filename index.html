@@ -244,21 +244,47 @@ async function doLogin(e){e.preventDefault();const b=el('loginBtn');el('loginErr
   if(error){var _fc=parseInt(localStorage.getItem('login_fail_cnt')||'0',10)+1;if(_fc>=5){localStorage.setItem('login_lock_until',String(Date.now()+60000));localStorage.setItem('login_fail_cnt','0');el('loginErr').textContent='로그인 5회 실패 — 1분간 로그인이 제한됩니다.';}else{localStorage.setItem('login_fail_cnt',String(_fc));el('loginErr').textContent='로그인 실패: '+(error.message||error)+' ('+_fc+'/5)';}b.disabled=false;return;}localStorage.removeItem('login_fail_cnt');localStorage.removeItem('login_lock_until');await boot();}
 async function doLogout(){await db.auth.signOut();location.reload();}
 
+function getDeviceId(){var did=localStorage.getItem('gp_device_id');if(!did){did=((window.crypto&&crypto.randomUUID)?crypto.randomUUID():('d'+Date.now()+Math.random().toString(36).slice(2)));localStorage.setItem('gp_device_id',did);}return did;}
+function deviceLimitFor(tier){return (tier==='premium')?999999:((tier==='advanced')?3:1);}
+function deviceDefaultLabel(){var ua=navigator.userAgent||'';var mob=/Mobi|Android|iPhone|iPad|iPod/i.test(ua);var os=/Android/i.test(ua)?'Android':(/iPhone|iPad|iPod/i.test(ua)?'iOS':(/Windows/i.test(ua)?'Windows':(/Mac/i.test(ua)?'Mac':'')));return (mob?'모바일':'PC')+(os?(' · '+os):'');}
+// 로그인 시: 등록된 기기면 통과(방문시간 갱신), 미등록이어도 한도 미만이면 통과(등록은 기기관리에서 수동). 한도 초과 + 미등록이면 차단.
 async function enforceDeviceLimit(){
 try{
 if(state.isPlatformAdmin) return true;
-var tier=state.plan_tier||'basic';
-var limit=tier==='premium'?999999:(tier==='advanced'?3:1);
-var did=localStorage.getItem('gp_device_id');
-if(!did){did=((window.crypto&&crypto.randomUUID)?crypto.randomUUID():('d'+Date.now()+Math.random().toString(36).slice(2)));localStorage.setItem('gp_device_id',did);}
-var sid=state.staff.id;
+var limit=deviceLimitFor(state.plan_tier||'basic');
+var did=getDeviceId();var sid=state.staff.id;
 var res=await db.from('staff_devices').select('device_id').eq('staff_id',sid);
 var devs=(res&&res.data)||[];
 var exists=devs.some(function(d){return d.device_id===did;});
-if(!exists && devs.length>=limit) return false;
-await db.from('staff_devices').upsert({staff_id:sid,device_id:did,device_label:(navigator.userAgent||'').slice(0,120),last_seen:new Date().toISOString()},{onConflict:'staff_id,device_id'});
-return true;
+state.deviceRegistered=exists;
+if(exists){try{await db.from('staff_devices').update({last_seen:new Date().toISOString()}).eq('staff_id',sid).eq('device_id',did);}catch(e){}return true;}
+return devs.length<limit;
 }catch(e){return true;}
+}
+async function registerThisDevice(){
+try{
+var limit=deviceLimitFor(state.plan_tier||'basic');
+var did=getDeviceId();var sid=state.staff.id;
+var res=await db.from('staff_devices').select('device_id').eq('staff_id',sid);var devs=(res&&res.data)||[];
+if(devs.some(function(d){return d.device_id===did;})){alert('이미 등록된 기기입니다.');return;}
+if(devs.length>=limit){alert('등록 가능한 기기 수('+limit+'대)를 모두 사용 중입니다.\n아래에서 안 쓰는 기기를 삭제한 뒤 다시 등록하세요.');return;}
+if(!confirm('이 기기를 등록하시겠습니까?'))return;
+var label=(prompt('기기 이름 (예: 원장 아이폰, 데스크 PC)',deviceDefaultLabel())||deviceDefaultLabel());
+const {error}=await db.from('staff_devices').upsert({staff_id:sid,device_id:did,device_label:label,last_seen:new Date().toISOString()},{onConflict:'staff_id,device_id'});
+if(error){alert('등록 실패: '+error.message);return;}
+try{logAudit('기기 등록',label);}catch(e){}
+alert('이 기기가 등록되었습니다.');renderSettings();
+}catch(e){alert('오류: '+(e&&e.message||e));}
+}
+async function unregisterThisDevice(){
+try{
+if(!confirm('이 기기의 등록을 해제할까요?'))return;
+var did=getDeviceId();var sid=state.staff.id;
+const {error}=await db.from('staff_devices').delete().eq('staff_id',sid).eq('device_id',did);
+if(error){alert('해제 실패: '+error.message);return;}
+try{logAudit('기기 등록해제',did);}catch(e){}
+alert('이 기기 등록이 해제되었습니다.');renderSettings();
+}catch(e){alert('오류: '+(e&&e.message||e));}
 }
 const PLAT_URL='https://qfncxamqeiyxkbjxwtoi.supabase.co';
 const PLAT_KEY='sb_publishable_qaah2ieLZHqjBFsvi6Zwag_QsKYhWhV';
@@ -327,7 +353,7 @@ async function boot(){
   const _allm=['dashboard','calendar','reception','patients','quote','platq','charts','tasks','files','billing','stats','settlement','agencies','packages','referrers','refsettle','staff','settings','audit','subscription'];
   let _allowed=(staff.role==='owner')?_allm.slice():((Array.isArray(staff.menu_perms)&&staff.menu_perms.length)?staff.menu_perms.slice():roleMenus(staff.role));
   if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings'&&k!=='audit'&&k!=='subscription');
-  try{ const {data:pa}=await db.from('platform_admins').select('id').eq('id',user.id).maybeSingle(); state.isPlatformAdmin=!!pa; }catch(e){ state.isPlatformAdmin=false; } if(!(await enforceDeviceLimit())){ try{await db.auth.signOut();}catch(_e){} el('login').style.display='flex'; el('app').style.display='none'; var _lm=({basic:'1',advanced:'3',premium:'무제한'})[state.plan_tier]||'1'; if(el('loginErr'))el('loginErr').textContent='이 계정의 허용 기기 수('+_lm+'대)를 초과했습니다. 기존 기기에서 로그아웃 후 이용하세요.'; return; }
+  try{ const {data:pa}=await db.from('platform_admins').select('id').eq('id',user.id).maybeSingle(); state.isPlatformAdmin=!!pa; }catch(e){ state.isPlatformAdmin=false; } if(!(await enforceDeviceLimit())){ try{await db.auth.signOut();}catch(_e){} el('login').style.display='flex'; el('app').style.display='none'; var _lm=({basic:'1',advanced:'3',premium:'무제한'})[state.plan_tier]||'1'; if(el('loginErr'))el('loginErr').textContent='허용 기기 수('+_lm+'대)를 모두 사용 중입니다. 기존 기기의 [병원설정 › 기기관리]에서 안 쓰는 기기를 삭제한 뒤 로그인하세요.'; return; }
   // 구독 등급별 기능 제한 (플랫폼 관리자는 예외)
   if(!state.isPlatformAdmin){ const _tset=TIER_MENUS[state.plan_tier]||TIER_MENUS.basic; _allowed=_allowed.filter(k=>k==='subscription'||k==='platq'||_tset.includes(k)); }
   document.querySelectorAll('#nav a').forEach(a=>{a.style.display=_allowed.includes(a.dataset.view)?'':'none';});
@@ -1746,6 +1772,8 @@ let _geo={enabled:true,allowed_countries:['KR']};try{const _gr=await db.from('ge
 let _devs=[];try{const _dr=await db.from('staff_devices').select('*').order('last_seen',{ascending:false});_devs=(_dr&&_dr.data)||[];}catch(e){}
 let _stf={};try{const _sr=await db.from('staff_accounts').select('id,name');((_sr&&_sr.data)||[]).forEach(function(x){_stf[x.id]=x.name;});}catch(e){}
   const c=(h&&h.contact)||{};
+  let _myDid=getDeviceId();let _myReg=_devs.some(function(d){return d.device_id===_myDid&&d.staff_id===state.staff.id;});
+  let _thisDevHtml=state.isPlatformAdmin?'':('<div style="background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:10px">'+(_myReg?('<span style="color:#059669;font-weight:700">✅ 이 기기는 등록되어 있습니다.</span><button class="btn sm ghost" style="color:var(--danger);margin-left:8px" onclick="unregisterThisDevice()">이 기기 등록 해제</button>'):('<div style="margin-bottom:7px">이 기기는 아직 <b>등록되지 않았습니다.</b> 이 기기를 등록하시겠습니까?</div><button class="btn sm" onclick="registerThisDevice()">＋ 이 기기 등록</button>'))+'</div>');
   m.innerHTML=`<div class="page-head"><div><h2>병원 설정</h2><div class="sub">병원 기본정보 · 세금계산서/거래명세서에 사용됩니다</div></div></div>
    <div class="panel" style="max-width:640px"><div class="pb" style="padding:18px">
      <div class="field"><label>병원명 *</label><input id="h_name" value="${esc(h?h.name:'')}"></div>
@@ -1764,7 +1792,7 @@ let _stf={};try{const _sr=await db.from('staff_accounts').select('id,name');((_s
      <div class="field" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" style="width:auto;margin:0;padding:0;border:0;flex:none" id="h_alimtalk" ${localStorage.getItem('alimtalk_on')==='1'?'checked':''}> 알림톡 자동발송 사용 <span class="muted" style="font-weight:400;font-size:12px">(솔라피 연동 · 환자 전화번호로 자동 전송)</span></label></div>
      <div class="field"><label>알림톡 템플릿 ID</label><input id="h_alimtalk_tpl" value="${esc(localStorage.getItem('alimtalk_template')||'')}" placeholder="솔라피 승인 템플릿 ID (비우면 서버 기본값 사용)"></div>
      <div class="muted" style="font-size:12px;margin-top:-4px">API 키·시크릿은 보안상 앱에 저장하지 않고 Supabase Edge Function 시크릿(SOLAPI_*)에 등록합니다. 발송에 실패하면 자동으로 클립보드 복사 방식으로 전환됩니다.</div>
-     ${state.isPlatformAdmin?('<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>🌏 국가별 접속 제한 (플랫폼 관리자)</label><label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer"><input type="checkbox" id="geo_enabled" '+(_geo.enabled?'checked':'')+' style="width:auto"> 국가 차단 사용 (끄면 전 세계 허용)</label><div style="font-size:12px;color:#6b7280;margin-top:4px">허용 국가 코드 (쉼표 구분, 예: KR,CN,US)</div><input id="geo_allowed" value="'+((_geo.allowed_countries||['KR']).join(','))+'" placeholder="KR"><div class="muted" style="font-size:11px;margin-top:4px">한국(KR)은 항상 허용 · 저장 후 Netlify 반영 1~2분</div><button class="btn" style="margin-top:8px" onclick="saveGeoConfig()">국가 설정 저장</button></div>'):''}<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>💻 등록 기기 관리 ${state.isPlatformAdmin?'(전체 직원)':'(내 기기)'}</label><div style="font-size:12px;color:#6b7280;margin-bottom:6px">등급별 허용 대수 초과 시 로그인이 막힙니다. 안 쓰는 기기를 삭제해 슬롯을 비우세요.</div>${deviceListHtml(_devs,_stf)}</div><div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>🌐 플랫폼 연동 (글로벌·중국)</label><div style="font-size:12px;color:#6b7280;margin-bottom:6px">플랫폼 병원포털 계정을 등록하면 "플랫폼 문의" 메뉴로 견적문의가 들어옵니다.</div><div class="grid2"><div class="field"><label>플랫폼 병원 ID</label><input id="h_plat_id" value="${esc(c.plat_id||'')}"></div><div class="field"><label>플랫폼 비밀번호</label><input id="h_plat_pw" type="password" value="${esc(c.plat_pw||'')}"></div></div></div><div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
+     ${state.isPlatformAdmin?('<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>🌏 국가별 접속 제한 (플랫폼 관리자)</label><label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer"><input type="checkbox" id="geo_enabled" '+(_geo.enabled?'checked':'')+' style="width:auto"> 국가 차단 사용 (끄면 전 세계 허용)</label><div style="font-size:12px;color:#6b7280;margin-top:4px">허용 국가 코드 (쉼표 구분, 예: KR,CN,US)</div><input id="geo_allowed" value="'+((_geo.allowed_countries||['KR']).join(','))+'" placeholder="KR"><div class="muted" style="font-size:11px;margin-top:4px">한국(KR)은 항상 허용 · 저장 후 Netlify 반영 1~2분</div><button class="btn" style="margin-top:8px" onclick="saveGeoConfig()">국가 설정 저장</button></div>'):''}<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>💻 등록 기기 관리 ${state.isPlatformAdmin?'(전체 직원)':'(내 기기)'}</label><div style="font-size:12px;color:#6b7280;margin-bottom:8px">이 기기에서 로그인한 뒤 아래 <b>'＋ 이 기기 등록'</b>을 누르면 등록됩니다. 등급별 허용 대수 — 기본 1대 · 고급 3대 · 프리미엄 무제한.</div>${_thisDevHtml}${deviceListHtml(_devs,_stf)}</div><div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>🌐 플랫폼 연동 (글로벌·중국)</label><div style="font-size:12px;color:#6b7280;margin-bottom:6px">플랫폼 병원포털 계정을 등록하면 "플랫폼 문의" 메뉴로 견적문의가 들어옵니다.</div><div class="grid2"><div class="field"><label>플랫폼 병원 ID</label><input id="h_plat_id" value="${esc(c.plat_id||'')}"></div><div class="field"><label>플랫폼 비밀번호</label><input id="h_plat_pw" type="password" value="${esc(c.plat_pw||'')}"></div></div></div><div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
    </div></div>`;
 }
 function hsImg(inputId,dataId,prevId){var f=document.getElementById(inputId);var file=f&&f.files&&f.files[0];if(!file)return;if(file.size>1500000)alert('이미지가 큽니다(1.5MB 이하 권장). 저장은 되지만 느릴 수 있어요.');var rd=new FileReader();rd.onload=function(){var d=rd.result;var dh=document.getElementById(dataId);if(dh)dh.value=d;var pv=document.getElementById(prevId);if(pv){pv.src=d;pv.style.display='';}};rd.readAsDataURL(file);}
