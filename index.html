@@ -156,11 +156,10 @@
   <form class="login-card" onsubmit="doLogin(event)">
     <h1>강남펄스 <span style="color:#0f766e">ERP</span></h1>
     <p>의료관광 상담·시술·정산 통합 시스템</p>
-    <label>이메일</label><input id="email" type="email" value="admin@gangnam.clinic" autocomplete="username" />
-    <label>비밀번호</label><input id="pw" type="password" value="gangnam1234" autocomplete="current-password" />
+    <label>이메일</label><input id="email" type="email" placeholder="이메일 주소" autocomplete="username" />
+    <label>비밀번호</label><input id="pw" type="password" placeholder="비밀번호" autocomplete="current-password" />
     <button id="loginBtn" type="submit">로그인</button>
     <div class="err" id="loginErr"></div>
-    <div class="hint">데모 계정 · <b>admin@gangnam.clinic</b> / <b>gangnam1234</b></div>
   </form>
 </div>
 
@@ -336,6 +335,7 @@ async function boot(){
     el('loginErr').textContent='스태프 계정이 없습니다.';return;
   }
   state.staff=staff;state.hospital_id=staff.hospital_id;
+  try{ await db.rpc('run_trial_downgrades'); }catch(e){}  // 만료된 런칭 프로모션 자동 강등(고급→기본)
   fetch('https://ipwho.is/').then(r=>r.json()).then(j=>{if(j){if(j.ip)state.ip=j.ip;if(j.country_code)state.country=j.country_code;}}).catch(()=>{});
   const [{data:hosp},{data:procs},{data:ags},{data:dcs},{data:pkgs},{data:pkgItems}]=await Promise.all([
     db.from('hospitals').select('name,plan_tier,subscription_end').eq('id',staff.hospital_id).single(),
@@ -533,11 +533,11 @@ async function renderPlatform(){
     const cnt=cntByH[h.id]||0, lim=(typeof h.staff_limit==='number')?h.staff_limit:3, over=cnt>=lim;
     return '<tr><td><b>'+esc(h.name)+'</b>'+(h.biz_no?'<div class="cny">'+esc(h.biz_no)+'</div>':'')+'</td>'
       +'<td><select onchange="platSetField(\''+h.id+'\',\'status\',this.value)" style="padding:5px;border:1px solid var(--line);border-radius:7px">'+stOpt(h.status)+'</select></td>'
-      +'<td><select onchange="platSetField(\''+h.id+'\',\'plan_tier\',this.value)" style="padding:5px;border:1px solid var(--line);border-radius:7px">'+plOpt(h.plan_tier)+'</select></td>'
+      +'<td><select onchange="platSetField(\''+h.id+'\',\'plan_tier\',this.value)" style="padding:5px;border:1px solid var(--line);border-radius:7px">'+plOpt(h.plan_tier)+'</select>'+(h.trial_ends?'<div class="cny" style="color:#8A6D2B">체험 '+(PLAN_LABEL[h.trial_tier]||h.trial_tier)+' ~'+h.trial_ends+'</div>':'')+'</td>'
       +'<td class="right"><span style="color:'+(over?'#dc2626':'#0f766e')+';font-weight:700">'+cnt+'</span> / <input type="number" min="'+cnt+'" value="'+lim+'" onchange="platSetField(\''+h.id+'\',\'staff_limit\',this.value)" style="width:56px;padding:4px;border:1px solid var(--line);border-radius:6px;text-align:center"></td>'
       +'<td><input type="date" value="'+(h.subscription_end||'')+'" onchange="platSetField(\''+h.id+'\',\'subscription_end\',this.value)" style="padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px"></td>'
       +'<td>'+fdate(h.created_at)+'</td>'
-      +'<td class="right"><button class="btn sm ghost" onclick="platAccounts(\''+h.id+'\')">계정 관리</button></td></tr>';
+      +'<td class="right"><button class="btn sm ghost" onclick="platQuota(\''+h.id+'\')">한도</button> <button class="btn sm ghost" onclick="platAccounts(\''+h.id+'\')">계정 관리</button></td></tr>';
   }).join('');
   m.innerHTML='<div class="page-head"><div><h2>플랫폼 관리</h2><div class="sub">전 병원 관리 (팔로우코리아 전용) · 총 '+(hosps||[]).length+'개 병원</div></div>'
     +'<button class="btn" onclick="obModal()">＋ 새 병원</button></div>'
@@ -547,6 +547,26 @@ async function renderPlatform(){
 function platSetField(hid,field,val){
   const patch={}; patch[field]=(field==='staff_limit')?(parseInt(val,10)||3):(val===''?null:val); patch.updated_at=new Date().toISOString();
   db.from('hospitals').update(patch).eq('id',hid).then(function(r){ if(r.error){alert('실패: '+r.error.message);} else { logAudit('플랫폼 병원설정',field+'='+patch[field]); } });
+}
+const QUOTA_LIM={basic:{doc:30,msg:100},advanced:{doc:200,msg:1000},premium:{doc:null,msg:null}};
+async function platQuota(hid){
+  const h=(state._platHosps||[]).find(function(x){return x.id===hid;}); if(!h)return;
+  const per=new Date().toISOString().slice(0,7);
+  const lim=QUOTA_LIM[h.plan_tier]||QUOTA_LIM.basic;
+  const {data}=await db.from('hospital_usage').select('kind,count').eq('hospital_id',hid).eq('period',per);
+  const u={doc:0,msg:0}; (data||[]).forEach(function(r){u[r.kind]=r.count;});
+  const line=function(kind,label){var L=lim[kind];var used=u[kind]||0;var txt=(L==null)?used+' / 무제한':used+' / '+L;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><div><b>'+label+'</b> <span class="muted" style="font-size:11px">'+per+'</span><div style="font-size:13px;margin-top:2px">사용 '+txt+'</div></div><div style="display:flex;gap:6px;flex-shrink:0"><button class="btn sm ghost" onclick="platDoQuota(\''+hid+'\',\''+kind+'\',null)">한도 풀기</button><button class="btn sm ghost" onclick="platDoQuota(\''+hid+'\',\''+kind+'\',10)">+10</button><button class="btn sm ghost" onclick="platDoQuota(\''+hid+'\',\''+kind+'\',50)">+50</button></div></div>';};
+  openModal('<div class="mh">'+esc(h.name)+' · 발급 한도 관리<span onclick="closeModal()">✕</span></div><div class="mb">'
+    +'<div class="muted" style="font-size:12px;margin-bottom:6px">현재 등급 <b>'+(PLAN_LABEL[h.plan_tier]||h.plan_tier)+'</b> · <b>한도 풀기</b>=당월 사용량 0으로 초기화(등급 한도만큼 다시 발급 가능) · <b>+N</b>=N건만큼 추가 여유 부여</div>'
+    +line('doc','세금계산서(계산서)')+line('msg','카카오톡·알림톡')
+    +'<div class="muted" style="font-size:11px;margin-top:10px">※ 매월 1일 사용량은 자동 리셋됩니다. 이 조작은 당월분에만 적용됩니다.</div></div>',true);
+}
+async function platDoQuota(hid,kind,bonus){
+  const {data,error}=await db.rpc('admin_reset_quota',{p_hospital_id:hid,p_kind:kind,p_bonus:bonus});
+  if(error||(data&&!data.ok)){alert('실패: '+(error?error.message:((data&&data.error)||'권한 없음')));return;}
+  logAudit('플랫폼 발급한도',(bonus?('+'+bonus):'초기화')+' · '+kind);
+  platQuota(hid);
 }
 async function platAccounts(hid){
   const h=(state._platHosps||[]).find(function(x){return x.id===hid;}); if(!h)return;
@@ -600,9 +620,10 @@ function obModal(){
     +fld('원장 비밀번호 * <button type="button" class="btn ghost sm" onclick="obGenPw()">자동생성</button>','<input id="ob_pw" '+inp+' placeholder="8자 이상">')
     +fld('원장 이름','<input id="ob_owner" '+inp+' placeholder="비우면 「병원명 원장」">')
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +fld('플랜','<select id="ob_plan" '+inp+'><option value="basic">기본</option><option value="advanced">고급</option><option value="premium">프리미엄</option></select>')
-    +fld('상태','<select id="ob_status" '+inp+'><option value="trial">체험</option><option value="active">정식</option><option value="paused">중지</option></select>')
+    +fld('플랜','<select id="ob_plan" '+inp+'><option value="basic">기본</option><option value="advanced" selected>고급</option><option value="premium">프리미엄</option></select>')
+    +fld('상태','<select id="ob_status" '+inp+'><option value="trial">체험</option><option value="active" selected>정식</option><option value="paused">중지</option></select>')
     +'</div>'
+    +'<div class="field" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:9px;padding:10px 12px"><label style="display:flex;align-items:center;gap:8px;font-weight:600;margin:0;cursor:pointer"><input type="checkbox" id="ob_promo" checked onchange="var p=el(\'ob_plan\');if(this.checked&&p&&p.value===\'basic\')p.value=\'advanced\'"> 런칭 프로모션 — 3개월 고급 무료</label><div class="muted" style="font-size:11px;margin-top:4px">체크 시 위 플랜으로 3개월 제공 후 자동으로 <b>기본</b>으로 전환됩니다.</div></div>'
     +fld('구독 만료일 (선택)','<input type="date" id="ob_subend" '+inp+'>')
     +'<div id="ob_result" style="margin-top:10px"></div></div>'
     +'<div class="mf"><button class="btn ghost" onclick="closeModal()">닫기</button><button class="btn" id="ob_btn" onclick="submitOnboard()">병원 + 원장계정 생성</button></div>',true);
@@ -617,6 +638,7 @@ async function submitOnboard(){
     const { data, error } = await db.functions.invoke('onboard-hospital', { body:{
       hospital_name:name, biz_no:el('ob_biz').value.trim(), owner_email:email, owner_password:pw,
       owner_name:el('ob_owner').value.trim(), plan_tier:el('ob_plan').value, status:el('ob_status').value,
+      trial_months:(el('ob_promo')&&el('ob_promo').checked)?3:0,
       subscription_end:(el('ob_subend')&&el('ob_subend').value)||null } });
     if(error){ let msg=error.message||String(error); try{ const ctx=await error.context.json(); if(ctx&&ctx.error)msg=ctx.error; }catch(_){} throw new Error(msg); }
     if(data&&data.error) throw new Error(data.error);
