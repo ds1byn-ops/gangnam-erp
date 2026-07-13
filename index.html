@@ -169,6 +169,7 @@
   <div class="layout">
     <aside class="side">
       <div class="brand" style="cursor:pointer" onclick="location.reload()" title="새로고침">강남펄스<small id="hospName">ERP</small></div>
+      <select id="hospSwitch" onchange="switchHospital(this.value)" title="병원 전환 (마스터 전용)" style="display:none;margin:2px 12px 8px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px;width:calc(100% - 24px);background:#fff"></select>
       <nav class="nav" id="nav">
         <a data-view="dashboard" class="active">대시보드</a>
         <div class="grp">진료 · 접수</div>
@@ -238,9 +239,31 @@ const pmap=()=>Object.fromEntries(state.patients.map(p=>[p.id,p.name]));
 const amap=()=>Object.fromEntries(state.agencies.map(a=>[a.id,a.name]));
 let billSearch='',billSort='recent',billFrom='',billTo='';let setlSearch='',setlSort='rev';let rsSearch='',rsSort='rev';let agmSearch='',agmSort='name';let refmSearch='',refmSort='name';let chSearch='',chSort='date';let setlVat=true,rsVat=true;
 
-async function doLogin(e){e.preventDefault();const b=el('loginBtn');el('loginErr').textContent='';var _now=Date.now();var _lk=parseInt(localStorage.getItem('login_lock_until')||'0',10);if(_lk>_now){el('loginErr').textContent='로그인 시도가 많아 잠겼습니다. '+Math.ceil((_lk-_now)/1000)+'초 후 다시 시도하세요.';return;}b.disabled=true;
-  const {error}=await db.auth.signInWithPassword({email:el('email').value.trim(),password:el('pw').value});
-  if(error){var _fc=parseInt(localStorage.getItem('login_fail_cnt')||'0',10)+1;if(_fc>=5){localStorage.setItem('login_lock_until',String(Date.now()+60000));localStorage.setItem('login_fail_cnt','0');el('loginErr').textContent='로그인 5회 실패 — 1분간 로그인이 제한됩니다.';}else{localStorage.setItem('login_fail_cnt',String(_fc));el('loginErr').textContent='로그인 실패: '+(error.message||error)+' ('+_fc+'/5)';}b.disabled=false;return;}localStorage.removeItem('login_fail_cnt');localStorage.removeItem('login_lock_until');await boot();}
+async function _getIP(){try{const r=await Promise.race([fetch('https://ipwho.is/').then(x=>x.json()),new Promise(res=>setTimeout(()=>res(null),2500))]);return (r&&r.ip)||null;}catch(e){return null;}}
+async function doLogin(e){
+  e.preventDefault();
+  const b=el('loginBtn');el('loginErr').textContent='';
+  const email=el('email').value.trim(), pw=el('pw').value;
+  if(!email||!pw){el('loginErr').textContent='이메일과 비밀번호를 입력하세요.';return;}
+  b.disabled=true;
+  const ip=await _getIP(); state._loginIP=ip;
+  try{ const {data:chk}=await db.rpc('check_login',{p_email:email,p_ip:ip});
+    if(chk&&chk.allowed===false){ b.disabled=false;
+      el('loginErr').textContent=(chk.reason==='ip_blocked')
+        ?'이 IP는 반복된 로그인 실패로 차단되었습니다. 관리자에게 문의하세요.'
+        :'로그인 5회 실패 — 약 '+Math.max(1,Math.ceil((chk.retry_sec||300)/60))+'분 후 다시 시도하세요.';
+      return; }
+  }catch(_e){}
+  const {error}=await db.auth.signInWithPassword({email:email,password:pw});
+  try{ await db.rpc('record_login',{p_email:email,p_ip:ip,p_success:!error}); }catch(_e){}
+  if(error){ b.disabled=false; var remain=null;
+    try{ const {data:c2}=await db.rpc('check_login',{p_email:email,p_ip:ip});
+      if(c2){ if(c2.allowed===false){ el('loginErr').textContent=(c2.reason==='ip_blocked')?'이 IP는 차단되었습니다. 관리자에게 문의하세요.':'로그인 5회 실패 — 약 5분간 제한됩니다.'; return; } remain=c2.remaining; } }catch(_e){}
+    el('loginErr').textContent='로그인 실패: '+(error.message||error)+(remain!=null?' (남은 시도 '+remain+'회)':'');
+    return;
+  }
+  await boot();
+}
 async function doLogout(){await db.auth.signOut();location.reload();}
 
 function getDeviceId(){var did=localStorage.getItem('gp_device_id');if(!did){did=((window.crypto&&crypto.randomUUID)?crypto.randomUUID():('d'+Date.now()+Math.random().toString(36).slice(2)));localStorage.setItem('gp_device_id',did);}return did;}
@@ -301,7 +324,7 @@ if(!confirm('이번 달 주문·시술 내역을 플랫폼으로 전송할까요
 var tok=await platEnsureToken();
 if(!tok){alert('플랫폼 연동이 안 됐습니다. 병원 설정 → 플랫폼 연동에서 ID/비밀번호를 등록하세요.');return;}
 var now=new Date();var from=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);
-var od;try{od=await db.from('orders').select('*').gte('order_date',from);}catch(e){od={};}
+var od;try{od=await db.from('orders').select('*').eq('hospital_id',state.hospital_id).gte('order_date',from);}catch(e){od={};}
 var orders=((od&&od.data)||[]).filter(function(o){return o.status!=='cancelled';});
 if(!orders.length){alert('전송할 주문이 없습니다.');return;}
 var PM=pmap();var AM=amap();var ok=0,fail=0;
@@ -325,6 +348,45 @@ var rows=(qr.data&&qr.data.rows)||[];
 var body=rows.length?rows.map(function(q){var rng=(q.quote_min||q.quote_max)?(Number(q.quote_min||0).toLocaleString()+'~'+Number(q.quote_max||0).toLocaleString()):'-';return '<tr><td>'+esc(q.created_at?String(q.created_at).slice(0,10):'')+'</td><td><b>'+esc(q.name||'-')+'</b></td><td>'+esc(q.contact||'-')+'</td><td>'+esc(q.nationality||'-')+'</td><td style="font-size:12px">'+esc(q.procedures||'-')+'</td><td class="right">'+rng+'</td><td>'+esc(q.status||'신규')+'</td></tr>';}).join(''):'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">플랫폼 문의가 없습니다.</td></tr>';
 m.innerHTML=head+'<div class="panel"><div class="pb"><table><thead><tr><th>일자</th><th>이름</th><th>연락처</th><th>국적</th><th>시술</th><th class="right">견적범위</th><th>상태</th></tr></thead><tbody>'+body+'</tbody></table></div></div><div class="muted" style="font-size:11px;margin-top:8px;padding:0 4px">플랫폼('+esc(lr.data.name||'')+') 병원포털 연동 · 실시간 조회</div>';
 }
+async function loadHospitalContext(hid){
+  state.hospital_id=hid;
+  const [{data:hosp},{data:procs},{data:ags},{data:dcs},{data:pkgs},{data:pkgItems},{data:refs}]=await Promise.all([
+    db.from('hospitals').select('name,plan_tier,subscription_end,config').eq('id',hid).single(),
+    db.from('procedures').select('*').eq('hospital_id',hid).eq('is_active',true).order('category').order('name'),
+    db.from('agencies').select('*').eq('hospital_id',hid).order('name'),
+    db.from('discount_codes').select('*').eq('hospital_id',hid).eq('is_active',true),
+    db.from('packages').select('*').eq('hospital_id',hid).eq('is_active',true).order('ptype').order('name'),
+    db.from('package_items').select('*').eq('hospital_id',hid).order('sort'),
+    db.from('referrers').select('*').eq('hospital_id',hid).eq('is_active',true).order('name'),
+  ]);
+  if(hosp){state.hospital_name=hosp.name;state.plan_tier=hosp.plan_tier||'basic';state.subscription_end=hosp.subscription_end||null;state.config=hosp.config||{};}
+  state.procedures=procs||[];state.agencies=ags||[];state.discounts=dcs||[];
+  state.packages=(pkgs||[]).map(p=>({...p,items:(pkgItems||[]).filter(i=>i.package_id===p.id)}));
+  state.referrers=refs||[];
+  el('hospName').textContent=state.hospital_name;
+  applyHospitalConfig();
+}
+function applyHospitalConfig(){
+  var c=state.config||{};
+  try{
+    if(c.brand_color) document.documentElement.style.setProperty('--brand',c.brand_color);
+    else document.documentElement.style.removeProperty('--brand');
+  }catch(e){}
+}
+async function populateHospSwitch(){
+  if(!state.isPlatformAdmin) return;
+  const sel=el('hospSwitch'); if(!sel) return;
+  const {data}=await db.from('hospitals').select('id,name').order('name');
+  sel.innerHTML=(data||[]).map(function(h){return '<option value="'+h.id+'"'+(h.id===state.hospital_id?' selected':'')+'>'+esc(h.name)+'</option>';}).join('');
+  sel.style.display='block';
+}
+async function switchHospital(hid){
+  if(!hid||hid===state.hospital_id) return;
+  await loadHospitalContext(hid);
+  await loadPatients();
+  logAudit('마스터 병원전환',state.hospital_name);
+  navTo(curView||'dashboard');
+}
 async function boot(){
   const {data:{user}}=await db.auth.getUser();
   if(!user){el('login').style.display='flex';el('app').style.display='none';return;}
@@ -337,20 +399,7 @@ async function boot(){
   state.staff=staff;state.hospital_id=staff.hospital_id;
   try{ await db.rpc('run_trial_downgrades'); }catch(e){}  // 만료된 런칭 프로모션 자동 강등(고급→기본)
   fetch('https://ipwho.is/').then(r=>r.json()).then(j=>{if(j){if(j.ip)state.ip=j.ip;if(j.country_code)state.country=j.country_code;}}).catch(()=>{});
-  const [{data:hosp},{data:procs},{data:ags},{data:dcs},{data:pkgs},{data:pkgItems}]=await Promise.all([
-    db.from('hospitals').select('name,plan_tier,subscription_end').eq('id',staff.hospital_id).single(),
-    db.from('procedures').select('*').eq('is_active',true).order('category').order('name'),
-    db.from('agencies').select('*').order('name'),
-    db.from('discount_codes').select('*').eq('is_active',true),
-    db.from('packages').select('*').eq('is_active',true).order('ptype').order('name'),
-    db.from('package_items').select('*').order('sort'),
-  ]);
-  if(hosp)state.hospital_name=hosp.name;
-  state.plan_tier=(hosp&&hosp.plan_tier)||'basic'; state.subscription_end=(hosp&&hosp.subscription_end)||null;
-  state.procedures=procs||[];state.agencies=ags||[];state.discounts=dcs||[];
-  state.packages=(pkgs||[]).map(p=>({...p,items:(pkgItems||[]).filter(i=>i.package_id===p.id)}));
-  const {data:refs}=await db.from('referrers').select('*').eq('is_active',true).order('name');state.referrers=refs||[];
-  el('hospName').textContent=state.hospital_name;
+  await loadHospitalContext(staff.hospital_id);
   el('appVer').textContent=APP_VERSION;
   el('whoName').textContent=staff.name;
   el('whoRole').textContent=({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[staff.role]||staff.role;
@@ -363,12 +412,13 @@ async function boot(){
   document.querySelectorAll('#nav a').forEach(a=>{a.style.display=_allowed.includes(a.dataset.view)?'':'none';});
   if(staff.role!=='owner')document.querySelectorAll('.nav .grp.owner-only').forEach(e=>e.style.display='none');
   document.querySelectorAll('.platform-only').forEach(a=>{a.style.display=state.isPlatformAdmin?'':'none';});
+  if(state.isPlatformAdmin){ populateHospSwitch(); }
   el('login').style.display='none';el('app').style.display='block';
   await loadPatients();navTo('dashboard');setTimeout(()=>logAudit('로그인'),800);
   checkSubscription();
   startSingleSession(user.id);
 }
-async function loadPatients(){const {data}=await db.from('patients_dec').select('*').order('name');state.patients=data||[];}
+async function loadPatients(){const {data}=await db.from('patients_dec').select('*').eq('hospital_id',state.hospital_id).order('name');state.patients=data||[];}
 
 /* ============ 에이전시 전용 포털 ============ */
 async function bootAgencyPortal(){
@@ -537,10 +587,10 @@ async function renderPlatform(){
       +'<td class="right"><span style="color:'+(over?'#dc2626':'#0f766e')+';font-weight:700">'+cnt+'</span> / <input type="number" min="'+cnt+'" value="'+lim+'" onchange="platSetField(\''+h.id+'\',\'staff_limit\',this.value)" style="width:56px;padding:4px;border:1px solid var(--line);border-radius:6px;text-align:center"></td>'
       +'<td><input type="date" value="'+(h.subscription_end||'')+'" onchange="platSetField(\''+h.id+'\',\'subscription_end\',this.value)" style="padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px"></td>'
       +'<td>'+fdate(h.created_at)+'</td>'
-      +'<td class="right"><button class="btn sm ghost" onclick="platQuota(\''+h.id+'\')">한도</button> <button class="btn sm ghost" onclick="platAccounts(\''+h.id+'\')">계정 관리</button></td></tr>';
+      +'<td class="right"><button class="btn sm ghost" onclick="platQuota(\''+h.id+'\')">한도</button> <button class="btn sm ghost" onclick="platConfig(\''+h.id+'\')">설정</button> <button class="btn sm ghost" onclick="platAccounts(\''+h.id+'\')">계정 관리</button></td></tr>';
   }).join('');
   m.innerHTML='<div class="page-head"><div><h2>플랫폼 관리</h2><div class="sub">전 병원 관리 (팔로우코리아 전용) · 총 '+(hosps||[]).length+'개 병원</div></div>'
-    +'<button class="btn" onclick="obModal()">＋ 새 병원</button></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="platLocks()">로그인 잠금 관리</button><button class="btn" onclick="obModal()">＋ 새 병원</button></div></div>'
     +'<div class="panel"><div class="pb"><table><thead><tr><th>병원</th><th>상태</th><th>플랜</th><th class="right">계정/한도</th><th>구독만료</th><th>가입일</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan=6 class="muted">병원이 없습니다.</td></tr>')+'</tbody></table></div></div>'
     +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· <b>상태</b> 활성/체험/중지 · <b>계정/한도</b> 활성계정수 / 무료한도(유료 시 상향)<br>· <b>계정 관리</b>에서 병원별 로그인 계정 추가·비번 재설정. 각 병원 원장은 자기 로그인에서 한도 내 직접 추가.</div></div>';
 }
@@ -567,6 +617,39 @@ async function platDoQuota(hid,kind,bonus){
   if(error||(data&&!data.ok)){alert('실패: '+(error?error.message:((data&&data.error)||'권한 없음')));return;}
   logAudit('플랫폼 발급한도',(bonus?('+'+bonus):'초기화')+' · '+kind);
   platQuota(hid);
+}
+async function platLocks(){
+  const {data}=await db.rpc('admin_list_locks');
+  const ips=(data&&data.ips)||[], ems=(data&&data.emails)||[];
+  const ipRows=ips.length?ips.map(function(x){return '<tr><td><b>'+esc(x.ip)+'</b></td><td class="muted" style="font-size:12px">'+esc(x.reason||'')+'</td><td style="font-size:12px">'+fdate(x.at)+'</td><td class="right"><button class="btn sm ghost" onclick="platUnlock(\''+esc(x.ip)+'\')">차단해제</button></td></tr>';}).join(''):'<tr><td colspan="4" class="muted">차단된 IP 없음</td></tr>';
+  const emRows=ems.length?ems.map(function(x){return '<tr><td><b>'+esc(x.email)+'</b></td><td>'+x.fails+'회</td><td style="font-size:12px">'+fdate(x.last)+'</td><td class="right"><button class="btn sm ghost" onclick="platUnlockEmail(\''+esc(x.email)+'\')">잠금해제</button></td></tr>';}).join(''):'<tr><td colspan="4" class="muted">잠긴 계정 없음</td></tr>';
+  openModal('<div class="mh">로그인 잠금 관리<span onclick="closeModal()">✕</span></div><div class="mb">'
+    +'<div class="muted" style="font-size:12px;margin-bottom:6px">5분내 5회 실패 → 계정 5분 잠금 · 1시간내 10회 실패 → IP 차단(수동 해제 필요)</div>'
+    +'<b style="font-size:13px">차단된 IP</b><table><thead><tr><th>IP</th><th>사유</th><th>시각</th><th></th></tr></thead><tbody>'+ipRows+'</tbody></table>'
+    +'<b style="font-size:13px;display:block;margin-top:14px">잠긴 계정</b><table><thead><tr><th>이메일</th><th>실패</th><th>최근</th><th></th></tr></thead><tbody>'+emRows+'</tbody></table>'
+    +'</div>',true);
+}
+async function platUnlock(ip){await db.rpc('admin_unlock',{p_ip:ip});logAudit('IP 차단해제',ip);platLocks();}
+async function platUnlockEmail(em){await db.rpc('admin_unlock_email',{p_email:em});logAudit('계정 잠금해제',em);platLocks();}
+async function platConfig(hid){
+  const h=(state._platHosps||[]).find(function(x){return x.id===hid;}); if(!h)return;
+  const {data}=await db.from('hospitals').select('config').eq('id',hid).single();
+  const cfg=(data&&data.config)||{};
+  const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
+  openModal('<div class="mh">'+esc(h.name)+' · 커스터마이징<span onclick="closeModal()">✕</span></div><div class="mb">'
+    +'<div class="field"><label>브랜드 색상 (HEX)</label><input id="cfg_brand" '+inp+' value="'+esc(cfg.brand_color||'')+'" placeholder="#1F3864"></div>'
+    +'<div class="field"><label>부가 설정 (JSON · 고급)</label><textarea id="cfg_json" rows="7" '+inp+' style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box;font-family:monospace;font-size:12px">'+esc(JSON.stringify(cfg,null,2))+'</textarea></div>'
+    +'<button class="btn" onclick="platSaveConfig(\''+hid+'\')" style="width:100%">저장</button>'
+    +'<div class="muted" style="font-size:11px;margin-top:8px">브랜드 색상은 해당 병원 로그인 시 앱 포인트색(버튼·강조·헤더)에 적용됩니다. 부가 설정은 병원별 기능 플래그·라벨 등 확장용입니다.</div></div>',true);
+}
+async function platSaveConfig(hid){
+  var cfg={}; try{ cfg=JSON.parse((el('cfg_json').value||'{}').trim()||'{}'); }catch(e){ alert('JSON 형식 오류: '+e.message); return; }
+  var bc=(el('cfg_brand').value||'').trim(); if(bc) cfg.brand_color=bc; else delete cfg.brand_color;
+  const {error}=await db.from('hospitals').update({config:cfg,updated_at:new Date().toISOString()}).eq('id',hid);
+  if(error){alert('실패: '+error.message);return;}
+  logAudit('병원 커스터마이징',(state._platHosps.find(function(x){return x.id===hid;})||{}).name||hid);
+  if(hid===state.hospital_id){state.config=cfg;applyHospitalConfig();}
+  closeModal(); alert('저장되었습니다.');
 }
 async function platAccounts(hid){
   const h=(state._platHosps||[]).find(function(x){return x.id===hid;}); if(!h)return;
@@ -662,13 +745,13 @@ async function renderDashboard(){
   const ms=new Date(y,mo,1).toISOString(),me=new Date(y,mo+1,1).toISOString();
   const trendStart=new Date(y,mo-5,1).toISOString();
   const [appt,monOrders,pat,recent,trend,allOrd,rvLogs,hospC]=await Promise.all([
-    db.from('appointments').select('*').gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at'),
-    db.from('orders').select('total,pay_status,order_date,status').gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
+    db.from('appointments').select('*').eq('hospital_id',state.hospital_id).gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at'),
+    db.from('orders').select('total,pay_status,order_date,status').eq('hospital_id',state.hospital_id).gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
     db.from('patients').select('id',{count:'exact',head:true}),
-    db.from('orders').select('*').order('order_date',{ascending:false}).limit(6),
-    db.from('orders').select('total,order_date,status').gte('order_date',trendStart).neq('status','cancelled'),
-    db.from('orders').select('patient_id,order_date').neq('status','cancelled'),
-    db.from('revisit_logs').select('patient_id,created_at'),
+    db.from('orders').select('*').eq('hospital_id',state.hospital_id).order('order_date',{ascending:false}).limit(6),
+    db.from('orders').select('total,order_date,status').eq('hospital_id',state.hospital_id).gte('order_date',trendStart).neq('status','cancelled'),
+    db.from('orders').select('patient_id,order_date').eq('hospital_id',state.hospital_id).neq('status','cancelled'),
+    db.from('revisit_logs').select('patient_id,created_at').eq('hospital_id',state.hospital_id),
     db.from('hospitals').select('contact').eq('id',state.hospital_id).single(),
   ]);
   const appts=appt.data||[],mons=monOrders.data||[];
@@ -735,7 +818,7 @@ async function renderCalendar(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const {y,m:mo}=calYM;
   const start=new Date(y,mo,1),end=new Date(y,mo+1,1);
-  const {data}=await db.from('appointments').select('*').gte('appointment_at',start.toISOString()).lt('appointment_at',end.toISOString()).order('appointment_at');
+  const {data}=await db.from('appointments').select('*').eq('hospital_id',state.hospital_id).gte('appointment_at',start.toISOString()).lt('appointment_at',end.toISOString()).order('appointment_at');
   const PM=pmap();const byDay={};(data||[]).forEach(a=>{const d=new Date(a.appointment_at).getDate();(byDay[d]=byDay[d]||[]).push(a);});
   const firstDow=start.getDay(),days=new Date(y,mo+1,0).getDate();
   const todayD=(now.getFullYear()===y&&now.getMonth()===mo)?now.getDate():-1;
@@ -757,7 +840,7 @@ async function renderCalendar(){
 function calMove(d){calYM.m+=d;if(calYM.m<0){calYM.m=11;calYM.y--;}if(calYM.m>11){calYM.m=0;calYM.y++;}renderCalendar();}
 async function dayModal(y,mo,d){
   const ds=new Date(y,mo,d).toISOString(),de=new Date(y,mo,d+1).toISOString();
-  const {data}=await db.from('appointments').select('*').gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at');
+  const {data}=await db.from('appointments').select('*').eq('hospital_id',state.hospital_id).gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at');
   const PM=pmap(),PR=Object.fromEntries(state.procedures.map(p=>[p.id,p.name]));
   openModal(`<div class="mh">${y}.${mo+1}.${d} 예약<span onclick="closeModal()">✕</span></div>
    <div class="mb">${(data||[]).length?`<table><tbody>${data.map(a=>`<tr><td>${ftime(a.appointment_at)}</td><td><b>${esc(PM[a.patient_id]||'-')}</b></td><td>${esc(PR[a.procedure_id]||'')}</td><td>${esc(a.doctor||'')}</td><td><span class="tag t-${a.status}">${STATUS_LABEL[a.status]}</span></td></tr>`).join('')}</tbody></table>`:'<div class="empty">예약 없음</div>'}</div>
@@ -770,7 +853,7 @@ async function renderReception(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const now=new Date();const ds=new Date(now.getFullYear(),now.getMonth(),now.getDate()).toISOString();
   const de=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1).toISOString();
-  const {data}=await db.from('appointments').select('*').gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at');
+  const {data}=await db.from('appointments').select('*').eq('hospital_id',state.hospital_id).gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at');
   const PM=pmap(),PR=Object.fromEntries(state.procedures.map(p=>[p.id,p.name]));
   const AM=amap();const PA=Object.fromEntries(state.patients.map(p=>[p.id,p.source_agency_id]));
   const rows=(data||[]).map(a=>`<tr><td>${ftime(a.appointment_at)}</td><td><b>${esc(PM[a.patient_id]||'-')}</b></td>
@@ -806,7 +889,7 @@ let patAgg={};
 function visitLabel(n){return n<=0?'신규':(n===1?'초진':(n===2?'재진':n+'회'));}
 async function renderPatients(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';await loadPatients();
-  const {data:ords}=await db.from('orders').select('patient_id,total,status').neq('status','cancelled');
+  const {data:ords}=await db.from('orders').select('patient_id,total,status').eq('hospital_id',state.hospital_id).neq('status','cancelled');
   patAgg={};(ords||[]).forEach(o=>{const a=patAgg[o.patient_id]=patAgg[o.patient_id]||{cnt:0,sum:0};a.cnt++;a.sum+=Number(o.total||0);});
   m.innerHTML=`<div class="page-head"><div><h2>환자 CRM</h2><div class="sub">전체 ${state.patients.length}명 · 클릭하면 상세 프로필</div></div>
      <button class="btn" onclick="patientModal()">+ 환자 등록</button></div>
@@ -1405,7 +1488,7 @@ async function deleteTask(id){ if(!confirm('이 할일을 삭제할까요?'))ret
 
 /* ===== 미수금 상세 ===== */
 async function unpaidModal(){
-  const {data}=await db.from('orders').select('id,order_no,order_date,total,paid_amount,pay_status,agency_id,referrer_id,patient_id').neq('status','cancelled').neq('pay_status','paid').order('order_date',{ascending:false});
+  const {data}=await db.from('orders').select('id,order_no,order_date,total,paid_amount,pay_status,agency_id,referrer_id,patient_id').eq('hospital_id',state.hospital_id).neq('status','cancelled').neq('pay_status','paid').order('order_date',{ascending:false});
   state._unpaid=data||[];
   const AM=amap(), RM=Object.fromEntries(state.referrers.map(r=>[r.id,r.name]));
   const ags=[...new Set((data||[]).map(o=>o.agency_id).filter(Boolean))];
@@ -1447,7 +1530,7 @@ function exportUnpaidCSV(){
 async function renderBilling(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const now=new Date();const ms=new Date(now.getFullYear(),now.getMonth(),1).toISOString(),me=new Date(now.getFullYear(),now.getMonth()+1,1).toISOString();
-  const {data}=await db.from('orders').select('*').order('order_date',{ascending:false}).limit(300);
+  const {data}=await db.from('orders').select('*').eq('hospital_id',state.hospital_id).order('order_date',{ascending:false}).limit(300);
   const PM=pmap(),AM=amap();
   const mons=(data||[]).filter(o=>o.order_date>=ms&&o.order_date<me&&o.status!=='cancelled');
   const monSales=mons.reduce((s,o)=>s+Number(o.total||0),0);
@@ -1515,8 +1598,8 @@ async function renderSettlement(){
   const y=+setMonth.slice(0,4),mo=+setMonth.slice(5,7)-1;
   const ms=new Date(y,mo,1).toISOString(),me=new Date(y,mo+1,1).toISOString();
   const [{data:orders},{data:setl}]=await Promise.all([
-    db.from('orders').select('*').gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
-    db.from('settlements').select('*').eq('period',setMonth),
+    db.from('orders').select('*').eq('hospital_id',state.hospital_id).gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
+    db.from('settlements').select('*').eq('hospital_id',state.hospital_id).eq('period',setMonth),
   ]);
   const AM=amap();const agg={};
   (orders||[]).forEach(o=>{if(!o.agency_id)return;const a=agg[o.agency_id]=agg[o.agency_id]||{rev:0,cnt:0};a.rev+=Number(o.total||0);a.cnt++;});
@@ -1553,12 +1636,12 @@ async function issueTax(id){if(!await useQuota('doc','세금계산서 발급')) 
 async function paySettle(id){await db.from('settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);logAudit('에이전시 정산 지급완료');renderSettlement();}
 async function approveSettle(id){await db.from('settlements').update({status:'scheduled',updated_at:new Date().toISOString()}).eq('id',id);logAudit('에이전시 정산 승인');renderSettlement();}
 async function payAllScheduled(){
-  const {data}=await db.from('settlements').select('*').eq('period',setMonth).eq('status','scheduled');
+  const {data}=await db.from('settlements').select('*').eq('hospital_id',state.hospital_id).eq('period',setMonth).eq('status','scheduled');
   const list=data||[];if(!list.length){alert('승인(지급예정)된 정산이 없습니다.\n먼저 각 정산을 "승인" 처리하세요.');return;}
   const totalPay=list.reduce((s,x)=>s+Number(x.payout||0),0);
   if(!confirm(list.length+'건 · 지급합계 '+won(totalPay)+'\n일괄 지급 처리하고 지급명세(CSV)를 내려받을까요?'))return;
   const today=new Date().toISOString().slice(0,10);
-  const {error}=await db.from('settlements').update({status:'paid',paid_at:today,updated_at:new Date().toISOString()}).eq('period',setMonth).eq('status','scheduled');
+  const {error}=await db.from('settlements').update({status:'paid',paid_at:today,updated_at:new Date().toISOString()}).eq('hospital_id',state.hospital_id).eq('period',setMonth).eq('status','scheduled');
   if(error){alert('실패: '+error.message);return;}
   const AM=amap();const q=c=>`"${(c==null?'':String(c)).replace(/"/g,'""')}"`;
   const head=['에이전시','정산월','수수료','부가세','지급액','지급일'];
@@ -1728,7 +1811,7 @@ async function renderRefSettle(){
   const y=+refMonth.slice(0,4),mo=+refMonth.slice(5,7)-1;
   const ms=new Date(y,mo,1).toISOString(),me=new Date(y,mo+1,1).toISOString();
   const [{data:orders},{data:setl},{data:refs}]=await Promise.all([
-    db.from('orders').select('*').gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
+    db.from('orders').select('*').eq('hospital_id',state.hospital_id).gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
     db.from('referrer_settlements').select('*').eq('period',refMonth),
     db.from('referrers').select('*').eq('is_active',true).order('name')]);
   state.referrers=refs||[];
@@ -1812,10 +1895,10 @@ async function renderStats(){
   const ay=anchor.getFullYear(),am=anchor.getMonth();
   const periodLabel=useRange?(statFrom+' ~ '+statTo):(y+'년 '+(mo+1)+'월');
   const [ordR,apptR,patR,rvR]=await Promise.all([
-    db.from('orders').select('id,order_no,order_date,total,discount_amount,pay_status,pay_method,agency_id,referrer_id,patient_id,doctor,status'),
-    db.from('appointments').select('appointment_at,status,doctor,patient_id'),
-    db.from('patients_dec').select('*'),
-    db.from('patient_reviews').select('nps'),
+    db.from('orders').select('id,order_no,order_date,total,discount_amount,pay_status,pay_method,agency_id,referrer_id,patient_id,doctor,status').eq('hospital_id',state.hospital_id),
+    db.from('appointments').select('appointment_at,status,doctor,patient_id').eq('hospital_id',state.hospital_id),
+    db.from('patients_dec').select('*').eq('hospital_id',state.hospital_id),
+    db.from('patient_reviews').select('nps').eq('hospital_id',state.hospital_id),
   ]);
   const _rvAll=(rvR.data||[]).filter(r=>r.nps!=null);
   const npsScore=_rvAll.length?Math.round((_rvAll.filter(r=>r.nps>=9).length-_rvAll.filter(r=>r.nps<=6).length)/_rvAll.length*100):null;
