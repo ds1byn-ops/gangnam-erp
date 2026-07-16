@@ -281,7 +281,7 @@ var devs=(res&&res.data)||[];
 var exists=devs.some(function(d){return d.device_id===did;});
 state.deviceRegistered=exists;
 if(exists){try{await db.from('staff_devices').update({last_seen:new Date().toISOString()}).eq('staff_id',sid).eq('device_id',did);}catch(e){}return true;}
-return devs.length<limit;
+return true; /* 기기 수로 로그인 차단 안 함 — 보안은 국가차단(한국만)+단일세션. 기기 등록은 선택(기기관리에서 수동) */
 }catch(e){return true;}
 }
 async function registerThisDevice(){
