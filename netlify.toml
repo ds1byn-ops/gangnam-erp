@@ -1,0 +1,8 @@
+# 보안 헤더 (클릭재킹/MIME 스니핑/레퍼러 정책). 관리자 ERP는 프레이밍 전면 차단.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), camera=(), microphone=(), payment=()"
