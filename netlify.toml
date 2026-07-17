@@ -1,3 +1,14 @@
+# 함수 소스(Supabase 알림톡·Netlify edge function)의 정적 노출 차단.
+# edge function 실행은 별도 등록이라 영향 없음 — 소스 파일 URL만 404 처리.
+[[redirects]]
+  from = "/send-alimtalk/*"
+  to = "/index.html"
+  status = 404
+[[redirects]]
+  from = "/netlify/*"
+  to = "/index.html"
+  status = 404
+
 # 보안 헤더 (클릭재킹/MIME 스니핑/레퍼러 정책). 관리자 ERP는 프레이밍 전면 차단.
 [[headers]]
   for = "/*"
