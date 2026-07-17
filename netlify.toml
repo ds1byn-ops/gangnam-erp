@@ -4,10 +4,12 @@
   from = "/send-alimtalk/*"
   to = "/index.html"
   status = 404
+  force = true
 [[redirects]]
   from = "/netlify/*"
   to = "/index.html"
   status = 404
+  force = true
 
 # 보안 헤더 (클릭재킹/MIME 스니핑/레퍼러 정책). 관리자 ERP는 프레이밍 전면 차단.
 [[headers]]
