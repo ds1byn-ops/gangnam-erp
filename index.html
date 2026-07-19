@@ -1870,7 +1870,7 @@ async function renderRefSettle(){
   const ms=new Date(y,mo,1).toISOString(),me=new Date(y,mo+1,1).toISOString();
   const [{data:orders},{data:setl},{data:refs}]=await Promise.all([
     db.from('orders').select('*').eq('hospital_id',state.hospital_id).gte('order_date',ms).lt('order_date',me).neq('status','cancelled'),
-    db.from('referrer_settlements').select('*').eq('period',refMonth),
+    db.from('referrer_settlements').select('*').eq('hospital_id',state.hospital_id).eq('period',refMonth),
     db.from('referrers').select('*').eq('is_active',true).order('name')]);
   state.referrers=refs||[];
   const agg={};(orders||[]).forEach(o=>{if(!o.referrer_id)return;const a=agg[o.referrer_id]=agg[o.referrer_id]||{rev:0,cnt:0};a.rev+=Number(o.total||0);a.cnt++;});
