@@ -35,6 +35,7 @@
   .nav a.active{background:var(--brand);color:#fff}
   .nav .ico{width:16px;text-align:center}
   .nav .grp{font-size:10px;color:#64748b;padding:14px 12px 4px;font-weight:700;letter-spacing:.6px}
+  .nvb{display:none;margin-left:auto;min-width:18px;height:18px;line-height:18px;border-radius:9px;background:#dc2626;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:0 5px;flex:none}
   .side .who{margin-top:16px;font-size:12px;color:#94a3b8;border-top:1px solid #1e293b;padding-top:12px}
   .side .who b{color:#e2e8f0;display:block;font-size:13px}
   .side .who button{margin-top:8px;width:100%;background:#1e293b;color:#cbd5e1;border:none;padding:7px;border-radius:7px;font-size:12px}
@@ -196,9 +197,9 @@
         <a data-view="subscription" class="owner-only">구독·이용권</a>
         <div class="grp platform-only" style="display:none">플랫폼</div>
         <a data-view="platform" class="platform-only" style="display:none">플랫폼 관리</a>
-        <a data-view="demoreq" class="platform-only" style="display:none">데모 신청</a>
-        <a data-view="wanghongreq" class="platform-only" style="display:none">왕홍병원 신청</a>
-        <a data-view="guidereq" class="platform-only" style="display:none">가이드 신청</a>
+        <a data-view="demoreq" class="platform-only" style="display:none">데모 신청<span class="nvb" id="bdg_demoreq"></span></a>
+        <a data-view="wanghongreq" class="platform-only" style="display:none">왕홍병원 신청<span class="nvb" id="bdg_wanghongreq"></span></a>
+        <a data-view="guidereq" class="platform-only" style="display:none">가이드 신청<span class="nvb" id="bdg_guidereq"></span></a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
         <button onclick="doLogout()">로그아웃</button><div id="appVer" style="margin-top:10px;font-size:11px;color:#475569;text-align:center"></div></div>
@@ -416,6 +417,7 @@ async function boot(){
   document.querySelectorAll('#nav a').forEach(a=>{a.style.display=_allowed.includes(a.dataset.view)?'':'none';});
   if(staff.role!=='owner')document.querySelectorAll('.nav .grp.owner-only').forEach(e=>e.style.display='none');
   document.querySelectorAll('.platform-only').forEach(a=>{a.style.display=state.platformMaster?'':'none';});
+  if(state.platformMaster){ refreshLeadBadges(); if(!window._bdgTimer) window._bdgTimer=setInterval(refreshLeadBadges,60000); }
   if(state.isPlatformAdmin){ populateHospSwitch(); }
   el('login').style.display='none';el('app').style.display='block';
   await loadPatients();navTo('dashboard');setTimeout(()=>logAudit('로그인'),800);
@@ -614,6 +616,7 @@ async function demoSetStatus(id,val){
   if(error){alert('상태 변경 실패: '+error.message);return;}
   const r=(state._demoReqs||[]).find(function(x){return x.id===id;}); if(r)r.status=val;
   logAudit('데모신청 상태변경',(r?r.hospital_name+' · ':'')+ (DEMO_ST[val]||val));
+  refreshLeadBadges();
 }
 async function demoSaveMemo(id,val){
   const {error}=await db.from('demo_requests').update({memo:val}).eq('id',id);
@@ -627,6 +630,17 @@ async function demoDelete(id){
   const r=(state._demoReqs||[]).find(function(x){return x.id===id;});
   logAudit('데모신청 삭제',(r&&r.hospital_name)||id);
   (curView==='guidereq'?renderGuideRequests():renderDemoRequests());
+  refreshLeadBadges();
+}
+/* 신규(status=new) 문의 수를 좌측 메뉴 뱃지로 표시 — 데모/왕홍병원/가이드 */
+async function refreshLeadBadges(){
+  if(!state.platformMaster) return;
+  try{
+    const {data}=await db.from('demo_requests').select('source').eq('status','new');
+    const c={demoreq:0,wanghongreq:0,guidereq:0};
+    (data||[]).forEach(function(r){ if(r.source==='landing')c.demoreq++; else if(r.source==='meta_ads_wanghong_lp')c.wanghongreq++; else if(r.source==='guide_recruit')c.guidereq++; });
+    Object.keys(c).forEach(function(k){ var b=el('bdg_'+k); if(!b)return; if(c[k]>0){ b.textContent=c[k]>99?'99+':c[k]; b.style.display='inline-block'; } else { b.style.display='none'; } });
+  }catch(_e){}
 }
 /* ============ 가이드 신청 (중화권 통역 가이드 모집 · demo_requests source=guide_recruit) ============ */
 async function renderGuideRequests(){
