@@ -761,14 +761,15 @@ async function platAccounts(hid){
   const h=(state._platHosps||[]).find(function(x){return x.id===hid;}); if(!h)return;
   const {data:accts}=await db.rpc('admin_hospital_accounts',{p_hospital_id:hid});
   const staff=accts||[];
-  const rows=staff.map(function(s){ return '<tr><td><b>'+esc(s.name)+'</b></td><td style="font-size:12px;color:#334155">'+esc(s.email||'-')+' <span onclick="navigator.clipboard&&navigator.clipboard.writeText(\''+esc(s.email||'')+'\')" title="복사" style="cursor:pointer;color:#94a3b8">⧉</span></td><td>'+(({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[s.role]||s.role)+'</td><td>'+(s.is_active?'<span class="tag t-done">활성</span>':'<span class="tag t-cancelled">비활성</span>')+'</td><td class="right"><button class="btn sm ghost" onclick="platResetPw(\''+s.id+'\',\''+esc(s.name).replace(/\x27/g,"")+'\')">비번재설정</button></td></tr>'; }).join('');
+  window._acctPw={}; staff.forEach(function(s){ if(s.pw) window._acctPw[s.id]=s.pw; });
+  const rows=staff.map(function(s){ var pwc = s.pw ? '<span id="pw_'+s.id+'">••••••</span> <button class="btn sm ghost" onclick="acctPwToggle(\''+s.id+'\',this)">표시</button>' : '<span class="muted" style="font-size:11px">미저장</span>'; return '<tr><td><b>'+esc(s.name)+'</b></td><td style="font-size:12px;color:#334155">'+esc(s.email||'-')+' <span onclick="navigator.clipboard&&navigator.clipboard.writeText(\''+esc(s.email||'')+'\')" title="복사" style="cursor:pointer;color:#94a3b8">⧉</span></td><td>'+(({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[s.role]||s.role)+'</td><td>'+(s.is_active?'<span class="tag t-done">활성</span>':'<span class="tag t-cancelled">비활성</span>')+'</td><td style="font-family:ui-monospace,monospace;font-size:12px;white-space:nowrap">'+pwc+'</td><td class="right"><button class="btn sm ghost" onclick="platResetPw(\''+s.id+'\',\''+esc(s.name).replace(/\x27/g,"")+'\')">비번재설정</button></td></tr>'; }).join('');
   const inp='style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box"';
   openModal('<div class="mh">'+esc(h.name)+' · 계정 관리<span onclick="closeModal()">✕</span></div><div class="mb">'
-    +'<table><thead><tr><th>이름</th><th>이메일 (로그인 ID)</th><th>권한</th><th>상태</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan=5 class="muted">계정 없음</td></tr>')+'</tbody></table>'
+    +'<table><thead><tr><th>이름</th><th>이메일 (로그인 ID)</th><th>권한</th><th>상태</th><th>비밀번호</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan=6 class="muted">계정 없음</td></tr>')+'</tbody></table>'
     +'<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px"><b style="font-size:13px">＋ 계정 추가 <span class="muted" style="font-weight:400">(플랫폼 · 무료한도 무시)</span></b>'
     +'<div class="field"><label>이름 *</label><input id="pa_name" '+inp+'></div>'
     +'<div class="field"><label>이메일 *</label><input id="pa_email" type="email" '+inp+'></div>'
-    +'<div class="field"><label>비밀번호 * <button type="button" class="btn ghost sm" onclick="var e=el(\'pa_pw\');if(e)e.value=obGenPwStr()">자동생성</button></label><input id="pa_pw" '+inp+'></div>'
+    +'<div class="field"><label>비밀번호 * <button type="button" class="btn ghost sm" onclick="var e=el(\'pa_pw\');if(e)e.value=obGenPwStr()">자동생성</button></label><div style="display:flex;gap:6px;align-items:center"><input id="pa_pw" type="password" '+inp+'><button type="button" class="btn ghost sm" style="flex:none;white-space:nowrap" onclick="pwToggle(\'pa_pw\',this)">표시</button></div></div>'
     +'<div class="field"><label>권한</label><select id="pa_role" '+inp+'><option value="owner">원장</option><option value="manager">매니저</option><option value="desk" selected>데스크</option><option value="viewer">열람</option></select></div>'
     +'<button class="btn" id="pa_btn" onclick="platAddStaff(\''+hid+'\')" style="width:100%">계정 생성</button>'
     +'<div id="pa_result" style="margin-top:10px"></div></div></div>',true);
@@ -800,6 +801,8 @@ async function platResetPw(uid,name){
 }
 function obGenPwStr(){ const cs='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$'; let p=''; const a=new Uint32Array(14); crypto.getRandomValues(a); for(let i=0;i<14;i++)p+=cs[a[i]%cs.length]; return p; }
 function obGenPw(){ const e=el('ob_pw'); if(e)e.value=obGenPwStr(); }
+function pwToggle(id,btn){ var e=el(id); if(!e)return; var masked=e.type==='password'; e.type=masked?'text':'password'; if(btn)btn.textContent=masked?'숨김':'표시'; }
+function acctPwToggle(id,btn){ var e=el('pw_'+id); if(!e)return; var m=window._acctPw||{}; var shown=e.getAttribute('data-shown')==='1'; if(shown){ e.textContent='••••••'; e.setAttribute('data-shown','0'); if(btn)btn.textContent='표시'; } else { e.textContent=m[id]||''; e.setAttribute('data-shown','1'); if(btn)btn.textContent='숨김'; } }
 function obModal(){
   const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
   const fld=function(label,inner){ return '<div class="field"><label>'+label+'</label>'+inner+'</div>'; };
