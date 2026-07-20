@@ -813,7 +813,9 @@ async function submitOnboard(){
       owner_name:el('ob_owner').value.trim(), plan_tier:el('ob_plan').value, status:el('ob_status').value,
       trial_months:(el('ob_promo')&&el('ob_promo').checked)?3:0,
       subscription_end:(el('ob_subend')&&el('ob_subend').value)||null } });
-    if(error){ let msg=error.message||String(error); try{ const ctx=await error.context.json(); if(ctx&&ctx.error)msg=ctx.error; }catch(_){} throw new Error(msg); }
+    if(error){ let msg=error.message||String(error); let st=(error.context&&error.context.status)||0; try{ const ctx=await error.context.json(); if(ctx&&ctx.error)msg=ctx.error; }catch(_){}
+      if(st===401||msg==='unauthorized'){ el('ob_result').innerHTML='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:14px;color:#dc2626;font-size:13px;line-height:1.7"><b>로그인 세션이 만료되었습니다.</b><br>같은 관리자 계정을 다른 탭·기기에서 로그인하면 세션이 무효화됩니다.<br>다시 로그인한 뒤 시도해 주세요.<br><button class="btn sm" style="margin-top:10px" onclick="reLogin()">다시 로그인</button></div>'; btn.disabled=false; btn.textContent=old; return; }
+      throw new Error(msg); }
     if(data&&data.error) throw new Error(data.error);
     el('ob_result').innerHTML='<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;font-size:13px;line-height:1.7"><b style="color:#16a34a">생성 완료</b><br>병원: <b>'+esc(data.hospital_name)+'</b> ('+esc(data.plan_tier)+' / '+esc(data.status)+')<br>원장 로그인: <b>'+esc(data.owner_email)+'</b><br>비밀번호: <code style="background:#e2e8f0;padding:2px 6px;border-radius:5px">'+esc(pw)+'</code><br><span class="muted" style="font-size:11px">이 계정으로 로그인하면 새 병원으로 들어갑니다.</span></div>';
     logAudit('병원 온보딩', name+' / '+email);
@@ -822,6 +824,7 @@ async function submitOnboard(){
   }catch(e){ el('ob_result').innerHTML='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:12px;color:#dc2626;font-size:13px">'+esc(e.message||String(e))+'</div>'; }
   btn.disabled=false; btn.textContent=old;
 }
+async function reLogin(){ try{ await db.auth.signOut(); }catch(_){} location.reload(); }
 function openModal(html,lg){el('modal').className='modal'+(lg?' lg':'');el('modal').innerHTML=html;el('modalBg').style.display='flex';}
 function closeModal(){el('modalBg').style.display='none';}
 el('modalBg').addEventListener('click',e=>{if(e.target===el('modalBg'))closeModal();});
