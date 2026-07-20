@@ -2154,10 +2154,11 @@ let alFrom='',alTo='';
 async function renderAudit(){
   const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
   const useR=!!(alFrom&&alTo);
-  let q=db.from('audit_logs').select('*').order('created_at',{ascending:false});
+  let q=db.from('audit_logs').select('*, hospitals(name)').order('created_at',{ascending:false});
   q=useR?q.gte('created_at',alFrom).lte('created_at',alTo+'T23:59:59').limit(5000):q.limit(500);
   const {data}=await q;
   state._audit=data||[];
+  try{ const {data:pa}=await db.from('platform_admins').select('id'); state._auditPlatIds=new Set((pa||[]).map(function(x){return x.id;})); }catch(_e){ state._auditPlatIds=state._auditPlatIds||new Set(); }
   m.innerHTML=`<div class="page-head"><div><h2>관리자 로그</h2><div class="sub">직원 활동 감사 로그 · 누가·메뉴·IP·시각·행위 · ${useR?(alFrom+' ~ '+alTo):'최근 500건'} · 총 ${(data||[]).length}건</div></div>
      <button class="btn ghost" onclick="exportAuditCSV()">CSV 내보내기</button></div>
    <div class="toolbar"><div class="srch">${MAG}<input id="alSrch" placeholder="직원/행위/메뉴 검색" oninput="filterAudit()"></div>
@@ -2166,9 +2167,10 @@ async function renderAudit(){
   drawAudit(state._audit);
 }
 function flagEmoji(cc){if(!cc||cc.length!==2)return '';var c=cc.toLowerCase();return '<img src="https://flagcdn.com/20x15/'+c+'.png" width="20" height="15" style="vertical-align:-3px;margin-right:5px;border-radius:2px" alt="'+cc.toUpperCase()+'" onerror="this.replaceWith(document.createTextNode(this.alt+String.fromCharCode(160)))">';}
-function drawAudit(list){const t=el('alTable');t.innerHTML=list.length?`<table><thead><tr><th>시각</th><th>직원</th><th>메뉴</th><th>행위</th><th>상세</th><th>IP</th></tr></thead><tbody>${list.map(l=>`<tr><td style="white-space:nowrap">${new Date(l.created_at).toLocaleString('ko-KR')}</td><td><b>${esc(l.staff_name||'-')}</b></td><td>${esc(menuLabel(l.menu))}</td><td>${esc(l.action)}</td><td class="muted">${esc(l.detail||'')}</td><td class="muted">${flagEmoji(l.country)+esc(l.ip||'-')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">로그가 없습니다.</div>';}
-function filterAudit(){const q=(el('alSrch').value||'').toLowerCase();drawAudit((state._audit||[]).filter(l=>!q||(l.staff_name||'').toLowerCase().includes(q)||(l.action||'').toLowerCase().includes(q)||menuLabel(l.menu).toLowerCase().includes(q)||(l.detail||'').toLowerCase().includes(q)));}
-function exportAuditCSV(){const rows=(state._audit||[]).map(l=>[new Date(l.created_at).toLocaleString('ko-KR'),l.staff_name||'',menuLabel(l.menu),l.action,l.detail||'',l.ip||'']);const head=['시각','직원','메뉴','행위','상세','IP'];const q=c=>`"${(c==null?'':String(c)).replace(/"/g,'""')}"`;const csv='﻿'+[head.map(q).join(',')].concat(rows.map(r=>r.map(q).join(','))).join('\n');const b=new Blob([csv],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='감사로그.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);}
+function auditWho(l){var nm=l.staff_name||'-';var pa=state._auditPlatIds||new Set();if(l.staff_id&&pa.has(l.staff_id))return nm;var hn=l.hospitals&&l.hospitals.name;return hn?hn+' '+nm:nm;}
+function drawAudit(list){const t=el('alTable');t.innerHTML=list.length?`<table><thead><tr><th>시각</th><th>직원</th><th>메뉴</th><th>행위</th><th>상세</th><th>IP</th></tr></thead><tbody>${list.map(l=>`<tr><td style="white-space:nowrap">${new Date(l.created_at).toLocaleString('ko-KR')}</td><td><b>${esc(auditWho(l))}</b></td><td>${esc(menuLabel(l.menu))}</td><td>${esc(l.action)}</td><td class="muted">${esc(l.detail||'')}</td><td class="muted">${flagEmoji(l.country)+esc(l.ip||'-')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">로그가 없습니다.</div>';}
+function filterAudit(){const q=(el('alSrch').value||'').toLowerCase();drawAudit((state._audit||[]).filter(l=>!q||auditWho(l).toLowerCase().includes(q)||(l.action||'').toLowerCase().includes(q)||menuLabel(l.menu).toLowerCase().includes(q)||(l.detail||'').toLowerCase().includes(q)));}
+function exportAuditCSV(){const rows=(state._audit||[]).map(l=>[new Date(l.created_at).toLocaleString('ko-KR'),auditWho(l),menuLabel(l.menu),l.action,l.detail||'',l.ip||'']);const head=['시각','직원','메뉴','행위','상세','IP'];const q=c=>`"${(c==null?'':String(c)).replace(/"/g,'""')}"`;const csv='﻿'+[head.map(q).join(',')].concat(rows.map(r=>r.map(q).join(','))).join('\n');const b=new Blob([csv],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='감사로그.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);}
 
 /* ============ 직원 계정·권한 ============ */
 const ROLE_LABEL={owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'};
