@@ -676,7 +676,7 @@ async function renderPlatform(){
       +'<td class="right"><span style="color:'+(over?'#dc2626':'#0f766e')+';font-weight:700">'+cnt+'</span> / <input type="number" min="'+cnt+'" value="'+lim+'" onchange="platSetField(\''+h.id+'\',\'staff_limit\',this.value)" style="width:56px;padding:4px;border:1px solid var(--line);border-radius:6px;text-align:center"></td>'
       +'<td><input type="date" value="'+(h.subscription_end||'')+'" onchange="platSetField(\''+h.id+'\',\'subscription_end\',this.value)" style="padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px"></td>'
       +'<td>'+fdate(h.created_at)+'</td>'
-      +'<td class="right"><button class="btn sm ghost" onclick="platQuota(\''+h.id+'\')">한도</button> <button class="btn sm ghost" onclick="platConfig(\''+h.id+'\')">설정</button> <button class="btn sm ghost" onclick="platAccounts(\''+h.id+'\')">계정 관리</button></td></tr>';
+      +'<td class="right"><button class="btn sm ghost" onclick="platQuota(\''+h.id+'\')">한도</button> <button class="btn sm ghost" onclick="platConfig(\''+h.id+'\')">설정</button> <button class="btn sm ghost" onclick="platAccounts(\''+h.id+'\')">계정 관리</button> <button class="btn sm ghost" style="color:#dc2626;border-color:#fecaca" onclick="platDeleteHospital(\''+h.id+'\')">삭제</button></td></tr>';
   }).join('');
   m.innerHTML='<div class="page-head"><div><h2>플랫폼 관리</h2><div class="sub">전 병원 관리 (팔로우코리아 전용) · 총 '+(hosps||[]).length+'개 병원</div></div>'
     +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="platLocks()">로그인 잠금 관리</button><button class="btn" onclick="obModal()">＋ 새 병원</button></div></div>'
@@ -686,6 +686,23 @@ async function renderPlatform(){
 function platSetField(hid,field,val){
   const patch={}; patch[field]=(field==='staff_limit')?(parseInt(val,10)||3):(val===''?null:val); patch.updated_at=new Date().toISOString();
   db.from('hospitals').update(patch).eq('id',hid).then(function(r){ if(r.error){alert('실패: '+r.error.message);} else { logAudit('플랫폼 병원설정',field+'='+patch[field]); } });
+}
+async function platDeleteHospital(hid){
+  const h=(state._platHosps||[]).find(function(x){return x.id===hid;}); if(!h)return;
+  const nm=h.name||'';
+  const typed=prompt('⚠️ 병원 삭제는 되돌릴 수 없습니다.\n환자·주문·차트·정산·직원(원장) 계정까지 모두 영구 삭제됩니다.\n\n삭제하려면 아래 병원명을 정확히 입력하세요:\n\n'+nm);
+  if(typed===null) return;
+  if(typed.trim()!==nm){ alert('병원명이 일치하지 않아 삭제를 취소했습니다.'); return; }
+  try{
+    const { data, error } = await db.functions.invoke('delete-hospital', { body:{ hospital_id:hid, confirm_name:nm } });
+    if(error){ let msg=error.message||String(error); let st=(error.context&&error.context.status)||0; try{ const ctx=await error.context.json(); if(ctx&&ctx.error)msg=ctx.error; }catch(_){}
+      if(st===401||msg==='unauthorized'){ alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.'); reLogin(); return; }
+      throw new Error(msg); }
+    if(data&&data.error) throw new Error(data.error);
+    logAudit('병원 삭제', nm+' (계정 '+(data.users_deleted||0)+'개)');
+    alert('삭제 완료: '+nm+'\n원장·직원 계정 '+(data.users_deleted||0)+'개, 관련 데이터 모두 삭제됨.');
+    renderPlatform();
+  }catch(e){ alert('삭제 실패: '+(e.message||String(e))); }
 }
 const QUOTA_LIM={basic:{doc:30,msg:100},advanced:{doc:200,msg:1000},premium:{doc:null,msg:null}};
 async function platQuota(hid){
