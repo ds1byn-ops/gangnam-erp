@@ -215,7 +215,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.5.1 · 2026-07-23';
+const APP_VERSION='v1.5.2 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -706,7 +706,7 @@ async function renderPartnerApps(){
       +'<td class="right" style="white-space:nowrap">'+(r.status!=='approved'?'<button class="btn sm" onclick="pAppApprove(\''+r.id+'\')">승인→파트너 등록</button> ':'')+'<button class="btn sm ghost" onclick="pAppDelete(\''+r.id+'\')">삭제</button></td>'
       +'</tr>';
   }).join(''):'<tr><td colspan="9" class="muted" style="text-align:center;padding:20px">아직 지원자가 없습니다.</td></tr>';
-  m.innerHTML='<div class="page-head"><div><h2>파트너 지원</h2><div class="sub">MCN 파트너 지원자 심사 (팔로우코리아 전용) · 총 '+list.length+'건'+(newCnt?' · <b style="color:#dc2626">신규 '+newCnt+'건</b>':'')+'</div></div><div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderPartnerApps()">새로고침</button></div></div>'
+  m.innerHTML='<div class="page-head"><div><h2>파트너 지원</h2><div class="sub">MCN 파트너 지원자 심사 (팔로우코리아 전용) · 총 '+list.length+'건'+(newCnt?' · <b style="color:#dc2626">신규 '+newCnt+'건</b>':'')+'</div></div><div style="display:flex;gap:8px"><a class="btn ghost" href="https://followkorea-wanghong.netlify.app/join/" target="_blank" style="text-decoration:none">지원폼 열기</a><a class="btn ghost" href="https://followkorea-wanghong.netlify.app/partner/" target="_blank" style="text-decoration:none">파트너 포털</a><button class="btn ghost" onclick="renderPartnerApps()">새로고침</button></div></div>'
     +'<div class="panel"><div class="pb"><table><thead><tr><th>지원일</th><th>이름</th><th>유형</th><th>거주</th><th>연락처</th><th>SNS 채널</th><th>상태</th><th>메모</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
     +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· <b>승인→파트너 등록</b>을 누르면 파트너 관리 목록에 온보딩(서류 단계) 상태로 생성됩니다.<br>· 흐름: 신규 → 심사중 → 승인(파트너 생성) / 거절. 거주=중국이면 지급경로가 자동으로 悦集江南 경유로 설정됩니다.</div></div>';
 }
@@ -766,7 +766,7 @@ async function renderPartnerMgmt(){
       +'</tr>';
   }).join(''):'<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">등록된 파트너가 없습니다. 파트너 지원 메뉴에서 승인하거나 직접 추가하세요.</td></tr>';
   m.innerHTML='<div class="page-head"><div><h2>파트너 관리</h2><div class="sub">MCN 파트너 마스터 (팔로우코리아 전용) · 총 '+state._partners.length+'명'+chips+'</div></div>'
-    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderPartnerMgmt()">새로고침</button><button class="btn" onclick="pModal()">＋ 파트너 직접 추가</button></div></div>'
+    +'<div style="display:flex;gap:8px"><a class="btn ghost" href="https://followkorea-wanghong.netlify.app/partner/" target="_blank" style="text-decoration:none">파트너 포털</a><button class="btn ghost" onclick="renderPartnerMgmt()">새로고침</button><button class="btn" onclick="pModal()">＋ 파트너 직접 추가</button></div></div>'
     +'<div class="panel"><div class="pb"><table><thead><tr><th>이름</th><th>유형</th><th>거주 · 지급경로</th><th style="text-align:center">등급</th><th>상태</th><th>온보딩</th><th>연락처</th><th>등록일</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
     +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· 행을 클릭하면 파트너 카드를 열어 상태·온보딩 단계·등급·지급경로를 수정할 수 있습니다.<br>· 온보딩: 서류 → 교육 → 테스트 1건 → 완료. 완료 후 상태를 수습/정식으로 전환하세요. 계약·서류 파일 관리는 다음 단계에서 추가됩니다.</div></div>';
 }
