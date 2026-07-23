@@ -218,7 +218,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.7.2 · 2026-07-23';
+const APP_VERSION='v1.7.3 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -781,25 +781,27 @@ const P_D_TYPE={id_card:'신분증',bankbook:'통장사본',passport:'여권',bi
 function pModal(id){
   const p=id?(state._partners||[]).find(function(x){return x.id===id;}):null;
   const c=(p&&p.contact)||{};
+  const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
+  const fld=function(label,inner){ return '<div class="field"><label>'+label+'</label>'+inner+'</div>'; };
   const opt=function(obj,cur){return Object.keys(obj).map(function(k){return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+obj[k]+'</option>';}).join('');};
-  openModal('<h3>'+(p?'파트너 카드 — '+esc(p.name):'파트너 직접 추가')+'</h3>'
-    +'<div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +'<label>이름<input id="pm_name" value="'+esc(p?p.name:'')+'"></label>'
-    +'<label>유형<select id="pm_ptype">'+opt(P_TYPE,p?p.ptype:'guide_kr')+'</select></label>'
-    +'<label>거주<select id="pm_res" onchange="el(\'pm_route\').value=(this.value===\'CN\'?\'yueji_cny\':\'domestic_33\')"><option value="KR"'+(!p||p.residence_country==='KR'?' selected':'')+'>국내</option><option value="CN"'+(p&&p.residence_country==='CN'?' selected':'')+'>중국</option></select></label>'
-    +'<label>지급경로<select id="pm_route">'+opt(P_ROUTE,p?p.payout_route:'domestic_33')+'</select></label>'
-    +'<label>상태<select id="pm_status">'+opt(P_ST,p?p.status:'onboarding')+'</select></label>'
-    +'<label>온보딩 단계<select id="pm_step">'+opt(P_STEP,p?p.onboarding_step:'documents')+'</select></label>'
-    +'<label>등급<select id="pm_grade">'+['S','A','B','C'].map(function(g){return '<option'+(p&&p.grade===g?' selected':(!p&&g==='C'?' selected':''))+'>'+g+'</option>';}).join('')+'</select></label>'
-    +'<label>전화<input id="pm_phone" value="'+esc(c.phone||'')+'"></label>'
-    +'<label>위챗<input id="pm_wechat" value="'+esc(c.wechat||'')+'"></label>'
-    +'<label>이메일<input id="pm_email" value="'+esc(c.email||'')+'"></label>'
+  openModal('<div class="mh">'+(p?'파트너 카드 — '+esc(p.name):'＋ 파트너 직접 추가')+'<span onclick="closeModal()">✕</span></div><div class="mb">'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +fld('이름','<input id="pm_name" '+inp+' value="'+esc(p?p.name:'')+'">')
+    +fld('유형','<select id="pm_ptype" '+inp+'>'+opt(P_TYPE,p?p.ptype:'guide_kr')+'</select>')
+    +fld('거주','<select id="pm_res" '+inp+' onchange="el(\'pm_route\').value=(this.value===\'CN\'?\'yueji_cny\':\'domestic_33\')"><option value="KR"'+(!p||p.residence_country==='KR'?' selected':'')+'>국내</option><option value="CN"'+(p&&p.residence_country==='CN'?' selected':'')+'>중국</option></select>')
+    +fld('지급경로','<select id="pm_route" '+inp+'>'+opt(P_ROUTE,p?p.payout_route:'domestic_33')+'</select>')
+    +fld('상태','<select id="pm_status" '+inp+'>'+opt(P_ST,p?p.status:'onboarding')+'</select>')
+    +fld('온보딩 단계','<select id="pm_step" '+inp+'>'+opt(P_STEP,p?p.onboarding_step:'documents')+'</select>')
+    +fld('등급','<select id="pm_grade" '+inp+'>'+['S','A','B','C'].map(function(g){return '<option'+(p&&p.grade===g?' selected':(!p&&g==='C'?' selected':''))+'>'+g+'</option>';}).join('')+'</select>')
+    +fld('전화','<input id="pm_phone" '+inp+' value="'+esc(c.phone||'')+'">')
+    +fld('위챗','<input id="pm_wechat" '+inp+' value="'+esc(c.wechat||'')+'">')
+    +fld('이메일','<input id="pm_email" '+inp+' value="'+esc(c.email||'')+'">')
     +'</div>'
-    +'<label style="display:block;margin-top:10px">메모<textarea id="pm_memo" rows="3" style="width:100%">'+esc(p?(p.memo||''):'')+'</textarea></label>'
-    +(p?'<div id="pm_extra" style="margin-top:14px"><div class="muted" style="font-size:12px">계약·서류 불러오는 중…</div></div>':'<p style="margin-top:10px;font-size:12px;color:var(--muted)">저장 후 카드를 다시 열면 계약·서류를 등록할 수 있습니다.</p>')
-    +'<div style="display:flex;justify-content:space-between;margin-top:14px">'
-    +(p?'<button class="btn ghost" style="color:#dc2626;border-color:#fecaca" onclick="pDelete(\''+p.id+'\')">삭제</button>':'<span></span>')
-    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="pSave(\''+(p?p.id:'')+'\')">저장</button></div></div>',true);
+    +fld('메모','<textarea id="pm_memo" rows="3" '+inp+'>'+esc(p?(p.memo||''):'')+'</textarea>')
+    +(p?'<div id="pm_extra" style="margin-top:6px"><div class="muted" style="font-size:12px">계약·서류 불러오는 중…</div></div>':'<p style="margin-top:6px;font-size:12px;color:var(--muted)">저장 후 카드를 다시 열면 계약·서류를 등록할 수 있습니다.</p>')
+    +'</div><div class="mf">'
+    +(p?'<button class="btn ghost" style="color:#dc2626;border-color:#fecaca;margin-right:auto" onclick="pDelete(\''+p.id+'\')">삭제</button>':'')
+    +'<button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="pSave(\''+(p?p.id:'')+'\')">저장</button></div>',true);
   if(p)pLoadExtra(p.id);
 }
 async function pLoadExtra(pid){
@@ -971,24 +973,30 @@ async function renderCampaigns(){
 }
 function cpModal(id){
   const c=id?(state._cpCampaigns||[]).find(function(x){return x.id===id;}):null;
+  const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
+  const fld=function(label,inner){ return '<div class="field"><label>'+label+'</label>'+inner+'</div>'; };
   const hopt=state._cpHosps.map(function(h){return '<option value="'+h.id+'"'+(c&&c.hospital_id===h.id?' selected':'')+'>'+esc(h.name)+'</option>';}).join('');
   const popt=CP_PROG.map(function(p){return '<option'+(c&&c.program===p?' selected':'')+'>'+p+'</option>';}).join('');
   const sopt=Object.keys(CP_ST).map(function(k){return '<option value="'+k+'"'+(c&&c.status===k?' selected':'')+'>'+CP_ST[k]+'</option>';}).join('');
-  openModal('<h3>'+(c?'캠페인 수정':'새 캠페인')+'</h3>'
+  openModal('<div class="mh">'+(c?'캠페인 수정':'＋ 새 캠페인')+'<span onclick="closeModal()">✕</span></div><div class="mb">'
+    +fld('병원','<select id="cp_hosp" '+inp+'>'+hopt+'</select>')
+    +fld('캠페인명','<input id="cp_name" '+inp+' value="'+esc(c?c.name:'')+'" placeholder="예: 글로비 왕홍22 7월">')
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +'<label>병원<select id="cp_hosp">'+hopt+'</select></label>'
-    +'<label>캠페인명<input id="cp_name" value="'+esc(c?c.name:'')+'" placeholder="예: 글로비 왕홍22 7월"></label>'
-    +'<label>프로그램<select id="cp_prog">'+popt+'</select></label>'
-    +'<label>집행 주체<select id="cp_exec"><option value="followkorea"'+(!c||c.executor==='followkorea'?' selected':'')+'>팔로우코리아</option><option value="yueji_jiangnan"'+(c&&c.executor==='yueji_jiangnan'?' selected':'')+'>悦集江南(중국)</option></select></label>'
-    +'<label>시작일<input type="date" id="cp_start" value="'+(c&&c.starts_on||'')+'"></label>'
-    +'<label>종료일<input type="date" id="cp_end" value="'+(c&&c.ends_on||'')+'"></label>'
-    +'<label>상태<select id="cp_status">'+sopt+'</select></label>'
-    +'<label>목표<input id="cp_goal" value="'+esc(c&&c.goal||'')+'" placeholder="예: 리드 30건"></label>'
+    +fld('프로그램','<select id="cp_prog" '+inp+'>'+popt+'</select>')
+    +fld('집행 주체','<select id="cp_exec" '+inp+'><option value="followkorea"'+(!c||c.executor==='followkorea'?' selected':'')+'>팔로우코리아</option><option value="yueji_jiangnan"'+(c&&c.executor==='yueji_jiangnan'?' selected':'')+'>悦集江南(중국)</option></select>')
     +'</div>'
-    +'<label style="display:block;margin-top:10px">메모<textarea id="cp_memo" rows="2" style="width:100%">'+esc(c&&c.memo||'')+'</textarea></label>'
-    +'<div style="display:flex;justify-content:space-between;margin-top:14px">'
-    +(c?'<button class="btn ghost" style="color:#dc2626;border-color:#fecaca" onclick="cpDelete(\''+c.id+'\')">삭제</button>':'<span></span>')
-    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="cpSave(\''+(c?c.id:'')+'\')">저장</button></div></div>');
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +fld('시작일','<input type="date" id="cp_start" '+inp+' value="'+(c&&c.starts_on||'')+'">')
+    +fld('종료일','<input type="date" id="cp_end" '+inp+' value="'+(c&&c.ends_on||'')+'">')
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +fld('상태','<select id="cp_status" '+inp+'>'+sopt+'</select>')
+    +fld('목표','<input id="cp_goal" '+inp+' value="'+esc(c&&c.goal||'')+'" placeholder="예: 리드 30건">')
+    +'</div>'
+    +fld('메모','<textarea id="cp_memo" rows="2" '+inp+'>'+esc(c&&c.memo||'')+'</textarea>')
+    +'</div><div class="mf">'
+    +(c?'<button class="btn ghost" style="color:#dc2626;border-color:#fecaca;margin-right:auto" onclick="cpDelete(\''+c.id+'\')">삭제</button>':'')
+    +'<button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="cpSave(\''+(c?c.id:'')+'\')">저장</button></div>',true);
 }
 async function cpSave(id){
   const name=el('cp_name').value.trim();
@@ -1082,16 +1090,19 @@ async function cpPostDel(pid,cid){
 }
 function cpMetricModal(pid,cid){
   const today=new Date().toISOString().slice(0,10);
-  openModal('<h3>지표 입력</h3><div class="cny" style="margin-bottom:8px">같은 날짜에 다시 입력하면 덮어씁니다 (주 1회 스냅샷 권장)</div>'
+  const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
+  const fld=function(label,inner){ return '<div class="field"><label>'+label+'</label>'+inner+'</div>'; };
+  openModal('<div class="mh">지표 입력<span onclick="closeModal()">✕</span></div><div class="mb">'
+    +'<div class="cny" style="margin-bottom:10px">같은 날짜에 다시 입력하면 덮어씁니다 (주 1회 스냅샷 권장)</div>'
+    +fld('기준일','<input type="date" id="cm_date" '+inp+' value="'+today+'">')
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +'<label>기준일<input type="date" id="cm_date" value="'+today+'"></label>'
-    +'<label>조회수<input type="number" id="cm_views" min="0" value="0"></label>'
-    +'<label>좋아요<input type="number" id="cm_likes" min="0" value="0"></label>'
-    +'<label>댓글<input type="number" id="cm_comments" min="0" value="0"></label>'
-    +'<label>저장<input type="number" id="cm_saves" min="0" value="0"></label>'
-    +'<label>공유<input type="number" id="cm_shares" min="0" value="0"></label>'
+    +fld('조회수','<input type="number" id="cm_views" '+inp+' min="0" value="0">')
+    +fld('좋아요','<input type="number" id="cm_likes" '+inp+' min="0" value="0">')
+    +fld('댓글','<input type="number" id="cm_comments" '+inp+' min="0" value="0">')
+    +fld('저장','<input type="number" id="cm_saves" '+inp+' min="0" value="0">')
+    +fld('공유','<input type="number" id="cm_shares" '+inp+' min="0" value="0">')
     +'</div>'
-    +'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="cpMetricSave(\''+pid+'\',\''+cid+'\')">저장</button></div>');
+    +'</div><div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="cpMetricSave(\''+pid+'\',\''+cid+'\')">저장</button></div>',true);
 }
 async function cpMetricSave(pid,cid){
   const row={post_id:pid,metric_date:el('cm_date').value,views:Number(el('cm_views').value)||0,
