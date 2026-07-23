@@ -202,6 +202,7 @@
         <a data-view="guidereq" class="platform-only" style="display:none">가이드 신청<span class="nvb" id="bdg_guidereq"></span></a>
         <a data-view="partnerapp" class="platform-only" style="display:none">파트너 지원<span class="nvb" id="bdg_partnerapp"></span></a>
         <a data-view="partnermgmt" class="platform-only" style="display:none">파트너 관리</a>
+        <a data-view="campaigns" class="platform-only" style="display:none">캠페인 관리</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
         <button onclick="doLogout()">로그아웃</button><div id="appVer" style="margin-top:10px;font-size:11px;color:#475569;text-align:center"></div></div>
@@ -215,7 +216,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.5.2 · 2026-07-23';
+const APP_VERSION='v1.6.0 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -484,7 +485,7 @@ function agencyCsv(){
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),guidereq:renderGuideRequests,partnerapp:renderPartnerApps,partnermgmt:renderPartnerMgmt,tasks:renderTasks,files:renderFiles}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),guidereq:renderGuideRequests,partnerapp:renderPartnerApps,partnermgmt:renderPartnerMgmt,campaigns:renderCampaigns,tasks:renderTasks,files:renderFiles}[v])();}
 
 /* ============ 구독 · 이용권 ============ */
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
@@ -924,6 +925,179 @@ async function pDelete(id){
   if(error){alert('삭제 실패: '+error.message+'\n(이력이 연결된 파트너는 삭제할 수 없습니다 — 상태를 해지로 변경하세요)');return;}
   logAudit('파트너 삭제',(p&&p.name)||id);
   closeModal();renderPartnerMgmt();
+}
+
+/* ============ 파트너펄스: 캠페인 관리 (병원 프로그램 → 캠페인 → 게시물 → 지표 → 전환) ============ */
+const CP_ST={planned:'준비중',active:'진행중',done:'완료',cancelled:'취소'};
+const CP_ST_COLOR={planned:'#b45309',active:'#0f766e',done:'#64748b',cancelled:'#dc2626'};
+const CP_PLAT={xiaohongshu:'샤오홍슈',douyin:'더우인',weibo:'웨이보',wechat:'위챗',instagram:'인스타그램',youtube:'유튜브',other:'기타'};
+const CP_PROG=['왕홍1 (500만/1개월)','왕홍22 (1,000만/1개월)','왕홍333 (3,000만/3개월)','기타'];
+const fmtN=n=>Number(n||0).toLocaleString('ko-KR');
+async function cpLoadRefs(){
+  if(!state._cpHosps){ const {data}=await db.from('hospitals').select('id,name').order('name'); state._cpHosps=data||[]; }
+  if(!state._cpPartners){ const {data}=await db.from('partners').select('id,name,ptype').order('name'); state._cpPartners=data||[]; }
+}
+async function renderCampaigns(){
+  const m=el('main');
+  if(!state.platformMaster){ m.innerHTML='<div class="page-head"><div><h2>접근 불가</h2></div></div><div class="muted" style="padding:20px">플랫폼 마스터만 접근할 수 있습니다.</div>'; return; }
+  m.innerHTML='<div class="loading">불러오는 중…</div>';
+  await cpLoadRefs();
+  const [{data:cps,error},{data:posts}]=await Promise.all([
+    db.from('campaigns').select('*').order('created_at',{ascending:false}),
+    db.from('campaign_posts').select('campaign_id')
+  ]);
+  if(error){ m.innerHTML='<div class="page-head"><div><h2>캠페인 관리</h2></div></div><div class="muted" style="padding:20px;color:var(--danger)">불러오기 실패: '+esc(error.message)+'</div>'; return; }
+  state._cpCampaigns=cps||[];
+  const hmap=Object.fromEntries(state._cpHosps.map(function(h){return [h.id,h.name];}));
+  const pc={}; (posts||[]).forEach(function(x){pc[x.campaign_id]=(pc[x.campaign_id]||0)+1;});
+  const rows=state._cpCampaigns.length?state._cpCampaigns.map(function(c){
+    return '<tr style="cursor:pointer" onclick="renderCampaignDetail(\''+c.id+'\')">'
+      +'<td><b>'+esc(c.name)+'</b></td>'
+      +'<td>'+esc(hmap[c.hospital_id]||'-')+'</td>'
+      +'<td>'+esc(c.program||'-')+'</td>'
+      +'<td style="white-space:nowrap">'+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+'</td>'
+      +'<td>'+(c.executor==='yueji_jiangnan'?'悦集江南':'팔로우코리아')+'</td>'
+      +'<td><span class="tag" style="background:'+(CP_ST_COLOR[c.status]||'#64748b')+'1a;color:'+(CP_ST_COLOR[c.status]||'#64748b')+'">'+(CP_ST[c.status]||c.status)+'</span></td>'
+      +'<td class="right">'+(pc[c.id]||0)+'</td></tr>';
+  }).join(''):'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">캠페인이 없습니다. 병원 프로그램 계약이 성사되면 캠페인을 등록하세요.</td></tr>';
+  m.innerHTML='<div class="page-head"><div><h2>캠페인 관리</h2><div class="sub">병원 프로그램 → 왕홍 게시물 → 지표 → 전환 (팔로우코리아 전용) · 총 '+state._cpCampaigns.length+'건</div></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderCampaigns()">새로고침</button><button class="btn" onclick="cpModal()">＋ 새 캠페인</button></div></div>'
+    +'<div class="panel"><div class="pb"><table><thead><tr><th>캠페인</th><th>병원</th><th>프로그램</th><th>기간</th><th>집행</th><th>상태</th><th class="right">게시물</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
+    +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· 행을 클릭하면 게시물·지표·전환 현황을 관리할 수 있습니다.<br>· 병원 계정에는 (2단계 배포 후) 자기 병원 캠페인 리포트가 읽기 전용으로 표시됩니다 — 파트너 개인정보·정산은 노출되지 않습니다.</div></div>';
+}
+function cpModal(id){
+  const c=id?(state._cpCampaigns||[]).find(function(x){return x.id===id;}):null;
+  const hopt=state._cpHosps.map(function(h){return '<option value="'+h.id+'"'+(c&&c.hospital_id===h.id?' selected':'')+'>'+esc(h.name)+'</option>';}).join('');
+  const popt=CP_PROG.map(function(p){return '<option'+(c&&c.program===p?' selected':'')+'>'+p+'</option>';}).join('');
+  const sopt=Object.keys(CP_ST).map(function(k){return '<option value="'+k+'"'+(c&&c.status===k?' selected':'')+'>'+CP_ST[k]+'</option>';}).join('');
+  openModal('<h3>'+(c?'캠페인 수정':'새 캠페인')+'</h3>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +'<label>병원<select id="cp_hosp">'+hopt+'</select></label>'
+    +'<label>캠페인명<input id="cp_name" value="'+esc(c?c.name:'')+'" placeholder="예: 글로비 왕홍22 7월"></label>'
+    +'<label>프로그램<select id="cp_prog">'+popt+'</select></label>'
+    +'<label>집행 주체<select id="cp_exec"><option value="followkorea"'+(!c||c.executor==='followkorea'?' selected':'')+'>팔로우코리아</option><option value="yueji_jiangnan"'+(c&&c.executor==='yueji_jiangnan'?' selected':'')+'>悦集江南(중국)</option></select></label>'
+    +'<label>시작일<input type="date" id="cp_start" value="'+(c&&c.starts_on||'')+'"></label>'
+    +'<label>종료일<input type="date" id="cp_end" value="'+(c&&c.ends_on||'')+'"></label>'
+    +'<label>상태<select id="cp_status">'+sopt+'</select></label>'
+    +'<label>목표<input id="cp_goal" value="'+esc(c&&c.goal||'')+'" placeholder="예: 리드 30건"></label>'
+    +'</div>'
+    +'<label style="display:block;margin-top:10px">메모<textarea id="cp_memo" rows="2" style="width:100%">'+esc(c&&c.memo||'')+'</textarea></label>'
+    +'<div style="display:flex;justify-content:space-between;margin-top:14px">'
+    +(c?'<button class="btn ghost" style="color:#dc2626;border-color:#fecaca" onclick="cpDelete(\''+c.id+'\')">삭제</button>':'<span></span>')
+    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="cpSave(\''+(c?c.id:'')+'\')">저장</button></div></div>');
+}
+async function cpSave(id){
+  const name=el('cp_name').value.trim();
+  if(!name){alert('캠페인명을 입력하세요.');return;}
+  const row={hospital_id:el('cp_hosp').value,name:name,program:el('cp_prog').value,executor:el('cp_exec').value,
+    status:el('cp_status').value,starts_on:el('cp_start').value||null,ends_on:el('cp_end').value||null,
+    goal:el('cp_goal').value.trim()||null,memo:el('cp_memo').value.trim()||null,updated_at:new Date().toISOString()};
+  let error, newId=id;
+  if(id){ error=(await db.from('campaigns').update(row).eq('id',id)).error; }
+  else { const r=await db.from('campaigns').insert(row).select('id').single(); error=r.error; newId=r.data&&r.data.id; }
+  if(error){alert('저장 실패: '+error.message);return;}
+  logAudit(id?'캠페인 수정':'캠페인 등록',name);
+  closeModal();
+  if(newId)renderCampaignDetail(newId); else renderCampaigns();
+}
+async function cpDelete(id){
+  if(!confirm('이 캠페인을 삭제할까요? 게시물·지표도 함께 삭제됩니다.'))return;
+  const {error}=await db.from('campaigns').delete().eq('id',id);
+  if(error){alert('삭제 실패: '+error.message);return;}
+  logAudit('캠페인 삭제',id);
+  closeModal();renderCampaigns();
+}
+async function renderCampaignDetail(id){
+  const m=el('main');
+  m.innerHTML='<div class="loading">불러오는 중…</div>';
+  await cpLoadRefs();
+  const [{data:c},{data:posts},{data:bks}]=await Promise.all([
+    db.from('campaigns').select('*').eq('id',id).single(),
+    db.from('campaign_posts').select('*').eq('campaign_id',id).order('created_at'),
+    db.from('partner_bookings').select('status').eq('campaign_id',id)
+  ]);
+  if(!c){ renderCampaigns(); return; }
+  state._cpCampaigns=state._cpCampaigns&&state._cpCampaigns.length?state._cpCampaigns:[c];
+  if(!state._cpCampaigns.find(function(x){return x.id===c.id;}))state._cpCampaigns.push(c);
+  const pids=(posts||[]).map(function(p){return p.id;});
+  let latest={};
+  if(pids.length){
+    const {data:ms}=await db.from('campaign_metrics').select('*').in('post_id',pids).order('metric_date');
+    (ms||[]).forEach(function(x){ latest[x.post_id]=x; }); // 날짜순이라 마지막 값이 최신
+  }
+  const hmap=Object.fromEntries(state._cpHosps.map(function(h){return [h.id,h.name];}));
+  const pmapP=Object.fromEntries(state._cpPartners.map(function(p){return [p.id,p.name];}));
+  const tot={views:0,likes:0,comments:0,saves:0};
+  (posts||[]).forEach(function(p){const l=latest[p.id];if(l){tot.views+=Number(l.views)||0;tot.likes+=l.likes||0;tot.comments+=l.comments||0;tot.saves+=l.saves||0;}});
+  const bc={requested:0,confirmed:0,visited:0,treated:0};
+  (bks||[]).forEach(function(b){ if(bc[b.status]!=null)bc[b.status]++; });
+  const funnel='<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +[['문의·등록',(bks||[]).length],['예약확정',bc.confirmed+bc.visited+bc.treated],['내원',bc.visited+bc.treated],['시술완료',bc.treated]].map(function(x){
+      return '<div style="flex:1;min-width:110px;background:#f4f7fc;border-radius:10px;padding:10px 14px;text-align:center"><div style="font-size:20px;font-weight:800;color:var(--brand,#1F3864)">'+x[1]+'</div><div style="font-size:11.5px;color:var(--muted)">'+x[0]+'</div></div>';
+    }).join('')+'</div>';
+  const prow=(posts||[]).length?(posts||[]).map(function(p){
+    const l=latest[p.id];
+    return '<tr>'
+      +'<td>'+(p.partner_id?esc(pmapP[p.partner_id]||'?'):'<span class="tag" style="background:#eef2ff;color:#4338ca">자사 채널</span>')+'</td>'
+      +'<td>'+(CP_PLAT[p.platform]||p.platform)+'</td>'
+      +'<td>'+(p.url?'<a href="'+esc(p.url)+'" target="_blank" style="color:var(--brand,#1F3864)">'+esc(p.title||'게시물 링크')+'</a>':esc(p.title||'-'))+'</td>'
+      +'<td style="white-space:nowrap">'+(p.posted_on||'-')+'</td>'
+      +'<td style="font-size:12px;white-space:nowrap">'+(l?('조회 '+fmtN(l.views)+' · 좋아요 '+fmtN(l.likes)+' · 댓글 '+fmtN(l.comments)+' · 저장 '+fmtN(l.saves)+'<div class="cny">'+l.metric_date+' 기준'+(l.source==='partner'?' · 파트너입력':'')+'</div>'):'<span class="muted">지표 없음</span>')+'</td>'
+      +'<td class="right" style="white-space:nowrap"><button class="btn sm" onclick="cpMetricModal(\''+p.id+'\',\''+id+'\')">지표 입력</button> <button class="btn sm ghost" onclick="cpPostDel(\''+p.id+'\',\''+id+'\')">삭제</button></td></tr>';
+  }).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:14px">게시물이 없습니다. 아래에서 추가하세요.</td></tr>';
+  const partnerOpt='<option value="">자사 채널</option>'+state._cpPartners.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('');
+  const platOpt=Object.keys(CP_PLAT).map(function(k){return '<option value="'+k+'">'+CP_PLAT[k]+'</option>';}).join('');
+  m.innerHTML='<div class="page-head"><div><h2>'+esc(c.name)+'</h2><div class="sub">'+esc(hmap[c.hospital_id]||'')+' · '+esc(c.program||'')+' · '+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+' · '+(c.executor==='yueji_jiangnan'?'悦集江南':'팔로우코리아')+' · <span style="color:'+(CP_ST_COLOR[c.status]||'#64748b')+';font-weight:700">'+(CP_ST[c.status]||c.status)+'</span>'+(c.goal?' · 목표: '+esc(c.goal):'')+'</div></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderCampaigns()">← 목록</button><button class="btn ghost" onclick="cpModal(\''+c.id+'\')">캠페인 수정</button></div></div>'
+    +'<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">전환 퍼널 <span class="cny">(파트너 고객등록 기준)</span></div>'+funnel+'</div></div>'
+    +'<div class="panel"><div class="pb"><div style="padding:12px 16px 0;font-weight:800;font-size:13px">게시물 · 지표 <span class="cny">누적: 조회 '+fmtN(tot.views)+' · 좋아요 '+fmtN(tot.likes)+' · 댓글 '+fmtN(tot.comments)+' · 저장 '+fmtN(tot.saves)+'</span></div>'
+    +'<table><thead><tr><th>파트너</th><th>플랫폼</th><th>게시물</th><th>게시일</th><th>최신 지표</th><th></th></tr></thead><tbody>'+prow+'</tbody></table>'
+    +'<div style="display:flex;gap:6px;padding:10px 16px 14px;flex-wrap:wrap;align-items:center">'
+    +'<select id="cp_p_partner" style="padding:6px;border:1px solid var(--line);border-radius:7px;max-width:150px">'+partnerOpt+'</select>'
+    +'<select id="cp_p_plat" style="padding:6px;border:1px solid var(--line);border-radius:7px">'+platOpt+'</select>'
+    +'<input id="cp_p_title" placeholder="제목" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;width:130px">'
+    +'<input id="cp_p_url" placeholder="URL" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;flex:1;min-width:160px">'
+    +'<input type="date" id="cp_p_date" style="padding:6px;border:1px solid var(--line);border-radius:7px">'
+    +'<button class="btn sm" onclick="cpPostAdd(\''+id+'\')">게시물 추가</button></div></div></div>';
+}
+async function cpPostAdd(cid){
+  const posted=el('cp_p_date').value;
+  const row={campaign_id:cid,partner_id:el('cp_p_partner').value||null,platform:el('cp_p_plat').value,
+    title:el('cp_p_title').value.trim()||null,url:el('cp_p_url').value.trim()||null,
+    posted_on:posted||null,status:posted?'posted':'planned'};
+  const {error}=await db.from('campaign_posts').insert(row);
+  if(error){alert('추가 실패: '+error.message);return;}
+  logAudit('캠페인 게시물 추가',cid);
+  renderCampaignDetail(cid);
+}
+async function cpPostDel(pid,cid){
+  if(!confirm('이 게시물을 삭제할까요? 지표 기록도 함께 삭제됩니다.'))return;
+  const {error}=await db.from('campaign_posts').delete().eq('id',pid);
+  if(error){alert('삭제 실패: '+error.message);return;}
+  renderCampaignDetail(cid);
+}
+function cpMetricModal(pid,cid){
+  const today=new Date().toISOString().slice(0,10);
+  openModal('<h3>지표 입력</h3><div class="cny" style="margin-bottom:8px">같은 날짜에 다시 입력하면 덮어씁니다 (주 1회 스냅샷 권장)</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +'<label>기준일<input type="date" id="cm_date" value="'+today+'"></label>'
+    +'<label>조회수<input type="number" id="cm_views" min="0" value="0"></label>'
+    +'<label>좋아요<input type="number" id="cm_likes" min="0" value="0"></label>'
+    +'<label>댓글<input type="number" id="cm_comments" min="0" value="0"></label>'
+    +'<label>저장<input type="number" id="cm_saves" min="0" value="0"></label>'
+    +'<label>공유<input type="number" id="cm_shares" min="0" value="0"></label>'
+    +'</div>'
+    +'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="cpMetricSave(\''+pid+'\',\''+cid+'\')">저장</button></div>');
+}
+async function cpMetricSave(pid,cid){
+  const row={post_id:pid,metric_date:el('cm_date').value,views:Number(el('cm_views').value)||0,
+    likes:Number(el('cm_likes').value)||0,comments:Number(el('cm_comments').value)||0,
+    saves:Number(el('cm_saves').value)||0,shares:Number(el('cm_shares').value)||0,source:'ops'};
+  if(!row.metric_date){alert('기준일을 선택하세요.');return;}
+  const {error}=await db.from('campaign_metrics').upsert(row,{onConflict:'post_id,metric_date'});
+  if(error){alert('저장 실패: '+error.message);return;}
+  logAudit('캠페인 지표 입력',pid+' · '+row.metric_date);
+  closeModal();renderCampaignDetail(cid);
 }
 
 async function renderPlatform(){
