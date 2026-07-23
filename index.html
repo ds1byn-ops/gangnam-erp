@@ -200,6 +200,8 @@
         <a data-view="demoreq" class="platform-only" style="display:none">데모 신청<span class="nvb" id="bdg_demoreq"></span></a>
         <a data-view="wanghongreq" class="platform-only" style="display:none">왕홍병원 신청<span class="nvb" id="bdg_wanghongreq"></span></a>
         <a data-view="guidereq" class="platform-only" style="display:none">가이드 신청<span class="nvb" id="bdg_guidereq"></span></a>
+        <a data-view="partnerapp" class="platform-only" style="display:none">파트너 지원<span class="nvb" id="bdg_partnerapp"></span></a>
+        <a data-view="partnermgmt" class="platform-only" style="display:none">파트너 관리</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
         <button onclick="doLogout()">로그아웃</button><div id="appVer" style="margin-top:10px;font-size:11px;color:#475569;text-align:center"></div></div>
@@ -213,7 +215,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.4.2 · 2026-07-08';
+const APP_VERSION='v1.5.0 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -482,7 +484,7 @@ function agencyCsv(){
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),guidereq:renderGuideRequests,tasks:renderTasks,files:renderFiles}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),guidereq:renderGuideRequests,partnerapp:renderPartnerApps,partnermgmt:renderPartnerMgmt,tasks:renderTasks,files:renderFiles}[v])();}
 
 /* ============ 구독 · 이용권 ============ */
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
@@ -639,6 +641,7 @@ async function refreshLeadBadges(){
     const {data}=await db.from('demo_requests').select('source').eq('status','new');
     const c={demoreq:0,wanghongreq:0,guidereq:0};
     (data||[]).forEach(function(r){ if(r.source==='landing')c.demoreq++; else if(r.source==='meta_ads_wanghong_lp')c.wanghongreq++; else if(r.source==='guide_recruit')c.guidereq++; });
+    try{ const pr=await db.from('partner_applications').select('id',{count:'exact',head:true}).eq('status','submitted'); c.partnerapp=pr.count||0; }catch(_e2){ c.partnerapp=0; }
     Object.keys(c).forEach(function(k){ var b=el('bdg_'+k); if(!b)return; if(c[k]>0){ b.textContent=c[k]>99?'99+':c[k]; b.style.display='inline-block'; } else { b.style.display='none'; } });
   }catch(_e){}
 }
@@ -670,6 +673,148 @@ async function renderGuideRequests(){
     +'<div class="panel"><div class="pb"><table><thead><tr><th>신청일</th><th>이름</th><th>연락처</th><th>거주지역</th><th>중국어수준</th><th>상태</th><th>경험·메모</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
     +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· gnpulse.kr/guide 지원폼에서 들어온 통역·가이드 지원자입니다.<br>· 상태 흐름: 신규 → 연락함 → (데모완료=면접/온보딩) → 전환(등록) / 드롭. 메모는 입력 후 칸을 벗어나면 자동 저장됩니다.</div></div>';
 }
+/* ============ 파트너펄스: 파트너 지원 심사큐 · 파트너 관리 (MCN 토털 관리) ============ */
+const P_TYPE={guide_kr:'가이드(국내)',freelancer_kr:'프리랜서(국내)',wanghong_kr:'왕홍(국내)',wanghong_cn:'왕홍(중국)',guide_cn:'가이드(중국)',interpreter:'통역'};
+const P_APP_ST={submitted:'신규',screening:'심사중',approved:'승인완료',rejected:'거절'};
+const P_ST={onboarding:'온보딩',trial:'수습',active:'정식',dormant:'휴면',terminated:'해지'};
+const P_ST_COLOR={onboarding:'#b45309',trial:'#7c3aed',active:'#0f766e',dormant:'#64748b',terminated:'#dc2626'};
+const P_STEP={documents:'서류',training:'교육',test_case:'테스트 1건',done:'완료'};
+const P_ROUTE={domestic_33:'국내 3.3%',yueji_cny:'중국(悦集江南)'};
+function pContact(c){c=c||{};var a=[];if(c.phone)a.push(c.phone);if(c.wechat)a.push('위챗 '+c.wechat);if(c.email)a.push(c.email);return a.join(' · ')||'-';}
+
+async function renderPartnerApps(){
+  const m=el('main');
+  if(!state.platformMaster){ m.innerHTML='<div class="page-head"><div><h2>접근 불가</h2></div></div><div class="muted" style="padding:20px">플랫폼 마스터만 접근할 수 있습니다.</div>'; return; }
+  m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const {data,error}=await db.from('partner_applications').select('*');
+  if(error){ m.innerHTML='<div class="page-head"><div><h2>파트너 지원</h2></div></div><div class="muted" style="padding:20px;color:var(--danger)">불러오기 실패: '+esc(error.message)+'</div>'; return; }
+  const list=(data||[]).slice().sort(function(a,b){ const an=a.status==='submitted'?0:1,bn=b.status==='submitted'?0:1; if(an!==bn)return an-bn; return new Date(b.created_at)-new Date(a.created_at); });
+  state._pApps=list;
+  const newCnt=list.filter(function(r){return r.status==='submitted';}).length;
+  const stSel=function(r){ return '<select onchange="pAppSetStatus(\''+r.id+'\',this.value)" style="padding:5px;border:1px solid var(--line);border-radius:7px;font-size:12px">'+Object.keys(P_APP_ST).map(function(k){return '<option value="'+k+'"'+(k===r.status?' selected':'')+'>'+P_APP_ST[k]+'</option>';}).join('')+'</select>'; };
+  const rows=list.length?list.map(function(r){
+    const sns=(r.sns_channels||[]).map(function(s){return esc((s.platform||'')+(s.followers?'('+Number(s.followers).toLocaleString()+')':''));}).join(', ');
+    return '<tr>'
+      +'<td style="white-space:nowrap">'+fdate(r.created_at)+'</td>'
+      +'<td><b>'+esc(r.name)+'</b></td>'
+      +'<td>'+esc(P_TYPE[r.ptype]||r.ptype)+'</td>'
+      +'<td>'+(r.residence_country==='CN'?'중국':'국내')+'</td>'
+      +'<td style="font-size:12px">'+esc(pContact(r.contact))+'</td>'
+      +'<td style="font-size:12px">'+(sns||'-')+'</td>'
+      +'<td>'+stSel(r)+'</td>'
+      +'<td><input value="'+esc(r.memo||'')+'" placeholder="심사 메모…" onchange="pAppSaveMemo(\''+r.id+'\',this.value)" style="width:100%;min-width:120px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px"></td>'
+      +'<td class="right" style="white-space:nowrap">'+(r.status!=='approved'?'<button class="btn sm" onclick="pAppApprove(\''+r.id+'\')">승인→파트너 등록</button> ':'')+'<button class="btn sm ghost" onclick="pAppDelete(\''+r.id+'\')">삭제</button></td>'
+      +'</tr>';
+  }).join(''):'<tr><td colspan="9" class="muted" style="text-align:center;padding:20px">아직 지원자가 없습니다.</td></tr>';
+  m.innerHTML='<div class="page-head"><div><h2>파트너 지원</h2><div class="sub">MCN 파트너 지원자 심사 (팔로우코리아 전용) · 총 '+list.length+'건'+(newCnt?' · <b style="color:#dc2626">신규 '+newCnt+'건</b>':'')+'</div></div><div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderPartnerApps()">새로고침</button></div></div>'
+    +'<div class="panel"><div class="pb"><table><thead><tr><th>지원일</th><th>이름</th><th>유형</th><th>거주</th><th>연락처</th><th>SNS 채널</th><th>상태</th><th>메모</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
+    +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· <b>승인→파트너 등록</b>을 누르면 파트너 관리 목록에 온보딩(서류 단계) 상태로 생성됩니다.<br>· 흐름: 신규 → 심사중 → 승인(파트너 생성) / 거절. 거주=중국이면 지급경로가 자동으로 悦集江南 경유로 설정됩니다.</div></div>';
+}
+async function pAppSetStatus(id,val){
+  const {error}=await db.from('partner_applications').update({status:val,reviewed_at:new Date().toISOString()}).eq('id',id);
+  if(error){alert('상태 변경 실패: '+error.message);return;}
+  const r=(state._pApps||[]).find(function(x){return x.id===id;}); if(r)r.status=val;
+  logAudit('파트너지원 상태변경',(r?r.name+' · ':'')+(P_APP_ST[val]||val));
+  refreshLeadBadges();
+}
+async function pAppSaveMemo(id,val){
+  const {error}=await db.from('partner_applications').update({memo:val}).eq('id',id);
+  if(error){alert('메모 저장 실패: '+error.message);}
+}
+async function pAppDelete(id){
+  if(!confirm('이 지원서를 삭제할까요? 되돌릴 수 없습니다.'))return;
+  const {error}=await db.from('partner_applications').delete().eq('id',id);
+  if(error){alert('삭제 실패: '+error.message);return;}
+  const r=(state._pApps||[]).find(function(x){return x.id===id;});
+  logAudit('파트너지원 삭제',(r&&r.name)||id);
+  renderPartnerApps();refreshLeadBadges();
+}
+async function pAppApprove(id){
+  const r=(state._pApps||[]).find(function(x){return x.id===id;});
+  if(!r){alert('지원서를 찾을 수 없습니다.');return;}
+  if(!confirm('['+r.name+'] 지원자를 승인하고 파트너로 등록할까요?\n등록 후 파트너 관리에서 서류·교육·테스트 온보딩을 진행합니다.'))return;
+  const ins={application_id:r.id,ptype:r.ptype,name:r.name,residence_country:r.residence_country,
+    payout_route:(r.residence_country==='CN'?'yueji_cny':'domestic_33'),
+    languages:r.languages||[],contact:r.contact||{},sns_channels:r.sns_channels||[],memo:r.memo||null};
+  const {error}=await db.from('partners').insert(ins);
+  if(error){alert('파트너 생성 실패: '+error.message);return;}
+  await db.from('partner_applications').update({status:'approved',reviewed_at:new Date().toISOString()}).eq('id',id);
+  logAudit('파트너 승인·등록',r.name+' ('+(P_TYPE[r.ptype]||r.ptype)+')');
+  alert('['+r.name+'] 파트너로 등록되었습니다. 파트너 관리에서 온보딩을 진행하세요.');
+  renderPartnerApps();refreshLeadBadges();
+}
+
+async function renderPartnerMgmt(){
+  const m=el('main');
+  if(!state.platformMaster){ m.innerHTML='<div class="page-head"><div><h2>접근 불가</h2></div></div><div class="muted" style="padding:20px">플랫폼 마스터만 접근할 수 있습니다.</div>'; return; }
+  m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const {data,error}=await db.from('partners').select('*').order('created_at',{ascending:false});
+  if(error){ m.innerHTML='<div class="page-head"><div><h2>파트너 관리</h2></div></div><div class="muted" style="padding:20px;color:var(--danger)">불러오기 실패: '+esc(error.message)+'</div>'; return; }
+  state._partners=data||[];
+  const cnt={}; state._partners.forEach(function(p){cnt[p.status]=(cnt[p.status]||0)+1;});
+  const chips=Object.keys(P_ST).filter(function(k){return cnt[k];}).map(function(k){return '<span class="tag" style="margin-left:6px;background:'+P_ST_COLOR[k]+'1a;color:'+P_ST_COLOR[k]+'">'+P_ST[k]+' '+cnt[k]+'</span>';}).join('');
+  const rows=state._partners.length?state._partners.map(function(p){
+    return '<tr style="cursor:pointer" onclick="pModal(\''+p.id+'\')">'
+      +'<td><b>'+esc(p.name)+'</b></td>'
+      +'<td>'+esc(P_TYPE[p.ptype]||p.ptype)+'</td>'
+      +'<td>'+(p.residence_country==='CN'?'중국':'국내')+'<div class="cny">'+esc(P_ROUTE[p.payout_route]||'')+'</div></td>'
+      +'<td style="text-align:center;font-weight:700">'+esc(p.grade||'-')+'</td>'
+      +'<td><span class="tag" style="background:'+(P_ST_COLOR[p.status]||'#64748b')+'1a;color:'+(P_ST_COLOR[p.status]||'#64748b')+'">'+(P_ST[p.status]||p.status)+'</span></td>'
+      +'<td>'+(p.status==='onboarding'?(P_STEP[p.onboarding_step]||p.onboarding_step):'-')+'</td>'
+      +'<td style="font-size:12px">'+esc(pContact(p.contact))+'</td>'
+      +'<td style="white-space:nowrap">'+fdate(p.created_at)+'</td>'
+      +'</tr>';
+  }).join(''):'<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">등록된 파트너가 없습니다. 파트너 지원 메뉴에서 승인하거나 직접 추가하세요.</td></tr>';
+  m.innerHTML='<div class="page-head"><div><h2>파트너 관리</h2><div class="sub">MCN 파트너 마스터 (팔로우코리아 전용) · 총 '+state._partners.length+'명'+chips+'</div></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderPartnerMgmt()">새로고침</button><button class="btn" onclick="pModal()">＋ 파트너 직접 추가</button></div></div>'
+    +'<div class="panel"><div class="pb"><table><thead><tr><th>이름</th><th>유형</th><th>거주 · 지급경로</th><th style="text-align:center">등급</th><th>상태</th><th>온보딩</th><th>연락처</th><th>등록일</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
+    +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· 행을 클릭하면 파트너 카드를 열어 상태·온보딩 단계·등급·지급경로를 수정할 수 있습니다.<br>· 온보딩: 서류 → 교육 → 테스트 1건 → 완료. 완료 후 상태를 수습/정식으로 전환하세요. 계약·서류 파일 관리는 다음 단계에서 추가됩니다.</div></div>';
+}
+function pModal(id){
+  const p=id?(state._partners||[]).find(function(x){return x.id===id;}):null;
+  const c=(p&&p.contact)||{};
+  const opt=function(obj,cur){return Object.keys(obj).map(function(k){return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+obj[k]+'</option>';}).join('');};
+  openModal('<h3>'+(p?'파트너 카드 — '+esc(p.name):'파트너 직접 추가')+'</h3>'
+    +'<div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +'<label>이름<input id="pm_name" value="'+esc(p?p.name:'')+'"></label>'
+    +'<label>유형<select id="pm_ptype">'+opt(P_TYPE,p?p.ptype:'guide_kr')+'</select></label>'
+    +'<label>거주<select id="pm_res" onchange="el(\'pm_route\').value=(this.value===\'CN\'?\'yueji_cny\':\'domestic_33\')"><option value="KR"'+(!p||p.residence_country==='KR'?' selected':'')+'>국내</option><option value="CN"'+(p&&p.residence_country==='CN'?' selected':'')+'>중국</option></select></label>'
+    +'<label>지급경로<select id="pm_route">'+opt(P_ROUTE,p?p.payout_route:'domestic_33')+'</select></label>'
+    +'<label>상태<select id="pm_status">'+opt(P_ST,p?p.status:'onboarding')+'</select></label>'
+    +'<label>온보딩 단계<select id="pm_step">'+opt(P_STEP,p?p.onboarding_step:'documents')+'</select></label>'
+    +'<label>등급<select id="pm_grade">'+['S','A','B','C'].map(function(g){return '<option'+(p&&p.grade===g?' selected':(!p&&g==='C'?' selected':''))+'>'+g+'</option>';}).join('')+'</select></label>'
+    +'<label>전화<input id="pm_phone" value="'+esc(c.phone||'')+'"></label>'
+    +'<label>위챗<input id="pm_wechat" value="'+esc(c.wechat||'')+'"></label>'
+    +'<label>이메일<input id="pm_email" value="'+esc(c.email||'')+'"></label>'
+    +'</div>'
+    +'<label style="display:block;margin-top:10px">메모<textarea id="pm_memo" rows="3" style="width:100%">'+esc(p?(p.memo||''):'')+'</textarea></label>'
+    +'<div style="display:flex;justify-content:space-between;margin-top:14px">'
+    +(p?'<button class="btn ghost" style="color:#dc2626;border-color:#fecaca" onclick="pDelete(\''+p.id+'\')">삭제</button>':'<span></span>')
+    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="pSave(\''+(p?p.id:'')+'\')">저장</button></div></div>');
+}
+async function pSave(id){
+  const name=el('pm_name').value.trim();
+  if(!name){alert('이름을 입력하세요.');return;}
+  const row={name:name,ptype:el('pm_ptype').value,residence_country:el('pm_res').value,payout_route:el('pm_route').value,
+    status:el('pm_status').value,onboarding_step:el('pm_step').value,grade:el('pm_grade').value,
+    contact:{phone:el('pm_phone').value.trim()||undefined,wechat:el('pm_wechat').value.trim()||undefined,email:el('pm_email').value.trim()||undefined},
+    memo:el('pm_memo').value.trim()||null,updated_at:new Date().toISOString()};
+  let error;
+  if(id){ error=(await db.from('partners').update(row).eq('id',id)).error; }
+  else { error=(await db.from('partners').insert(row)).error; }
+  if(error){alert('저장 실패: '+error.message);return;}
+  logAudit(id?'파트너 수정':'파트너 추가',name);
+  closeModal();renderPartnerMgmt();
+}
+async function pDelete(id){
+  const p=(state._partners||[]).find(function(x){return x.id===id;});
+  if(!confirm('['+((p&&p.name)||'')+'] 파트너를 삭제할까요?\n정산·지급 이력이 있으면 삭제 대신 상태를 해지로 변경하는 것을 권장합니다.'))return;
+  const {error}=await db.from('partners').delete().eq('id',id);
+  if(error){alert('삭제 실패: '+error.message+'\n(이력이 연결된 파트너는 삭제할 수 없습니다 — 상태를 해지로 변경하세요)');return;}
+  logAudit('파트너 삭제',(p&&p.name)||id);
+  closeModal();renderPartnerMgmt();
+}
+
 async function renderPlatform(){
   const m=el('main');
   if(!state.platformMaster){ m.innerHTML='<div class="page-head"><div><h2>접근 불가</h2></div></div><div class="muted" style="padding:20px">플랫폼 마스터만 접근할 수 있습니다.</div>'; return; }
