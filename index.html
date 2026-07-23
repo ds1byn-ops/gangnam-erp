@@ -184,6 +184,7 @@
         <a data-view="billing">수납 · 영수증</a>
         <div class="grp">매출 · 정산</div>
         <a data-view="stats">통계</a>
+        <a data-view="marketing">마케팅 리포트</a>
         <a data-view="settlement">에이전시 정산</a>
         <a data-view="refsettle">소개자 정산</a>
         <div class="grp">거래처 · 상품</div>
@@ -196,6 +197,7 @@
         <a data-view="audit" class="owner-only">관리자 로그</a>
         <a data-view="subscription" class="owner-only">구독·이용권</a>
         <div class="grp platform-only" style="display:none">플랫폼</div>
+        <a data-view="plathome" class="platform-only" style="display:none">플랫폼 홈</a>
         <a data-view="platform" class="platform-only" style="display:none">플랫폼 관리</a>
         <a data-view="demoreq" class="platform-only" style="display:none">데모 신청<span class="nvb" id="bdg_demoreq"></span></a>
         <a data-view="wanghongreq" class="platform-only" style="display:none">왕홍병원 신청<span class="nvb" id="bdg_wanghongreq"></span></a>
@@ -216,7 +218,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.6.0 · 2026-07-23';
+const APP_VERSION='v1.7.0 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -227,9 +229,9 @@ const state={hospital_id:null,hospital_name:'강남펄스',staff:null,procedures
 const PLAN_LABEL={basic:'기본',advanced:'고급',premium:'프리미엄'};
 const PLAN_PRICE={basic:50000,advanced:100000,premium:150000};
 const TIER_MENUS={
-  basic:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings'],
-  advanced:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle'],
-  premium:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','audit']
+  basic:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings','marketing'],
+  advanced:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','marketing'],
+  premium:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','audit','marketing']
 };
 
 const won=n=>'₩'+Number(n||0).toLocaleString('ko-KR');
@@ -410,7 +412,7 @@ async function boot(){
   el('appVer').textContent=APP_VERSION;
   el('whoName').textContent=staff.name;
   el('whoRole').textContent=({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[staff.role]||staff.role;
-  const _allm=['dashboard','calendar','reception','patients','quote','platq','charts','tasks','files','billing','stats','settlement','agencies','packages','referrers','refsettle','staff','settings','audit','subscription'];
+  const _allm=['dashboard','calendar','reception','patients','quote','platq','charts','tasks','files','billing','stats','marketing','settlement','agencies','packages','referrers','refsettle','staff','settings','audit','subscription'];
   let _allowed=(staff.role==='owner')?_allm.slice():((Array.isArray(staff.menu_perms)&&staff.menu_perms.length)?staff.menu_perms.slice():roleMenus(staff.role));
   if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings'&&k!=='audit'&&k!=='subscription');
   try{ const {data:pa}=await db.from('platform_admins').select('id,role').eq('id',user.id).maybeSingle(); state.isPlatformAdmin=!!pa; state.platformMaster=!!(pa&&(pa.role||'master')==='master'); }catch(e){ state.isPlatformAdmin=false; state.platformMaster=false; }
@@ -423,7 +425,7 @@ async function boot(){
   if(state.platformMaster){ refreshLeadBadges(); if(!window._bdgTimer) window._bdgTimer=setInterval(refreshLeadBadges,60000); }
   if(state.isPlatformAdmin){ populateHospSwitch(); }
   el('login').style.display='none';el('app').style.display='block';
-  await loadPatients();navTo('dashboard');setTimeout(()=>logAudit('로그인'),800);
+  await loadPatients();navTo(state.platformMaster?'plathome':'dashboard');setTimeout(()=>logAudit('로그인'),800);
   checkSubscription();
   startSingleSession(user.id);
 }
@@ -485,7 +487,7 @@ function agencyCsv(){
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),guidereq:renderGuideRequests,partnerapp:renderPartnerApps,partnermgmt:renderPartnerMgmt,campaigns:renderCampaigns,tasks:renderTasks,files:renderFiles}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),guidereq:renderGuideRequests,partnerapp:renderPartnerApps,partnermgmt:renderPartnerMgmt,campaigns:renderCampaigns,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
 
 /* ============ 구독 · 이용권 ============ */
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
@@ -1098,6 +1100,113 @@ async function cpMetricSave(pid,cid){
   if(error){alert('저장 실패: '+error.message);return;}
   logAudit('캠페인 지표 입력',pid+' · '+row.metric_date);
   closeModal();renderCampaignDetail(cid);
+}
+
+/* ============ 병원용 마케팅 리포트 (읽기 전용 · 파트너 개인정보 미노출) ============ */
+async function renderMarketing(){
+  const m=el('main');
+  m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const hid=state.hospital_id;
+  const {data:cps,error}=await db.from('campaigns').select('*').eq('hospital_id',hid).order('created_at',{ascending:false});
+  if(error){ m.innerHTML='<div class="page-head"><div><h2>마케팅 리포트</h2></div></div><div class="muted" style="padding:20px;color:var(--danger)">불러오기 실패: '+esc(error.message)+'</div>'; return; }
+  if(!(cps||[]).length){
+    m.innerHTML='<div class="page-head"><div><h2>마케팅 리포트</h2><div class="sub">왕홍 캠페인 성과 리포트</div></div></div>'
+      +'<div class="panel"><div class="pb" style="padding:36px 20px;text-align:center;color:var(--muted)">아직 진행 중인 마케팅 캠페인이 없습니다.<br style="margin-bottom:6px">왕홍 마케팅 프로그램이 궁금하시면 팔로우코리아 담당자에게 문의해주세요.</div></div>';
+    return;
+  }
+  const cids=cps.map(function(c){return c.id;});
+  const {data:posts}=await db.from('campaign_posts').select('id,campaign_id,platform,title,url,posted_on').in('campaign_id',cids);
+  const pids=(posts||[]).map(function(p){return p.id;});
+  let ms=[];
+  if(pids.length){ ms=((await db.from('campaign_metrics').select('post_id,metric_date,views,likes,comments,saves').in('post_id',pids).order('metric_date')).data)||[]; }
+  const latest={}; ms.forEach(function(x){latest[x.post_id]=x;});
+  const funnels={};
+  await Promise.all(cps.map(async function(c){ try{ const r=await db.rpc('campaign_funnel',{p_campaign:c.id}); funnels[c.id]=r.data||null; }catch(e){} }));
+  const secs=cps.map(function(c){
+    const cposts=(posts||[]).filter(function(p){return p.campaign_id===c.id;});
+    const tot={views:0,likes:0,comments:0,saves:0};
+    cposts.forEach(function(p){var l=latest[p.id];if(l){tot.views+=Number(l.views)||0;tot.likes+=l.likes||0;tot.comments+=l.comments||0;tot.saves+=l.saves||0;}});
+    const f=funnels[c.id]||{total:0,confirmed:0,visited:0,treated:0};
+    const funnel='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
+      +[['상담 문의',f.total],['예약 확정',f.confirmed],['내원',f.visited],['시술 진행',f.treated]].map(function(x){
+        return '<div style="flex:1;min-width:100px;background:#f4f7fc;border-radius:10px;padding:10px 12px;text-align:center"><div style="font-size:19px;font-weight:800;color:var(--brand,#1F3864)">'+fmtN(x[1])+'</div><div style="font-size:11px;color:var(--muted)">'+x[0]+'</div></div>';
+      }).join('')+'</div>';
+    // 주차별 조회수 추이 (지표 기준일별 합산, 최근 8개)
+    const byDate={};
+    ms.forEach(function(x){ if(cposts.some(function(p){return p.id===x.post_id;})){ byDate[x.metric_date]=(byDate[x.metric_date]||0)+(Number(x.views)||0); } });
+    const dates=Object.keys(byDate).sort().slice(-8);
+    const maxV=Math.max.apply(null,dates.map(function(d){return byDate[d];}).concat([1]));
+    const trend=dates.length?'<div style="margin-top:12px">'+dates.map(function(d){
+      const w=Math.max(3,Math.round(byDate[d]/maxV*100));
+      return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11.5px"><span style="width:72px;color:var(--muted);white-space:nowrap">'+d.slice(5)+'</span><div style="height:9px;border-radius:5px;background:var(--brand,#1F3864);opacity:.85;width:'+w+'%"></div><span style="color:var(--muted)">'+fmtN(byDate[d])+'</span></div>';
+    }).join('')+'<div class="cny">기준일별 누적 조회수</div></div>':'';
+    const prow=cposts.length?cposts.map(function(p){
+      const l=latest[p.id];
+      return '<tr><td>'+(CP_PLAT[p.platform]||p.platform)+'</td>'
+        +'<td>'+(p.url?'<a href="'+esc(p.url)+'" target="_blank" style="color:var(--brand,#1F3864)">'+esc(p.title||'게시물 보기')+'</a>':esc(p.title||'-'))+'</td>'
+        +'<td style="white-space:nowrap">'+(p.posted_on||'-')+'</td>'
+        +'<td style="font-size:12px;white-space:nowrap">'+(l?('조회 '+fmtN(l.views)+' · 좋아요 '+fmtN(l.likes)+' · 댓글 '+fmtN(l.comments)+' · 저장 '+fmtN(l.saves)+'<div class="cny">'+l.metric_date+' 기준</div>'):'<span class="muted">집계 전</span>')+'</td></tr>';
+    }).join(''):'<tr><td colspan="4" class="muted" style="text-align:center;padding:12px">게시물 준비 중입니다.</td></tr>';
+    return '<div class="panel"><div class="pb" style="padding:14px 16px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'
+      +'<div><b style="font-size:15px">'+esc(c.name)+'</b> <span class="tag" style="background:'+(CP_ST_COLOR[c.status]||'#64748b')+'1a;color:'+(CP_ST_COLOR[c.status]||'#64748b')+'">'+(CP_ST[c.status]||c.status)+'</span>'
+      +'<div class="cny">'+esc(c.program||'')+' · '+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+'</div></div>'
+      +'<div style="font-size:12px;color:var(--muted)">누적 조회 <b style="color:var(--brand,#1F3864)">'+fmtN(tot.views)+'</b> · 좋아요 '+fmtN(tot.likes)+' · 저장 '+fmtN(tot.saves)+'</div></div>'
+      +funnel+trend
+      +'<table style="margin-top:12px"><thead><tr><th>플랫폼</th><th>게시물</th><th>게시일</th><th>지표</th></tr></thead><tbody>'+prow+'</tbody></table>'
+      +'</div></div>';
+  }).join('');
+  m.innerHTML='<div class="page-head"><div><h2>마케팅 리포트</h2><div class="sub">왕홍 캠페인 성과 (팔로우코리아 제공 · 읽기 전용) · 캠페인 '+cps.length+'건</div></div><button class="btn ghost" onclick="renderMarketing()">새로고침</button></div>'
+    +secs
+    +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· 지표는 팔로우코리아가 주기적으로 집계한 스냅샷 기준이며, 플랫폼 사정에 따라 실제와 차이가 있을 수 있습니다.<br>· 상담 문의~시술 진행 퍼널은 팔로우코리아 파트너 채널을 통해 등록된 고객 기준입니다.</div></div>';
+}
+
+/* ============ 플랫폼 홈 (마스터 전용 랜딩) ============ */
+async function renderPlatHome(){
+  const m=el('main');
+  if(!state.platformMaster){ navTo('dashboard'); return; }
+  m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const [hr,pr,ar,dr,cr]=await Promise.all([
+    db.from('hospitals').select('id,status'),
+    db.from('partners').select('id,status,residence_country'),
+    db.from('partner_applications').select('id',{count:'exact',head:true}).eq('status','submitted'),
+    db.from('demo_requests').select('source').eq('status','new'),
+    db.from('campaigns').select('id,status')
+  ]);
+  const hosps=hr.data||[], parts=pr.data||[], newApps=ar.count||0, leads=dr.data||[], cps=cr.data||[];
+  const hAct=hosps.filter(function(h){return h.status==='active';}).length;
+  const pAct=parts.filter(function(p){return p.status==='active';}).length;
+  const pCn=parts.filter(function(p){return p.residence_country==='CN';}).length;
+  const cAct=cps.filter(function(c){return c.status==='active';}).length;
+  const newTotal=newApps+leads.length;
+  const stat=function(n,l,sub){return '<div style="flex:1;min-width:150px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px"><div style="font-size:26px;font-weight:800;color:var(--brand,#1F3864)">'+n+'</div><div style="font-size:13px;font-weight:700;margin-top:2px">'+l+'</div><div class="cny">'+sub+'</div></div>';};
+  const tile=function(view,title,desc,badge){return '<div onclick="navTo(\''+view+'\')" style="cursor:pointer;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;transition:box-shadow .15s" onmouseover="this.style.boxShadow=\'0 6px 18px rgba(31,56,100,.1)\'" onmouseout="this.style.boxShadow=\'none\'"><div style="font-weight:800;font-size:14.5px;color:var(--brand,#1F3864)">'+title+(badge?' <span class="nvb" style="display:inline-block">'+badge+'</span>':'')+'</div><div style="font-size:12px;color:var(--muted);margin-top:3px">'+desc+'</div></div>';};
+  const ext=function(url,title,desc){return '<a href="'+url+'" target="_blank" style="text-decoration:none;display:block;background:#f4f7fc;border:1px dashed var(--line);border-radius:14px;padding:16px 18px"><div style="font-weight:800;font-size:14.5px;color:var(--brand,#1F3864)">'+title+' ↗</div><div style="font-size:12px;color:var(--muted);margin-top:3px">'+desc+'</div></a>';};
+  m.innerHTML='<div class="page-head"><div><h2>플랫폼 홈</h2><div class="sub">팔로우코리아 마스터 콘솔 — 병원 · 파트너 · 캠페인 · 리드 전체 현황</div></div><button class="btn ghost" onclick="renderPlatHome()">새로고침</button></div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">'
+    +stat(hosps.length,'병원',hAct+'개 활성')
+    +stat(parts.length,'파트너',pAct+'명 정식 · 중국 거주 '+pCn+'명')
+    +stat(cAct+'/'+cps.length,'캠페인','진행중/전체')
+    +stat(newTotal,'신규 문의·지원',newApps+'건 파트너 지원 · '+leads.length+'건 리드')
+    +'</div>'
+    +'<div style="font-weight:800;font-size:13px;margin:6px 0 8px;color:#475569">운영 바로가기</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:16px">'
+    +tile('platform','병원 관리','플랜·상태·계정·한도·삭제')
+    +tile('partnerapp','파트너 지원 심사','신규 지원 승인 → 파트너 등록',newApps||'')
+    +tile('partnermgmt','파트너 관리','계약 · 서류 · 등급 · 지급경로')
+    +tile('campaigns','캠페인 관리','게시물 · 지표 · 전환 퍼널')
+    +tile('demoreq','데모 신청','강남펄스 랜딩 리드')
+    +tile('wanghongreq','왕홍병원 신청','메타광고 병원 리드')
+    +tile('guidereq','가이드 신청','통역 가이드 지원자')
+    +tile('audit','관리자 로그','전체 조작 이력')
+    +'</div>'
+    +'<div style="font-weight:800;font-size:13px;margin:6px 0 8px;color:#475569">외부 사이트</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">'
+    +ext('https://followkorea-wanghong.netlify.app/join/','파트너 지원폼','왕홍 · 가이드 · 통역 모집')
+    +ext('https://followkorea-wanghong.netlify.app/partner/','파트너 포털','파트너 일정 · 정산 조회')
+    +ext('https://followkorea-wanghong.netlify.app/','왕홍 병원 랜딩','프로그램 소개 (gnpulse.kr)')
+    +ext('https://followkorea.netlify.app/','펄스','예약 · 주간 정산 · 지급 실행')
+    +'</div>';
 }
 
 async function renderPlatform(){
@@ -2618,7 +2727,7 @@ function exportAuditCSV(){const rows=(state._audit||[]).map(l=>[new Date(l.creat
 
 /* ============ 직원 계정·권한 ============ */
 const ROLE_LABEL={owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'};
-const MENUS=[{k:'dashboard',label:'대시보드'},{k:'calendar',label:'예약 캘린더'},{k:'reception',label:'접수 현황'},{k:'patients',label:'환자 CRM'},{k:'quote',label:'상담·견적'},{k:'charts',label:'진료차트'},{k:'tasks',label:'할일'},{k:'files',label:'자료실'},{k:'billing',label:'수납·매출'},{k:'stats',label:'통계'},{k:'settlement',label:'에이전시 정산'},{k:'agencies',label:'에이전시 관리'},{k:'packages',label:'패키지 관리'},{k:'referrers',label:'왕홍·소개자'},{k:'refsettle',label:'소개자 정산'},{k:'staff',label:'직원 관리'},{k:'settings',label:'병원 설정'},{k:'audit',label:'관리자 로그'}];
+const MENUS=[{k:'dashboard',label:'대시보드'},{k:'calendar',label:'예약 캘린더'},{k:'reception',label:'접수 현황'},{k:'patients',label:'환자 CRM'},{k:'quote',label:'상담·견적'},{k:'charts',label:'진료차트'},{k:'tasks',label:'할일'},{k:'files',label:'자료실'},{k:'billing',label:'수납·매출'},{k:'stats',label:'통계'},{k:'marketing',label:'마케팅 리포트'},{k:'settlement',label:'에이전시 정산'},{k:'agencies',label:'에이전시 관리'},{k:'packages',label:'패키지 관리'},{k:'referrers',label:'왕홍·소개자'},{k:'refsettle',label:'소개자 정산'},{k:'staff',label:'직원 관리'},{k:'settings',label:'병원 설정'},{k:'audit',label:'관리자 로그'}];
 const ROLE_DESC='원장: 모든 메뉴·병원설정·직원관리 접근(전권). 매니저: 직원관리·병원설정 제외 전체 접근·편집(정산·통계 포함). 데스크: 접수·예약·환자·상담견적·진료차트·수납 등 일선 업무. 열람: 조회 전용(데이터 편집 불가).';
 function roleMenus(role){const all=MENUS.map(x=>x.k);if(role==='owner')return all;const noAdmin=all.filter(k=>k!=='staff'&&k!=='settings');if(role==='desk')return ['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing'];if(role==='viewer')return ['dashboard','stats','patients','billing'];return noAdmin;}
 function menuCheckboxes(sel){return MENUS.filter(x=>x.k!=='staff'&&x.k!=='settings'&&x.k!=='audit').map(x=>`<label style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:5px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px"><input type="checkbox" value="${x.k}" ${sel.includes(x.k)?'checked':''}> ${x.label}</label>`).join('');}
