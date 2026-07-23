@@ -218,7 +218,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.7.1 · 2026-07-23';
+const APP_VERSION='v1.7.2 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -422,7 +422,7 @@ async function boot(){
   document.querySelectorAll('#nav a').forEach(a=>{a.style.display=_allowed.includes(a.dataset.view)?'':'none';});
   if(staff.role!=='owner')document.querySelectorAll('.nav .grp.owner-only').forEach(e=>e.style.display='none');
   document.querySelectorAll('.platform-only').forEach(a=>{a.style.display=state.platformMaster?'':'none';});
-  if(state.platformMaster){ var bb=el('brandBox'); if(bb){ bb.innerHTML='<img src="/img/followkorea-logo.png" alt="Follow Korea" style="height:22px;display:block">'; bb.onclick=function(){navTo('plathome');}; bb.title='플랫폼 홈으로'; } }
+  if(state.platformMaster){ var bb=el('brandBox'); if(bb){ bb.innerHTML='<span style="display:inline-flex;align-items:baseline;gap:2px;font-weight:800;letter-spacing:.02em"><span style="color:#5a82c2">FOLLOW</span><span style="color:#fff">KOREA</span></span><small style="margin-left:6px">플랫폼</small>'; bb.onclick=function(){navTo('plathome');}; bb.title='플랫폼 홈으로'; } }
   if(state.platformMaster){ refreshLeadBadges(); if(!window._bdgTimer) window._bdgTimer=setInterval(refreshLeadBadges,60000); }
   if(state.isPlatformAdmin){ populateHospSwitch(); }
   el('login').style.display='none';el('app').style.display='block';
