@@ -218,7 +218,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.8.0 · 2026-07-23';
+const APP_VERSION='v1.8.1 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -1492,13 +1492,39 @@ async function renderDashboard(){
      }</tbody></table>`:'<div class="empty">견적이 없습니다.</div>'}</div></div>`;
 }
 
-/* ===== 재방문 안내 ===== */
-async function revisitMsg(pid){
+/* ===== 케어 연속성: 구조화된 케어 가이드 (Conivo식 — 진료 후 케어→재방문 유도) ===== */
+function CARE_GUIDES(hosp,nm){
+  const hi='【'+hosp+'】\n您好'+(nm?('，'+nm):'')+'！';
+  return [
+    { key:'aftercare', label:'시술 후 케어 안내', desc:'시술 직후 · 주의사항 중심',
+      msg:hi+'\n感谢您的到院。为了让效果更稳定，请注意以下术后护理：\n① 术后3天内避免高温桑拿、剧烈运动及饮酒\n② 注意防晒与保湿，按医嘱使用护理产品\n③ 如有红肿、异常不适，请及时与我们联系\n我们会持续关注您的恢复，祝您早日呈现理想效果！' },
+    { key:'maintain', label:'효과 유지·재방문 제안', desc:'효과 유지 시점 · 재방문 유도',
+      msg:hi+'\n距离您上次到院已有一段时间。为维持并提升效果，现在是进行复诊或补充护理的理想时机。\n我们可根据您目前的状态提供个性化护理方案。\n如需预约，请随时与我们联系，期待您的再次光临！' },
+    { key:'reminder', label:'정기 관리 리마인드', desc:'오래된 고객 · 재활성화',
+      msg:hi+'\n好久不见，我们一直记得您。\n为帮助您长期保持理想状态，我们为老客户准备了专属复诊与护理建议。\n如您近期有护理计划，欢迎随时咨询，我们很乐意为您安排。' },
+  ];
+}
+function revisitMsg(pid){
   const p=(state.patients||[]).find(x=>x.id===pid);if(!p){alert('환자 정보를 찾을 수 없습니다.');return;}
   const nm=p.name||'',hosp=state.hospital_name||'';
-  var msg='【'+hosp+'】\n您好'+(nm?('，'+nm):'')+'！\n距离您上次到院已过一段时间，为维持效果，建议您进行复诊或补充护理。\n如需预约或咨询，请随时与我们联系，期待您的再次光临。';
+  const guides=CARE_GUIDES(hosp,nm);
+  const cards=guides.map(function(g,i){
+    return '<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b style="font-size:14px">'+g.label+'</b> <span class="cny">'+g.desc+'</span></div>'
+      +'<button class="btn sm wechat" onclick="careGuideCopy('+i+',\''+pid+'\')">복사</button></div>'
+      +'<div style="white-space:pre-wrap;font-size:12.5px;color:#475569;margin-top:8px;background:#f8fafc;border-radius:8px;padding:10px;line-height:1.6">'+esc(g.msg)+'</div></div>';
+  }).join('');
+  state._careGuides={pid:pid,list:guides};
+  openModal('<div class="mh">케어 가이드 — '+esc(nm)+'<span onclick="closeModal()">✕</span></div><div class="mb">'
+    +'<div class="cny" style="margin-bottom:10px">상황에 맞는 케어 가이드(중문)를 복사해 위챗으로 전송하세요. 전송 후 <b>발송 기록</b>을 눌러주세요.</div>'
+    +cards+'</div>'
+    +'<div class="mf"><button class="btn ghost" onclick="closeModal()">닫기</button></div>',true);
+}
+async function careGuideCopy(idx,pid){
+  const cg=state._careGuides; if(!cg||cg.pid!==pid)return;
+  const msg=cg.list[idx].msg;
   var ok=false;try{await navigator.clipboard.writeText(msg);ok=true;}catch(e){try{var ta=document.createElement('textarea');ta.value=msg;document.body.appendChild(ta);ta.select();ok=document.execCommand('copy');document.body.removeChild(ta);}catch(_){}}
-  alert(ok?'재방문 안내(중문)가 복사되었습니다.\n위챗 대화창에 붙여넣기(Ctrl+V) 후 전송하세요.\n\n전송하셨으면 "발송 기록"을 눌러주세요.':'복사 실패. 아래 내용을 직접 복사하세요:\n\n'+msg);
+  alert(ok?'케어 가이드(중문)가 복사되었습니다.\n위챗 대화창에 붙여넣기(Ctrl+V) 후 전송하세요.\n\n전송하셨으면 목록의 "발송 기록"을 눌러주세요.':'복사 실패:\n\n'+msg);
 }
 async function logRevisit(pid,refDate){
   const {error}=await db.from('revisit_logs').insert({hospital_id:state.hospital_id,patient_id:pid,ref_order_date:refDate||null,channel:'wechat',sent_by:(state.staff||{}).id,sent_by_name:(state.staff||{}).name});
