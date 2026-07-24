@@ -219,7 +219,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.9.2 · 2026-07-23';
+const APP_VERSION='v1.9.3 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -1302,6 +1302,10 @@ async function cpMetricSave(pid,cid){
 
 /* ============ 콜보드 (대리운전식 통역·가이드 배차 · 하이브리드) ============ */
 const DJ_TYPE={interpret:'통역',guide:'가이드',accompany:'동행',other:'기타'};
+const DJ_LANGS=['중국어','영어','일본어','베트남어','러시아어','태국어','몽골어','아랍어','인도네시아어','스페인어'];
+const DJ_DUR=[['1','1시간'],['2','2시간'],['3','3시간'],['4','반나절 (4시간)'],['6','6시간'],['8','하루 (8시간)']];
+let _djType='interpret';
+function djSetType(btn){ _djType=btn.getAttribute('data-v'); document.querySelectorAll('#dj_type_seg .djseg').forEach(function(b){ b.style.background=b===btn?'var(--brand,#1F3864)':'#fff'; b.style.color=b===btn?'#fff':'var(--ink,#1e293b)'; b.style.borderColor=b===btn?'var(--brand,#1F3864)':'var(--line)'; }); }
 const DJ_ST={open:'모집중',assigned:'배정완료',done:'완료',cancelled:'취소'};
 const DJ_ST_COLOR={open:'#b45309',assigned:'#0f766e',done:'#64748b',cancelled:'#dc2626'};
 async function djLoadRefs(){
@@ -1344,17 +1348,22 @@ function djModal(id){
   const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
   const fld=function(label,inner){ return '<div class="field"><label>'+label+'</label>'+inner+'</div>'; };
   const hopt='<option value="">(외부·지역 동행)</option>'+state._djHosps.map(function(h){return '<option value="'+h.id+'"'+(j&&j.hospital_id===h.id?' selected':'')+'>'+esc(h.name)+'</option>';}).join('');
-  const topt=Object.keys(DJ_TYPE).map(function(k){return '<option value="'+k+'"'+(j&&j.job_type===k?' selected':(!j&&k==='interpret'?' selected':''))+'>'+DJ_TYPE[k]+'</option>';}).join('');
+  const curtype=j?j.job_type:'interpret'; _djType=curtype;
+  const seg=Object.keys(DJ_TYPE).map(function(k){var on=(k===curtype);return '<button type="button" class="djseg" data-v="'+k+'" onclick="djSetType(this)" style="flex:1;min-width:66px;padding:9px 6px;border:1px solid '+(on?'var(--brand,#1F3864)':'var(--line)')+';border-radius:9px;background:'+(on?'var(--brand,#1F3864)':'#fff')+';color:'+(on?'#fff':'inherit')+';font-weight:700;cursor:pointer">'+DJ_TYPE[k]+'</button>';}).join('');
+  const curlang=(j&&j.language)?j.language:'중국어';
+  const langopt=DJ_LANGS.map(function(l){return '<option'+(l===curlang?' selected':'')+'>'+l+'</option>';}).join('');
+  const curdur=(j&&j.duration_hours!=null)?String(j.duration_hours):'';
+  const duropt='<option value="">선택</option>'+DJ_DUR.map(function(d){return '<option value="'+d[0]+'"'+(d[0]===curdur?' selected':'')+'>'+d[1]+'</option>';}).join('');
   openModal('<div class="mh">'+(j?'콜 수정':'＋ 새 콜')+'<span onclick="closeModal()">✕</span></div><div class="mb">'
     +fld('제목','<input id="dj_title" '+inp+' value="'+esc(j?j.title:'')+'" placeholder="예: 글로비 중국환자 시술 통역">')
+    +'<div class="field"><label>유형</label><div id="dj_type_seg" style="display:flex;gap:6px;flex-wrap:wrap">'+seg+'</div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +fld('유형','<select id="dj_type" '+inp+'>'+topt+'</select>')
     +fld('병원 (외부면 비움)','<select id="dj_hosp" '+inp+'>'+hopt+'</select>')
     +fld('날짜','<input type="date" id="dj_date" '+inp+' value="'+(j&&j.job_date||'')+'">')
     +fld('시작 시간','<input id="dj_time" '+inp+' value="'+esc(j&&j.start_time||'')+'" placeholder="14:00">')
-    +fld('언어','<input id="dj_lang" '+inp+' value="'+esc(j&&j.language||'중국어')+'">')
+    +fld('언어','<select id="dj_lang" '+inp+'>'+langopt+'</select>')
     +fld('집결지/지역','<input id="dj_loc" '+inp+' value="'+esc(j&&j.location||'')+'" placeholder="예: 강남역 / 병원 로비">')
-    +fld('예상 소요(시간)','<input type="number" id="dj_dur" '+inp+' min="0" step="0.5" value="'+(j&&j.duration_hours!=null?j.duration_hours:'')+'">')
+    +fld('예상 소요','<select id="dj_dur" '+inp+'>'+duropt+'</select>')
     +fld('보수 (원)','<input type="number" id="dj_fee" '+inp+' min="0" value="'+(j&&j.fee!=null?j.fee:'')+'" placeholder="예: 100000">')
     +'</div>'
     +fld('메모','<textarea id="dj_memo" rows="2" '+inp+'>'+esc(j&&j.memo||'')+'</textarea>')
@@ -1366,8 +1375,8 @@ async function djSave(id){
   const title=el('dj_title').value.trim(), date=el('dj_date').value;
   if(!title){alert('제목을 입력하세요.');return;}
   if(!date){alert('날짜를 선택하세요.');return;}
-  const row={title:title,job_type:el('dj_type').value,hospital_id:el('dj_hosp').value||null,
-    job_date:date,start_time:el('dj_time').value.trim()||null,language:el('dj_lang').value.trim()||null,
+  const row={title:title,job_type:_djType||'interpret',hospital_id:el('dj_hosp').value||null,
+    job_date:date,start_time:el('dj_time').value.trim()||null,language:el('dj_lang').value||null,
     location:el('dj_loc').value.trim()||null,duration_hours:el('dj_dur').value?Number(el('dj_dur').value):null,
     fee:Number(el('dj_fee').value)||0,memo:el('dj_memo').value.trim()||null,updated_at:new Date().toISOString()};
   let error;
@@ -3214,6 +3223,7 @@ let _stf={};try{const _sr=await db.from('staff_accounts').select('id,name');((_s
      <div class="grid2"><div class="field"><label>전화</label><input id="h_phone" value="${esc(c.phone||'')}"></div>
        <div class="field"><label>이메일</label><input id="h_email" value="${esc(c.email||'')}"></div></div>
      <div class="field"><label>주소</label><input id="h_addr" value="${esc(c.address||'')}"></div>
+     <div class="field" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label>구글맵 연동 <span class="muted" style="font-weight:400;font-size:12px">(병원 위치 · 환자 안내용)</span></label><input id="h_map" value="${esc(c.map_query||c.address||'')}" placeholder="병원명 또는 주소 (예: 강남스마트신경과의원)" oninput="hsMapPrev()"><div class="muted" style="font-size:12px;margin-top:4px">병원명이나 주소를 입력하면 아래 지도에 표시됩니다. 환자 안내·보고서에 활용됩니다. <a id="h_map_link" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.map_query||c.address||'')}" target="_blank" style="color:var(--brand,#1F3864)">구글맵에서 열기 ↗</a></div><div id="h_map_prev" style="margin-top:8px">${(c.map_query||c.address||'').trim()?`<iframe src="https://maps.google.com/maps?q=${encodeURIComponent(c.map_query||c.address||'')}&output=embed" width="100%" height="220" style="border:0;border-radius:10px" loading="lazy"></iframe>`:'<div class="muted" style="font-size:12px">검색어를 입력하면 지도가 표시됩니다.</div>'}</div></div>
 <div class="grid2" style="margin-top:6px">
 <div class="field"><label>병원 로고 이미지</label><input type="file" id="h_logo_file" accept="image/*" onchange="hsImg('h_logo_file','h_logo_data','h_logo_prev')" style="font-size:12px"><input type="hidden" id="h_logo_data" value="${(c.logo||'')}"><div style="margin-top:6px"><img id="h_logo_prev" src="${(c.logo||'')}" onerror="this.style.display='none'" style="max-height:60px;max-width:180px;${c.logo?'':'display:none'}"></div></div>
 <div class="field"><label>도장(직인) 이미지</label><input type="file" id="h_seal_file" accept="image/*" onchange="hsImg('h_seal_file','h_seal_data','h_seal_prev')" style="font-size:12px"><input type="hidden" id="h_seal_data" value="${(c.seal||'')}"><div style="margin-top:6px"><img id="h_seal_prev" src="${(c.seal||'')}" onerror="this.style.display='none'" style="max-height:70px;max-width:120px;${c.seal?'':'display:none'}"></div></div>
@@ -3228,6 +3238,7 @@ let _stf={};try{const _sr=await db.from('staff_accounts').select('id,name');((_s
      ${state.platformMaster?('<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>국가별 접속 제한 (플랫폼 관리자)</label><label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer"><input type="checkbox" id="geo_enabled" '+(_geo.enabled?'checked':'')+' style="width:auto"> 국가 차단 사용 (끄면 전 세계 허용)</label><div style="font-size:12px;color:#6b7280;margin-top:4px">허용 국가 코드 (쉼표 구분, 예: KR,CN,US)</div><input id="geo_allowed" value="'+((_geo.allowed_countries||['KR']).join(','))+'" placeholder="KR"><div class="muted" style="font-size:11px;margin-top:4px">한국(KR)은 항상 허용 · 저장 후 Netlify 반영 1~2분</div><button class="btn" style="margin-top:8px" onclick="saveGeoConfig()">국가 설정 저장</button></div>'):''}<div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>등록 기기 관리 ${state.isPlatformAdmin?'(전체 직원)':'(내 기기)'}</label><div style="font-size:12px;color:#6b7280;margin-bottom:8px">이 기기에서 로그인한 뒤 아래 <b>'＋ 이 기기 등록'</b>을 누르면 등록됩니다. 등급별 허용 대수 — 기본 1대 · 고급 3대 · 프리미엄 무제한.</div>${_thisDevHtml}${deviceListHtml(_devs,_stf)}</div><div class="field" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px"><label>플랫폼 연동 (글로벌·중국)</label><div style="font-size:12px;color:#6b7280;margin-bottom:6px">플랫폼 병원포털 계정을 등록하면 "플랫폼 문의" 메뉴로 견적문의가 들어옵니다.</div><div class="grid2"><div class="field"><label>플랫폼 병원 ID</label><input id="h_plat_id" value="${esc(c.plat_id||'')}"></div><div class="field"><label>플랫폼 비밀번호</label><input id="h_plat_pw" type="password" value="${esc(c.plat_pw||'')}"></div></div></div><div style="margin-top:10px"><button class="btn" onclick="saveSettings()">저장</button></div>
    </div></div>`;
 }
+function hsMapPrev(){var i=el('h_map');if(!i)return;var q=(i.value||'').trim();var f=el('h_map_prev');var lk=el('h_map_link');if(lk)lk.href='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(q);if(!f)return;if(!q){f.innerHTML='<div class="muted" style="font-size:12px">검색어를 입력하면 지도가 표시됩니다.</div>';return;}f.innerHTML='<iframe src="https://maps.google.com/maps?q='+encodeURIComponent(q)+'&output=embed" width="100%" height="220" style="border:0;border-radius:10px" loading="lazy"></iframe>';}
 function hsImg(inputId,dataId,prevId){var f=document.getElementById(inputId);var file=f&&f.files&&f.files[0];if(!file)return;if(file.size>1500000)alert('이미지가 큽니다(1.5MB 이하 권장). 저장은 되지만 느릴 수 있어요.');var rd=new FileReader();rd.onload=function(){var d=rd.result;var dh=document.getElementById(dataId);if(dh)dh.value=d;var pv=document.getElementById(prevId);if(pv){pv.src=d;pv.style.display='';}};rd.readAsDataURL(file);}
 function deviceListHtml(devs,stf){if(!devs||!devs.length)return '<div class="muted" style="font-size:12px">등록된 기기가 없습니다.</div>';return devs.map(function(d){var meta=((state.isPlatformAdmin&&stf&&stf[d.staff_id])?(esc(stf[d.staff_id])+' · '):'')+(d.last_seen?new Date(d.last_seen).toLocaleDateString('ko-KR'):'');return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)"><input id="dev_'+d.id+'" value="'+esc(d.device_label||'')+'" style="flex:1;min-width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px"><span style="font-size:11px;color:#94a3b8;white-space:nowrap">'+meta+'</span><button class="btn sm ghost dev-rename" data-id="'+d.id+'">이름저장</button><button class="btn sm ghost dev-del" data-id="'+d.id+'" style="color:var(--danger)">삭제</button></div>';}).join('');}
 document.addEventListener('click',function(e){if(!e.target||!e.target.closest)return;var rn=e.target.closest('.dev-rename');if(rn){renameDevice(rn.getAttribute('data-id'));return;}var dl=e.target.closest('.dev-del');if(dl){deleteDevice(dl.getAttribute('data-id'));return;}});
@@ -3236,7 +3247,7 @@ async function deleteDevice(id){if(!confirm('이 기기를 삭제할까요? (해
 async function saveGeoConfig(){var en=el('geo_enabled')?el('geo_enabled').checked:true;var arr=((el('geo_allowed')||{}).value||'').split(',').map(function(x){return x.trim().toUpperCase();}).filter(Boolean);if(arr.indexOf('KR')<0)arr.unshift('KR');const {error}=await db.from('geo_config').update({enabled:en,allowed_countries:arr,updated_at:new Date().toISOString()}).eq('id',1);if(error){alert('저장 실패: '+error.message);return;}try{logAudit('국가 접속제한 변경',{enabled:en,allowed:arr});}catch(e){}alert('저장되었습니다. Netlify 반영까지 1~2분 걸립니다.');}
 async function saveSettings(){
   const name=el('h_name').value.trim();if(!name){alert('병원명을 입력하세요');return;}
-  const contact={ceo:el('h_ceo').value||'',phone:el('h_phone').value||'',email:el('h_email').value||'',address:el('h_addr').value||'',logo:(el('h_logo_data')&&el('h_logo_data').value)||'',seal:(el('h_seal_data')&&el('h_seal_data').value)||'',plat_id:(el('h_plat_id')?el('h_plat_id').value||'':''),plat_pw:(el('h_plat_pw')?el('h_plat_pw').value||'':''),recall_days:(el('h_recall')?(parseInt(el('h_recall').value,10)||0):90)};
+  const contact={ceo:el('h_ceo').value||'',phone:el('h_phone').value||'',email:el('h_email').value||'',address:el('h_addr').value||'',logo:(el('h_logo_data')&&el('h_logo_data').value)||'',seal:(el('h_seal_data')&&el('h_seal_data').value)||'',plat_id:(el('h_plat_id')?el('h_plat_id').value||'':''),plat_pw:(el('h_plat_pw')?el('h_plat_pw').value||'':''),recall_days:(el('h_recall')?(parseInt(el('h_recall').value,10)||0):90),map_query:(el('h_map')?el('h_map').value.trim():'')};
   const {error}=await db.from('hospitals').update({name,biz_no:el('h_biz').value||null,contact,updated_at:new Date().toISOString()}).eq('id',state.hospital_id);
   if(error){alert('저장 실패: '+error.message);return;}
   const kk=(el('h_kakao').value||'').trim();if(kk)localStorage.setItem('kakao_js_key',kk);else localStorage.removeItem('kakao_js_key');
