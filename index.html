@@ -219,7 +219,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.9.1 · 2026-07-23';
+const APP_VERSION='v1.9.2 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -942,18 +942,25 @@ const CP_PROG=['왕홍1 (500만/1개월)','왕홍22 (1,000만/1개월)','왕홍3
 const CP_GOAL={leads:'상담 문의 건수',treatments:'시술 완료 건수',views:'총 조회수',revenue:'매출 (원)',custom:'직접 입력'};
 const CP_GOAL_UNIT={leads:'건',treatments:'건',views:'회',revenue:'원',custom:''};
 const CP_GOAL_AUTO={leads:1,treatments:1,views:1}; // 자동 집계 지표
-function cpAchieveCalc(c,leadsTotal,treated,viewsTotal){
-  if(!c.goal_metric||c.goal_value==null)return null;
-  const gv=Number(c.goal_value)||0;
+function cpAchieveCalc(g,leadsTotal,treated,viewsTotal){
+  if(!g||!g.metric||g.value==null)return null;
+  const gv=Number(g.value)||0;
   let actual,auto=true;
-  if(c.goal_metric==='leads')actual=leadsTotal;
-  else if(c.goal_metric==='treatments')actual=treated;
-  else if(c.goal_metric==='views')actual=viewsTotal;
-  else {actual=Number(c.goal_actual)||0;auto=false;}
+  if(g.metric==='leads')actual=leadsTotal;
+  else if(g.metric==='treatments')actual=treated;
+  else if(g.metric==='views')actual=viewsTotal;
+  else {actual=Number(g.actual)||0;auto=false;}
   const pct=gv?Math.round(actual/gv*100):0;
-  const unit=c.goal_metric==='custom'?(c.goal_unit||''):CP_GOAL_UNIT[c.goal_metric];
-  return {actual:actual,goal:gv,pct:pct,auto:auto,metric:c.goal_metric,unit:unit,label:CP_GOAL[c.goal_metric]};
+  const unit=g.metric==='custom'?(g.unit||''):CP_GOAL_UNIT[g.metric];
+  return {actual:actual,goal:gv,pct:pct,auto:auto,metric:g.metric,unit:unit,label:CP_GOAL[g.metric]};
 }
+// 캠페인의 모든 목표 달성 바 (배열)
+function cpAchieveBars(c,leadsTotal,treated,viewsTotal){
+  const goals=(c&&Array.isArray(c.goals))?c.goals:[];
+  if(!goals.length)return '';
+  return goals.map(function(g){var a=cpAchieveCalc(g,leadsTotal,treated,viewsTotal);return a?'<div style="margin-bottom:10px">'+cpAchieveBar(a)+'</div>':'';}).join('');
+}
+function cpHasManualGoal(c){ return ((c&&c.goals)||[]).some(function(g){return g.metric==='revenue'||g.metric==='custom';}); }
 function cpAchieveBar(a){
   if(!a)return '';
   const w=Math.min(100,Math.max(0,a.pct));
@@ -964,15 +971,26 @@ function cpAchieveBar(a){
 }
 function cpGoalActualModal(cid){
   const c=(state._cpCampaigns||[]).find(function(x){return x.id===cid;}); if(!c)return;
-  const label=CP_GOAL[c.goal_metric]||'실적';
+  const goals=(c.goals||[]);
+  const fields=goals.map(function(g,i){
+    if(g.metric!=='revenue'&&g.metric!=='custom')return '';
+    const label=(g.metric==='custom'?(g.unit||'직접입력'):CP_GOAL[g.metric]);
+    return '<div class="field"><label>'+esc(label)+' 실적 <span class="cny">(목표 '+fmtN(g.value)+')</span></label>'
+      +'<input type="number" class="cpga" data-idx="'+i+'" min="0" value="'+(g.actual!=null?g.actual:'')+'" style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"></div>';
+  }).join('');
   openModal('<div class="mh">실적 확인 입력<span onclick="closeModal()">✕</span></div><div class="mb">'
-    +'<div class="cny" style="margin-bottom:10px">'+esc(label)+' 실제 결과를 확인해 입력하세요. 목표 '+fmtN(c.goal_value)+(c.goal_metric==='custom'?(c.goal_unit||''):CP_GOAL_UNIT[c.goal_metric])+' 대비 달성률로 표시됩니다.</div>'
-    +'<div class="field"><label>'+esc(label)+' 실적</label><input type="number" id="cp_gactual" min="0" value="'+(c.goal_actual!=null?c.goal_actual:'')+'" style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"></div>'
+    +'<div class="cny" style="margin-bottom:10px">매출·직접입력 목표의 실제 결과를 확인해 입력하세요. 목표 대비 달성률로 표시됩니다.</div>'
+    +(fields||'<div class="muted" style="font-size:13px">수동 입력이 필요한 목표(매출·직접입력)가 없습니다.</div>')
     +'</div><div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="cpGoalActualSave(\''+cid+'\')">저장</button></div>',true);
 }
 async function cpGoalActualSave(cid){
-  const v=el('cp_gactual').value;
-  const {error}=await db.from('campaigns').update({goal_actual:v?Number(v):null,updated_at:new Date().toISOString()}).eq('id',cid);
+  const c=(state._cpCampaigns||[]).find(function(x){return x.id===cid;}); if(!c)return;
+  const goals=JSON.parse(JSON.stringify(c.goals||[]));
+  document.querySelectorAll('.cpga').forEach(function(inp){
+    const i=Number(inp.getAttribute('data-idx'));
+    if(goals[i])goals[i].actual=inp.value?Number(inp.value):null;
+  });
+  const {error}=await db.from('campaigns').update({goals:goals,updated_at:new Date().toISOString()}).eq('id',cid);
   if(error){alert('저장 실패: '+error.message);return;}
   logAudit('캠페인 실적 입력',cid);
   closeModal();renderCampaignDetail(cid);
@@ -1000,7 +1018,7 @@ async function renderCampaigns(){
   const rows=state._cpCampaigns.length?state._cpCampaigns.map(function(c){
     return '<tr style="cursor:pointer" onclick="renderCampaignDetail(\''+c.id+'\')">'
       +'<td><b>'+esc(c.name)+'</b></td>'
-      +'<td>'+esc(hmap[c.hospital_id]||'-')+'</td>'
+      +'<td>'+esc(hmap[c.hospital_id]||c.ext_hospital_name||'-')+(c.hospital_id?'':' <span class="tag" style="background:#f1f5f9;color:#64748b">미가입</span>')+'</td>'
       +'<td>'+esc(c.program||'-')+'</td>'
       +'<td style="white-space:nowrap">'+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+'</td>'
       +'<td>'+(c.executor==='yueji_jiangnan'?'悦集江南':'팔로우코리아')+'</td>'
@@ -1016,12 +1034,13 @@ function cpModal(id){
   const c=id?(state._cpCampaigns||[]).find(function(x){return x.id===id;}):null;
   const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
   const fld=function(label,inner){ return '<div class="field"><label>'+label+'</label>'+inner+'</div>'; };
-  const hopt=state._cpHosps.map(function(h){return '<option value="'+h.id+'"'+(c&&c.hospital_id===h.id?' selected':'')+'>'+esc(h.name)+'</option>';}).join('');
+  const hopt='<option value=""'+(c&&!c.hospital_id?' selected':'')+'>(미가입 병원 · 직접 입력)</option>'+state._cpHosps.map(function(h){return '<option value="'+h.id+'"'+(c&&c.hospital_id===h.id?' selected':'')+'>'+esc(h.name)+'</option>';}).join('');
   const popt=CP_PROG.map(function(p){return '<option'+(c&&c.program===p?' selected':'')+'>'+p+'</option>';}).join('');
   const sopt=Object.keys(CP_ST).map(function(k){return '<option value="'+k+'"'+(c&&c.status===k?' selected':'')+'>'+CP_ST[k]+'</option>';}).join('');
   const goalopt='<option value="">(목표 없음)</option>'+Object.keys(CP_GOAL).map(function(k){return '<option value="'+k+'"'+(c&&c.goal_metric===k?' selected':'')+'>'+CP_GOAL[k]+'</option>';}).join('');
   openModal('<div class="mh">'+(c?'캠페인 수정':'＋ 새 캠페인')+'<span onclick="closeModal()">✕</span></div><div class="mb">'
-    +fld('병원','<select id="cp_hosp" '+inp+'>'+hopt+'</select>')
+    +fld('병원 (가입)','<select id="cp_hosp" '+inp+' onchange="var e=el(\'cp_exthosp\');if(e)e.style.display=this.value?\'none\':\'block\'">'+hopt+'</select>')
+    +fld('미가입 병원명 (직접입력 시)','<input id="cp_exthosp" '+inp+' value="'+esc(c&&c.ext_hospital_name||'')+'" placeholder="예: 서울다운의원 (미가입)" style="display:'+(c&&c.hospital_id?'none':'block')+'">')
     +fld('캠페인명','<input id="cp_name" '+inp+' value="'+esc(c?c.name:'')+'" placeholder="예: 글로비 왕홍22 7월">')
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
     +fld('프로그램','<select id="cp_prog" '+inp+'>'+popt+'</select>')
@@ -1032,27 +1051,55 @@ function cpModal(id){
     +fld('종료일','<input type="date" id="cp_end" '+inp+' value="'+(c&&c.ends_on||'')+'">')
     +'</div>'
     +fld('상태','<select id="cp_status" '+inp+'>'+sopt+'</select>')
-    +'<div style="display:grid;grid-template-columns:1.4fr 1fr 0.9fr;gap:10px">'
-    +fld('목표 지표','<select id="cp_gmetric" '+inp+'>'+goalopt+'</select>')
-    +fld('목표값','<input type="number" id="cp_gvalue" '+inp+' min="0" value="'+(c&&c.goal_value!=null?c.goal_value:'')+'">')
-    +fld('단위(직접입력)','<input id="cp_gunit" '+inp+' value="'+esc(c&&c.goal_unit||'')+'" placeholder="재방문">')
-    +'</div>'
-    +'<div class="cny" style="margin:-6px 0 8px">상담문의·시술완료·조회수는 자동 집계됩니다. 매출·직접입력은 완료 후 상세에서 실적을 확인 입력합니다.</div>'
+    +'<div class="field"><label>목표 지표 <span class="cny">(여러 개 설정 가능)</span></label>'
+    +'<div id="cp_goals_box"></div>'
+    +'<button type="button" class="btn sm ghost" onclick="cpAddGoalRow()" style="margin-top:4px">＋ 목표 추가</button>'
+    +'<div class="cny" style="margin-top:6px">상담문의·시술완료·조회수는 자동 집계됩니다. 매출·직접입력은 완료 후 상세에서 실적을 확인 입력합니다.</div></div>'
     +fld('목표 설명 (선택)','<input id="cp_goal" '+inp+' value="'+esc(c&&c.goal||'')+'" placeholder="예: 7월 신규 리드 확보">')
     +fld('메모','<textarea id="cp_memo" rows="2" '+inp+'>'+esc(c&&c.memo||'')+'</textarea>')
     +'</div><div class="mf">'
     +(c?'<button class="btn ghost" style="color:#dc2626;border-color:#fecaca;margin-right:auto" onclick="cpDelete(\''+c.id+'\')">삭제</button>':'')
     +'<button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="cpSave(\''+(c?c.id:'')+'\')">저장</button></div>',true);
+  var gs=(c&&Array.isArray(c.goals)&&c.goals.length)?c.goals:[];
+  if(!gs.length){ cpAddGoalRow(); } else { gs.forEach(function(g){ cpAddGoalRow(g); }); }
+}
+function cpGoalRowHtml(g){
+  g=g||{};
+  const opt=Object.keys(CP_GOAL).map(function(k){return '<option value="'+k+'"'+(g.metric===k?' selected':'')+'>'+CP_GOAL[k]+'</option>';}).join('');
+  return '<div class="cpgoal-row" style="display:grid;grid-template-columns:1.4fr 1fr 0.9fr auto;gap:8px;margin-bottom:6px;align-items:center">'
+    +'<select class="cpg-metric" style="padding:8px;border:1px solid var(--line);border-radius:8px">'+opt+'</select>'
+    +'<input type="number" class="cpg-value" min="0" placeholder="목표값" value="'+(g.value!=null?g.value:'')+'" style="padding:8px;border:1px solid var(--line);border-radius:8px">'
+    +'<input class="cpg-unit" placeholder="단위" value="'+esc(g.unit||'')+'" style="padding:8px;border:1px solid var(--line);border-radius:8px">'
+    +'<button type="button" class="btn sm ghost" onclick="this.parentNode.remove()" title="삭제">✕</button>'
+    +'</div>';
+}
+function cpAddGoalRow(g){
+  const box=el('cp_goals_box'); if(!box)return;
+  box.insertAdjacentHTML('beforeend',cpGoalRowHtml(g));
+}
+function cpCollectGoals(){
+  const rows=document.querySelectorAll('#cp_goals_box .cpgoal-row');
+  const out=[];
+  rows.forEach(function(r){
+    const metric=r.querySelector('.cpg-metric').value;
+    const value=r.querySelector('.cpg-value').value;
+    if(!metric||value==='')return;
+    const o={metric:metric,value:Number(value)};
+    const unit=r.querySelector('.cpg-unit').value.trim();
+    if(metric==='custom'&&unit)o.unit=unit;
+    out.push(o);
+  });
+  return out;
 }
 async function cpSave(id){
   const name=el('cp_name').value.trim();
   if(!name){alert('캠페인명을 입력하세요.');return;}
-  const gm=el('cp_gmetric').value||null;
-  const row={hospital_id:el('cp_hosp').value,name:name,program:el('cp_prog').value,executor:el('cp_exec').value,
+  const hid=el('cp_hosp').value||null;
+  const row={hospital_id:hid,ext_hospital_name:(hid?null:(el('cp_exthosp').value.trim()||null)),
+    name:name,program:el('cp_prog').value,executor:el('cp_exec').value,
     status:el('cp_status').value,starts_on:el('cp_start').value||null,ends_on:el('cp_end').value||null,
     goal:el('cp_goal').value.trim()||null,memo:el('cp_memo').value.trim()||null,
-    goal_metric:gm,goal_value:el('cp_gvalue').value?Number(el('cp_gvalue').value):null,
-    goal_unit:(gm==='custom'?(el('cp_gunit').value.trim()||null):null),
+    goals:cpCollectGoals(),
     updated_at:new Date().toISOString()};
   let error, newId=id;
   if(id){ error=(await db.from('campaigns').update(row).eq('id',id)).error; }
@@ -1068,6 +1115,80 @@ async function cpDelete(id){
   if(error){alert('삭제 실패: '+error.message);return;}
   logAudit('캠페인 삭제',id);
   closeModal();renderCampaigns();
+}
+/* ===== 캠페인 완료 보고서 (가입=대시보드 자동 · 미가입=PDF 인쇄) ===== */
+async function cpReport(cid){
+  const {data:c}=await db.from('campaigns').select('*').eq('id',cid).single();
+  if(!c){alert('캠페인을 찾을 수 없습니다.');return;}
+  await cpLoadRefs();
+  const {data:posts}=await db.from('campaign_posts').select('*').eq('campaign_id',cid).order('posted_on');
+  const pids=(posts||[]).map(function(p){return p.id;});
+  let ms=[]; if(pids.length){ ms=((await db.from('campaign_metrics').select('*').in('post_id',pids).order('metric_date')).data)||[]; }
+  const latest={}; ms.forEach(function(x){latest[x.post_id]=x;});
+  let funnel={total:0,confirmed:0,visited:0,treated:0};
+  try{ const r=await db.rpc('campaign_funnel',{p_campaign:cid}); if(r.data)funnel=r.data; }catch(e){}
+  const tot={views:0,likes:0,comments:0,saves:0};
+  (posts||[]).forEach(function(p){var l=latest[p.id];if(l){tot.views+=Number(l.views)||0;tot.likes+=l.likes||0;tot.comments+=l.comments||0;tot.saves+=l.saves||0;}});
+  const hosp=(state._cpHosps.find(function(h){return h.id===c.hospital_id;})||{}).name||c.ext_hospital_name||'-';
+  const isMember=!!c.hospital_id;
+  const cvr=funnel.total?Math.round(funnel.treated/funnel.total*100):0;
+  // 목표 달성 바 (문자열)
+  const goalBars=cpAchieveBars(c,funnel.total,funnel.treated,tot.views);
+  // 퍼널 카드
+  const funCards=[['상담 문의',funnel.total],['예약 확정',funnel.confirmed],['내원',funnel.visited],['시술 진행',funnel.treated]].map(function(x){
+    return '<div class="fcard"><div class="fn">'+fmtN(x[1])+'</div><div class="fl">'+x[0]+'</div></div>';
+  }).join('');
+  // 게시물 표
+  const prows=(posts||[]).length?(posts||[]).map(function(p){
+    const l=latest[p.id]; const ct=p.content_type||'general';
+    return '<tr><td>'+(CP_PLAT[p.platform]||p.platform)+'</td><td>'+(CP_CTYPE[ct]||ct)+'</td><td>'+esc(p.title||'-')+'</td><td>'+(p.posted_on||'-')+'</td>'
+      +'<td style="text-align:right">'+(l?fmtN(l.views):'-')+'</td><td style="text-align:right">'+(l?fmtN(l.likes):'-')+'</td><td style="text-align:right">'+(l?fmtN(l.comments):'-')+'</td></tr>';
+  }).join(''):'<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:12px">게시물 데이터 없음</td></tr>';
+  const today=new Date().toISOString().slice(0,10);
+  const styles='<style>'
+    +'*{margin:0;padding:0;box-sizing:border-box}body{font-family:"Malgun Gothic",sans-serif;color:#1b2a4a;padding:32px 40px;font-size:13px;line-height:1.5}'
+    +'.rhead{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1b2a4a;padding-bottom:14px;margin-bottom:22px}'
+    +'.logo b{color:#5a82c2}.logo{font-size:22px;font-weight:800;letter-spacing:.02em}.logo span{color:#1b2a4a}'
+    +'.rtitle{font-size:15px;font-weight:700;color:#5a82c2;text-align:right}.rtitle small{display:block;color:#667085;font-weight:400;font-size:11px;margin-top:3px}'
+    +'h2{font-size:16px;margin:24px 0 10px;color:#1b2a4a;border-left:4px solid #5a82c2;padding-left:9px}'
+    +'.meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;background:#f4f7fc;border-radius:10px;padding:16px 20px}'
+    +'.meta div{font-size:12.5px}.meta b{color:#667085;font-weight:600;display:inline-block;min-width:78px}'
+    +'.fgrid{display:flex;gap:10px;margin-top:6px}.fcard{flex:1;background:#f4f7fc;border-radius:10px;padding:14px;text-align:center}'
+    +'.fn{font-size:22px;font-weight:800;color:#1b2a4a}.fl{font-size:11px;color:#667085;margin-top:2px}'
+    +'.kpi{display:flex;gap:10px;margin-top:6px}.kbox{flex:1;background:#fff;border:1px solid #e8eef7;border-radius:10px;padding:12px;text-align:center}'
+    +'.kbox .v{font-size:18px;font-weight:800;color:#5a82c2}.kbox .k{font-size:11px;color:#667085}'
+    +'table{width:100%;border-collapse:collapse;margin-top:6px;font-size:12px}th,td{border:1px solid #e8eef7;padding:7px 9px;text-align:left}th{background:#f4f7fc;font-weight:700}'
+    +'.gbarwrap{margin-bottom:10px}.gbrow{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}.gbtrack{height:11px;border-radius:6px;background:#eef2f7;overflow:hidden}.gbfill{height:100%}'
+    +'.foot{margin-top:30px;padding-top:14px;border-top:1px solid #e8eef7;font-size:11px;color:#94a3b8;line-height:1.7}'
+    +'.note{margin-top:16px;background:'+(isMember?'#f0fdf4;border:1px solid #bbf7d0':'#fff7ed;border:1px solid #fed7aa')+';border-radius:10px;padding:12px 16px;font-size:12px;color:'+(isMember?'#166534':'#9a3412')+'}'
+    +'.pbtn{position:fixed;top:16px;right:20px;background:#5a82c2;color:#fff;border:none;padding:10px 18px;border-radius:9px;font-weight:700;cursor:pointer;font-size:13px}'
+    +'@media print{.pbtn{display:none}body{padding:0}}'
+    +'</style>';
+  const goalSection=goalBars?('<h2>목표 달성률</h2>'+goalBars):'';
+  const html='<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>'+esc(c.name)+' 성과 보고서</title>'+styles+'</head><body>'
+    +'<button class="pbtn" onclick="window.print()">🖨 PDF로 저장 / 인쇄</button>'
+    +'<div class="rhead"><div class="logo"><b>FOLLOW</b> <span>KOREA</span></div><div class="rtitle">왕홍 마케팅 성과 보고서<small>발행일 '+today+'</small></div></div>'
+    +'<div class="meta">'
+    +'<div><b>병원</b> '+esc(hosp)+(isMember?'':' (미가입)')+'</div><div><b>캠페인</b> '+esc(c.name)+'</div>'
+    +'<div><b>프로그램</b> '+esc(c.program||'-')+'</div><div><b>집행 주체</b> '+(c.executor==='yueji_jiangnan'?'悦集江南(중국)':'팔로우코리아')+'</div>'
+    +'<div><b>운영 기간</b> '+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+'</div><div><b>상태</b> '+(CP_ST[c.status]||c.status)+'</div>'
+    +(c.goal?'<div style="grid-column:1/3"><b>목표</b> '+esc(c.goal)+'</div>':'')+'</div>'
+    +goalSection
+    +'<h2>노출 · 반응 지표</h2><div class="kpi">'
+    +'<div class="kbox"><div class="v">'+fmtN(tot.views)+'</div><div class="k">총 조회수</div></div>'
+    +'<div class="kbox"><div class="v">'+fmtN(tot.likes)+'</div><div class="k">좋아요</div></div>'
+    +'<div class="kbox"><div class="v">'+fmtN(tot.comments)+'</div><div class="k">댓글</div></div>'
+    +'<div class="kbox"><div class="v">'+fmtN(tot.saves)+'</div><div class="k">저장</div></div>'
+    +'<div class="kbox"><div class="v">'+(posts||[]).length+'</div><div class="k">게시물</div></div></div>'
+    +'<h2>환자 전환 퍼널 <span style="font-size:11px;color:#667085;font-weight:400">(문의→시술 전환율 '+cvr+'%)</span></h2><div class="fgrid">'+funCards+'</div>'
+    +'<h2>게시물별 성과</h2><table><thead><tr><th>플랫폼</th><th>유형</th><th>제목</th><th>게시일</th><th style="text-align:right">조회</th><th style="text-align:right">좋아요</th><th style="text-align:right">댓글</th></tr></thead><tbody>'+prows+'</tbody></table>'
+    +'<div class="note">'+(isMember?'✔ 이 보고서 내용은 병원 계정 <b>강남펄스 → 마케팅 리포트</b>에서 실시간으로도 확인하실 수 있습니다.':'※ 미가입 병원용 보고서입니다. <b>PDF로 저장</b>해 전달하세요. 강남펄스 도입 시 이 리포트를 실시간 대시보드로 제공받으실 수 있습니다.')+'</div>'
+    +'<div class="foot">주식회사 팔로우코리아 · 외국인환자 유치업 등록 제 A-2026-01-01-06622 호 · 서울 서초구 강남대로 373, 13층<br>본 보고서의 지표는 각 플랫폼에서 수집한 스냅샷 기준이며, 전환 퍼널은 팔로우코리아 파트너 채널을 통해 등록된 고객 기준입니다.</div>'
+    +'</body></html>';
+  const win=window.open('','_blank','width=920,height=1040');
+  if(!win){alert('팝업이 차단되었습니다. 팝업을 허용해 주세요.');return;}
+  win.document.open(); win.document.write(html); win.document.close();
+  try{logAudit('캠페인 보고서 생성',c.name);}catch(e){}
 }
 async function renderCampaignDetail(id){
   const m=el('main');
@@ -1119,9 +1240,9 @@ async function renderCampaignDetail(id){
     return '<div style="flex:1;min-width:120px;background:#f4f7fc;border-radius:10px;padding:10px 12px"><div style="font-size:11px;font-weight:800;color:'+CP_CTYPE_COLOR[k]+'">'+CP_CTYPE[k]+'</div><div style="font-size:16px;font-weight:800;margin-top:2px">'+byType[k].cnt+'<span style="font-size:11px;color:var(--muted);font-weight:400"> 건 · 조회 '+fmtN(byType[k].views)+'</span></div></div>';
   }).join('');
   const cvr=(bks||[]).length?Math.round(bc.treated/(bks||[]).length*100):0;
-  m.innerHTML='<div class="page-head"><div><h2>'+esc(c.name)+'</h2><div class="sub">'+esc(hmap[c.hospital_id]||'')+' · '+esc(c.program||'')+' · '+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+' · '+(c.executor==='yueji_jiangnan'?'悦集江南':'팔로우코리아')+' · <span style="color:'+(CP_ST_COLOR[c.status]||'#64748b')+';font-weight:700">'+(CP_ST[c.status]||c.status)+'</span>'+(c.goal?' · 목표: '+esc(c.goal):'')+'</div></div>'
-    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderCampaigns()">← 목록</button><button class="btn ghost" onclick="cpModal(\''+c.id+'\')">캠페인 수정</button></div></div>'
-    +(function(){var a=cpAchieveCalc(c,(bks||[]).length,bc.treated,tot.views);return a?('<div class="panel"><div class="pb" style="padding:14px 16px">'+cpAchieveBar(a)+(!a.auto?'<div style="margin-top:10px"><button class="btn sm ghost" onclick="cpGoalActualModal(\''+c.id+'\')">실적 확인 입력</button></div>':'')+'</div></div>'):'';})()
+  m.innerHTML='<div class="page-head"><div><h2>'+esc(c.name)+'</h2><div class="sub">'+esc(hmap[c.hospital_id]||c.ext_hospital_name||'')+(c.hospital_id?'':' (미가입)')+' · '+esc(c.program||'')+' · '+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+' · '+(c.executor==='yueji_jiangnan'?'悦集江南':'팔로우코리아')+' · <span style="color:'+(CP_ST_COLOR[c.status]||'#64748b')+';font-weight:700">'+(CP_ST[c.status]||c.status)+'</span>'+(c.goal?' · 목표: '+esc(c.goal):'')+'</div></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderCampaigns()">← 목록</button><button class="btn" onclick="cpReport(\''+c.id+'\')">병원 보고서</button><button class="btn ghost" onclick="cpModal(\''+c.id+'\')">캠페인 수정</button></div></div>'
+    +(function(){var bars=cpAchieveBars(c,(bks||[]).length,bc.treated,tot.views);return bars?('<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:10px">목표 달성률</div>'+bars+(cpHasManualGoal(c)?'<div style="margin-top:6px"><button class="btn sm ghost" onclick="cpGoalActualModal(\''+c.id+'\')">매출·직접입력 실적 확인</button></div>':'')+'</div></div>'):'';})()
     +'<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">전환 퍼널 <span class="cny">(파트너 고객등록 기준 · 문의→시술 전환율 '+cvr+'%)</span></div>'+funnel+'</div></div>'
     +(insight?'<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">마케팅 인사이트 <span class="cny">(콘텐츠 유형별)</span></div><div style="display:flex;gap:8px;flex-wrap:wrap">'+insight+'</div></div></div>':'')
     +'<div class="panel"><div class="pb"><div style="padding:12px 16px 0;font-weight:800;font-size:13px">게시물 · 지표 <span class="cny">누적: 조회 '+fmtN(tot.views)+' · 좋아요 '+fmtN(tot.likes)+' · 댓글 '+fmtN(tot.comments)+' · 저장 '+fmtN(tot.saves)+'</span></div>'
@@ -1394,7 +1515,7 @@ async function renderMarketing(){
       +'<div><b style="font-size:15px">'+esc(c.name)+'</b> <span class="tag" style="background:'+(CP_ST_COLOR[c.status]||'#64748b')+'1a;color:'+(CP_ST_COLOR[c.status]||'#64748b')+'">'+(CP_ST[c.status]||c.status)+'</span>'
       +'<div class="cny">'+esc(c.program||'')+' · '+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+'</div></div>'
       +'<div style="font-size:12px;color:var(--muted)">누적 조회 <b style="color:var(--brand,#1F3864)">'+fmtN(tot.views)+'</b> · 좋아요 '+fmtN(tot.likes)+' · 저장 '+fmtN(tot.saves)+'</div></div>'
-      +(function(){var a=cpAchieveCalc(c,f.total,f.treated,tot.views);return a?('<div style="margin-top:12px">'+cpAchieveBar(a)+'</div>'):'';})()
+      +(function(){var bars=cpAchieveBars(c,f.total,f.treated,tot.views);return bars?('<div style="margin-top:12px">'+bars+'</div>'):'';})()
       +funnel+trend
       +'<table style="margin-top:12px"><thead><tr><th>플랫폼</th><th>유형</th><th>게시물</th><th>게시일</th><th>지표</th></tr></thead><tbody>'+prow+'</tbody></table>'
       +'</div></div>';
