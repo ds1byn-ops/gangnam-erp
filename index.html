@@ -219,7 +219,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.9.3 · 2026-07-23';
+const APP_VERSION='v1.9.4 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -1304,6 +1304,9 @@ async function cpMetricSave(pid,cid){
 const DJ_TYPE={interpret:'통역',guide:'가이드',accompany:'동행',other:'기타'};
 const DJ_LANGS=['중국어','영어','일본어','베트남어','러시아어','태국어','몽골어','아랍어','인도네시아어','스페인어'];
 const DJ_DUR=[['1','1시간'],['2','2시간'],['3','3시간'],['4','반나절 (4시간)'],['6','6시간'],['8','하루 (8시간)']];
+const DJ_FEETYPE={hourly:'시간당',daily:'일당(고정)'};
+function djFeeText(j){var ft=j.fee_type||'daily';if(ft==='hourly'){var base=won(j.fee)+'/시간';if(j.duration_hours)base+=' <span style="color:var(--muted)">(총 '+won((Number(j.fee)||0)*Number(j.duration_hours))+')</span>';return base;}return won(j.fee);}
+function djFeeHint(){var h=el('dj_fee_hint');if(!h)return;var ft=(el('dj_feetype')||{}).value;var fee=Number((el('dj_fee')||{}).value)||0;var dur=Number((el('dj_dur')||{}).value)||0;if(ft==='hourly'&&fee){h.innerHTML='시간당 '+won(fee)+(dur?(' × '+dur+'시간 = 총 '+won(fee*dur)):' · 예상 소요를 선택하면 총액이 계산됩니다');}else{h.innerHTML=fee?('일당 고정 '+won(fee)):'';}}
 let _djType='interpret';
 function djSetType(btn){ _djType=btn.getAttribute('data-v'); document.querySelectorAll('#dj_type_seg .djseg').forEach(function(b){ b.style.background=b===btn?'var(--brand,#1F3864)':'#fff'; b.style.color=b===btn?'#fff':'var(--ink,#1e293b)'; b.style.borderColor=b===btn?'var(--brand,#1F3864)':'var(--line)'; }); }
 const DJ_ST={open:'모집중',assigned:'배정완료',done:'완료',cancelled:'취소'};
@@ -1335,7 +1338,7 @@ async function renderDispatch(){
       +'<td>'+(DJ_TYPE[j.job_type]||j.job_type)+'</td>'
       +'<td style="white-space:nowrap">'+esc(j.job_date)+(j.start_time?' '+esc(j.start_time):'')+'</td>'
       +'<td>'+esc(hmap[j.hospital_id]||j.location||'-')+'</td>'
-      +'<td class="right">'+won(j.fee)+'</td>'
+      +'<td class="right" style="white-space:nowrap">'+djFeeText(j)+'</td>'
       +'<td>'+(j.status==='open'?('<span class="tag" style="background:#fef3c7;color:#b45309">모집중</span> <span class="cny">지원 '+(ac[j.id]||0)+'</span>'):(j.status==='assigned'||j.status==='done'?('<span class="tag" style="background:'+DJ_ST_COLOR[j.status]+'1a;color:'+DJ_ST_COLOR[j.status]+'">'+DJ_ST[j.status]+'</span>'+(j.assigned_partner_id?' <span class="cny">'+esc(pmapN[j.assigned_partner_id]||'')+'</span>':'')):'<span class="tag" style="background:#fee2e2;color:#dc2626">취소</span>'))+'</td></tr>';
   }).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">등록된 콜이 없습니다. 통역·가이드 일감을 콜로 등록하세요.</td></tr>';
   m.innerHTML='<div class="page-head"><div><h2>콜보드 <span class="cny">통역·가이드·동행 배차</span></h2><div class="sub">모집중 '+cnt.open+' · 배정 '+cnt.assigned+' · 완료 '+cnt.done+' · 가용 파트너 '+availN+'명</div></div>'
@@ -1363,13 +1366,16 @@ function djModal(id){
     +fld('시작 시간','<input id="dj_time" '+inp+' value="'+esc(j&&j.start_time||'')+'" placeholder="14:00">')
     +fld('언어','<select id="dj_lang" '+inp+'>'+langopt+'</select>')
     +fld('집결지/지역','<input id="dj_loc" '+inp+' value="'+esc(j&&j.location||'')+'" placeholder="예: 강남역 / 병원 로비">')
-    +fld('예상 소요','<select id="dj_dur" '+inp+'>'+duropt+'</select>')
-    +fld('보수 (원)','<input type="number" id="dj_fee" '+inp+' min="0" value="'+(j&&j.fee!=null?j.fee:'')+'" placeholder="예: 100000">')
+    +fld('예상 소요','<select id="dj_dur" '+inp+' onchange="djFeeHint()">'+duropt+'</select>')
+    +fld('보수 방식','<select id="dj_feetype" '+inp+' onchange="djFeeHint()"><option value="daily"'+(!j||j.fee_type!=='hourly'?' selected':'')+'>일당 (고정)</option><option value="hourly"'+(j&&j.fee_type==='hourly'?' selected':'')+'>시간당</option></select>')
+    +fld('보수 (원)','<input type="number" id="dj_fee" '+inp+' min="0" value="'+(j&&j.fee!=null?j.fee:'')+'" placeholder="예: 100000" oninput="djFeeHint()">')
     +'</div>'
+    +'<div id="dj_fee_hint" class="cny" style="margin:-4px 0 6px"></div>'
     +fld('메모','<textarea id="dj_memo" rows="2" '+inp+'>'+esc(j&&j.memo||'')+'</textarea>')
     +'</div><div class="mf">'
     +(j?'<button class="btn ghost" style="color:#dc2626;border-color:#fecaca;margin-right:auto" onclick="djDelete(\''+j.id+'\')">삭제</button>':'')
     +'<button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="djSave(\''+(j?j.id:'')+'\')">저장</button></div>',true);
+  djFeeHint();
 }
 async function djSave(id){
   const title=el('dj_title').value.trim(), date=el('dj_date').value;
@@ -1378,7 +1384,7 @@ async function djSave(id){
   const row={title:title,job_type:_djType||'interpret',hospital_id:el('dj_hosp').value||null,
     job_date:date,start_time:el('dj_time').value.trim()||null,language:el('dj_lang').value||null,
     location:el('dj_loc').value.trim()||null,duration_hours:el('dj_dur').value?Number(el('dj_dur').value):null,
-    fee:Number(el('dj_fee').value)||0,memo:el('dj_memo').value.trim()||null,updated_at:new Date().toISOString()};
+    fee:Number(el('dj_fee').value)||0,fee_type:(el('dj_feetype')?el('dj_feetype').value:'daily'),memo:el('dj_memo').value.trim()||null,updated_at:new Date().toISOString()};
   let error;
   if(id){ error=(await db.from('dispatch_jobs').update(row).eq('id',id)).error; }
   else { error=(await db.from('dispatch_jobs').insert(row)).error; }
@@ -1419,7 +1425,7 @@ async function djDetail(id){
   }).join(''):'<tr><td colspan="2" class="muted" style="text-align:center;padding:10px">가용 파트너가 없습니다. [가용 파트너 관리]에서 활동 가능한 파트너를 켜세요.</td></tr>';
   const assignedName=j.assigned_partner_id?((pmapObj[j.assigned_partner_id]||{}).name||''):'';
   m.innerHTML='<div class="page-head"><div><h2>'+esc(j.title)+' <span class="tag" style="background:'+DJ_ST_COLOR[j.status]+'1a;color:'+DJ_ST_COLOR[j.status]+'">'+DJ_ST[j.status]+'</span></h2>'
-    +'<div class="sub">'+(DJ_TYPE[j.job_type]||j.job_type)+' · '+esc(j.job_date)+(j.start_time?' '+esc(j.start_time):'')+' · '+esc(hmap[j.hospital_id]||j.location||'-')+' · '+(j.language||'')+' · 보수 '+won(j.fee)+(j.duration_hours?' · '+j.duration_hours+'시간':'')+'</div></div>'
+    +'<div class="sub">'+(DJ_TYPE[j.job_type]||j.job_type)+' · '+esc(j.job_date)+(j.start_time?' '+esc(j.start_time):'')+' · '+esc(hmap[j.hospital_id]||j.location||'-')+' · '+(j.language||'')+' · 보수 '+djFeeText(j)+(j.duration_hours?' · '+j.duration_hours+'시간':'')+'</div></div>'
     +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderDispatch()">← 콜보드</button><button class="btn ghost" onclick="djModal(\''+j.id+'\')">콜 수정</button>'
     +(j.status==='assigned'?'<button class="btn" onclick="djComplete(\''+j.id+'\')">완료 처리</button>':'')
     +(j.status==='open'||j.status==='assigned'?'<button class="btn ghost" onclick="djCancel(\''+j.id+'\')">콜 취소</button>':'')+'</div></div>'
