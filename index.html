@@ -205,6 +205,7 @@
         <a data-view="partnerapp" class="platform-only" style="display:none">파트너 지원<span class="nvb" id="bdg_partnerapp"></span></a>
         <a data-view="partnermgmt" class="platform-only" style="display:none">파트너 관리</a>
         <a data-view="campaigns" class="platform-only" style="display:none">캠페인 관리</a>
+        <a data-view="dispatch" class="platform-only" style="display:none">콜보드 (통역·가이드)</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
         <button onclick="doLogout()">로그아웃</button><div id="appVer" style="margin-top:10px;font-size:11px;color:#475569;text-align:center"></div></div>
@@ -218,7 +219,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.8.2 · 2026-07-23';
+const APP_VERSION='v1.9.0 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -488,7 +489,7 @@ function agencyCsv(){
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),guidereq:renderGuideRequests,partnerapp:renderPartnerApps,partnermgmt:renderPartnerMgmt,campaigns:renderCampaigns,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),guidereq:renderGuideRequests,partnerapp:renderPartnerApps,partnermgmt:renderPartnerMgmt,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
 
 /* ============ 구독 · 이용권 ============ */
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
@@ -1130,6 +1131,170 @@ async function cpMetricSave(pid,cid){
   closeModal();renderCampaignDetail(cid);
 }
 
+/* ============ 콜보드 (대리운전식 통역·가이드 배차 · 하이브리드) ============ */
+const DJ_TYPE={interpret:'통역',guide:'가이드',accompany:'동행',other:'기타'};
+const DJ_ST={open:'모집중',assigned:'배정완료',done:'완료',cancelled:'취소'};
+const DJ_ST_COLOR={open:'#b45309',assigned:'#0f766e',done:'#64748b',cancelled:'#dc2626'};
+async function djLoadRefs(){
+  if(!state._djHosps){ const {data}=await db.from('hospitals').select('id,name').order('name'); state._djHosps=data||[]; }
+  if(!state._djPartners){ const {data}=await db.from('partners').select('id,name,ptype,is_available,avail_note,languages,grade,status').order('name'); state._djPartners=data||[]; }
+}
+async function renderDispatch(){
+  const m=el('main');
+  if(!state.platformMaster){ m.innerHTML='<div class="page-head"><div><h2>접근 불가</h2></div></div><div class="muted" style="padding:20px">플랫폼 마스터만 접근할 수 있습니다.</div>'; return; }
+  m.innerHTML='<div class="loading">불러오는 중…</div>';
+  await djLoadRefs();
+  const [{data:jobs,error},{data:applies}]=await Promise.all([
+    db.from('dispatch_jobs').select('*').order('job_date',{ascending:false}),
+    db.from('dispatch_applies').select('job_id,partner_id,status')
+  ]);
+  if(error){ m.innerHTML='<div class="page-head"><div><h2>콜보드</h2></div></div><div class="muted" style="padding:20px;color:var(--danger)">불러오기 실패: '+esc(error.message)+'</div>'; return; }
+  state._djJobs=jobs||[];
+  state._djApplies=applies||[];
+  const hmap=Object.fromEntries(state._djHosps.map(function(h){return [h.id,h.name];}));
+  const pmapN=Object.fromEntries(state._djPartners.map(function(p){return [p.id,p.name];}));
+  const ac={}; (applies||[]).forEach(function(a){ac[a.job_id]=(ac[a.job_id]||0)+1;});
+  const cnt={open:0,assigned:0,done:0}; state._djJobs.forEach(function(j){if(cnt[j.status]!=null)cnt[j.status]++;});
+  const availN=state._djPartners.filter(function(p){return p.is_available;}).length;
+  const rows=state._djJobs.length?state._djJobs.map(function(j){
+    return '<tr style="cursor:pointer" onclick="djDetail(\''+j.id+'\')">'
+      +'<td><b>'+esc(j.title)+'</b>'+(j.language?'<div class="cny">'+esc(j.language)+'</div>':'')+'</td>'
+      +'<td>'+(DJ_TYPE[j.job_type]||j.job_type)+'</td>'
+      +'<td style="white-space:nowrap">'+esc(j.job_date)+(j.start_time?' '+esc(j.start_time):'')+'</td>'
+      +'<td>'+esc(hmap[j.hospital_id]||j.location||'-')+'</td>'
+      +'<td class="right">'+won(j.fee)+'</td>'
+      +'<td>'+(j.status==='open'?('<span class="tag" style="background:#fef3c7;color:#b45309">모집중</span> <span class="cny">지원 '+(ac[j.id]||0)+'</span>'):(j.status==='assigned'||j.status==='done'?('<span class="tag" style="background:'+DJ_ST_COLOR[j.status]+'1a;color:'+DJ_ST_COLOR[j.status]+'">'+DJ_ST[j.status]+'</span>'+(j.assigned_partner_id?' <span class="cny">'+esc(pmapN[j.assigned_partner_id]||'')+'</span>':'')):'<span class="tag" style="background:#fee2e2;color:#dc2626">취소</span>'))+'</td></tr>';
+  }).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">등록된 콜이 없습니다. 통역·가이드 일감을 콜로 등록하세요.</td></tr>';
+  m.innerHTML='<div class="page-head"><div><h2>콜보드 <span class="cny">통역·가이드·동행 배차</span></h2><div class="sub">모집중 '+cnt.open+' · 배정 '+cnt.assigned+' · 완료 '+cnt.done+' · 가용 파트너 '+availN+'명</div></div>'
+    +'<div style="display:flex;gap:8px">'+plBack()+'<button class="btn ghost" onclick="djAvailModal()">가용 파트너 관리</button><button class="btn" onclick="djModal()">＋ 새 콜</button></div></div>'
+    +'<div class="panel"><div class="pb"><table><thead><tr><th>콜</th><th>유형</th><th>일시</th><th>병원/지역</th><th class="right">보수</th><th>상태</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
+    +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· 콜을 열면 지원 파트너 확인·배정, 완료 처리를 할 수 있습니다.<br>· <b>가용 파트너 관리</b>에서 지금 활동 가능한 파트너를 켜두면, 콜 배정 시 우선 노출됩니다. (2단계: 파트너 포털에서 직접 지원)</div></div>';
+}
+function djModal(id){
+  const j=id?(state._djJobs||[]).find(function(x){return x.id===id;}):null;
+  const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
+  const fld=function(label,inner){ return '<div class="field"><label>'+label+'</label>'+inner+'</div>'; };
+  const hopt='<option value="">(외부·지역 동행)</option>'+state._djHosps.map(function(h){return '<option value="'+h.id+'"'+(j&&j.hospital_id===h.id?' selected':'')+'>'+esc(h.name)+'</option>';}).join('');
+  const topt=Object.keys(DJ_TYPE).map(function(k){return '<option value="'+k+'"'+(j&&j.job_type===k?' selected':(!j&&k==='interpret'?' selected':''))+'>'+DJ_TYPE[k]+'</option>';}).join('');
+  openModal('<div class="mh">'+(j?'콜 수정':'＋ 새 콜')+'<span onclick="closeModal()">✕</span></div><div class="mb">'
+    +fld('제목','<input id="dj_title" '+inp+' value="'+esc(j?j.title:'')+'" placeholder="예: 글로비 중국환자 시술 통역">')
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +fld('유형','<select id="dj_type" '+inp+'>'+topt+'</select>')
+    +fld('병원 (외부면 비움)','<select id="dj_hosp" '+inp+'>'+hopt+'</select>')
+    +fld('날짜','<input type="date" id="dj_date" '+inp+' value="'+(j&&j.job_date||'')+'">')
+    +fld('시작 시간','<input id="dj_time" '+inp+' value="'+esc(j&&j.start_time||'')+'" placeholder="14:00">')
+    +fld('언어','<input id="dj_lang" '+inp+' value="'+esc(j&&j.language||'중국어')+'">')
+    +fld('집결지/지역','<input id="dj_loc" '+inp+' value="'+esc(j&&j.location||'')+'" placeholder="예: 강남역 / 병원 로비">')
+    +fld('예상 소요(시간)','<input type="number" id="dj_dur" '+inp+' min="0" step="0.5" value="'+(j&&j.duration_hours!=null?j.duration_hours:'')+'">')
+    +fld('보수 (원)','<input type="number" id="dj_fee" '+inp+' min="0" value="'+(j&&j.fee!=null?j.fee:'')+'" placeholder="예: 100000">')
+    +'</div>'
+    +fld('메모','<textarea id="dj_memo" rows="2" '+inp+'>'+esc(j&&j.memo||'')+'</textarea>')
+    +'</div><div class="mf">'
+    +(j?'<button class="btn ghost" style="color:#dc2626;border-color:#fecaca;margin-right:auto" onclick="djDelete(\''+j.id+'\')">삭제</button>':'')
+    +'<button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="djSave(\''+(j?j.id:'')+'\')">저장</button></div>',true);
+}
+async function djSave(id){
+  const title=el('dj_title').value.trim(), date=el('dj_date').value;
+  if(!title){alert('제목을 입력하세요.');return;}
+  if(!date){alert('날짜를 선택하세요.');return;}
+  const row={title:title,job_type:el('dj_type').value,hospital_id:el('dj_hosp').value||null,
+    job_date:date,start_time:el('dj_time').value.trim()||null,language:el('dj_lang').value.trim()||null,
+    location:el('dj_loc').value.trim()||null,duration_hours:el('dj_dur').value?Number(el('dj_dur').value):null,
+    fee:Number(el('dj_fee').value)||0,memo:el('dj_memo').value.trim()||null,updated_at:new Date().toISOString()};
+  let error;
+  if(id){ error=(await db.from('dispatch_jobs').update(row).eq('id',id)).error; }
+  else { error=(await db.from('dispatch_jobs').insert(row)).error; }
+  if(error){alert('저장 실패: '+error.message);return;}
+  logAudit(id?'콜 수정':'콜 등록',title);
+  closeModal();renderDispatch();
+}
+async function djDelete(id){
+  if(!confirm('이 콜을 삭제할까요? 지원 기록도 함께 삭제됩니다.'))return;
+  const {error}=await db.from('dispatch_jobs').delete().eq('id',id);
+  if(error){alert('삭제 실패: '+error.message);return;}
+  logAudit('콜 삭제',id);closeModal();renderDispatch();
+}
+async function djDetail(id){
+  const m=el('main'); m.innerHTML='<div class="loading">불러오는 중…</div>';
+  await djLoadRefs();
+  const [{data:j},{data:applies}]=await Promise.all([
+    db.from('dispatch_jobs').select('*').eq('id',id).single(),
+    db.from('dispatch_applies').select('*').eq('job_id',id)
+  ]);
+  if(!j){ renderDispatch(); return; }
+  const hmap=Object.fromEntries(state._djHosps.map(function(h){return [h.id,h.name];}));
+  const pmapObj=Object.fromEntries(state._djPartners.map(function(p){return [p.id,p];}));
+  const appliedIds=(applies||[]).map(function(a){return a.partner_id;});
+  // 지원자 목록
+  const approws=(applies||[]).length?(applies||[]).map(function(a){
+    const p=pmapObj[a.partner_id]||{};
+    return '<tr><td><b>'+esc(p.name||'?')+'</b> <span class="cny">'+(DJ_TYPE[p.ptype]||'')+' · '+esc(p.grade||'')+'등급</span></td>'
+      +'<td>'+(a.status==='accepted'?'<span class="tag" style="background:#dcfce7;color:#0f766e">배정</span>':(a.status==='rejected'?'<span class="tag" style="background:#fee2e2;color:#dc2626">반려</span>':'<span class="tag" style="background:#fef3c7;color:#b45309">지원</span>'))+'</td>'
+      +'<td class="right">'+(j.status==='open'&&a.status==='applied'?'<button class="btn sm" onclick="djAssign(\''+j.id+'\',\''+a.partner_id+'\')">이 파트너 배정</button>':'')+'</td></tr>';
+  }).join(''):'<tr><td colspan="3" class="muted" style="text-align:center;padding:10px">아직 지원자가 없습니다. 아래 가용 파트너에서 직접 배정하세요.</td></tr>';
+  // 가용 파트너(언어 매칭 우선), 아직 지원 안 한 사람
+  const avail=state._djPartners.filter(function(p){return p.is_available&&p.status!=='terminated'&&appliedIds.indexOf(p.id)<0;});
+  const availrows=avail.length?avail.map(function(p){
+    const langMatch=j.language&&Array.isArray(p.languages)&&p.languages.some(function(l){return (j.language.indexOf('中')>=0||j.language.indexOf('중')>=0)&&l==='zh';});
+    return '<tr><td><b>'+esc(p.name)+'</b> <span class="cny">'+(DJ_TYPE[p.ptype]||'')+' · '+esc(p.grade||'')+'등급'+(p.avail_note?' · '+esc(p.avail_note):'')+'</span>'+(langMatch?' <span class="tag" style="background:#eef2ff;color:#4338ca">언어✓</span>':'')+'</td>'
+      +'<td class="right">'+(j.status==='open'?'<button class="btn sm ghost" onclick="djAssign(\''+j.id+'\',\''+p.id+'\')">배정</button>':'')+'</td></tr>';
+  }).join(''):'<tr><td colspan="2" class="muted" style="text-align:center;padding:10px">가용 파트너가 없습니다. [가용 파트너 관리]에서 활동 가능한 파트너를 켜세요.</td></tr>';
+  const assignedName=j.assigned_partner_id?((pmapObj[j.assigned_partner_id]||{}).name||''):'';
+  m.innerHTML='<div class="page-head"><div><h2>'+esc(j.title)+' <span class="tag" style="background:'+DJ_ST_COLOR[j.status]+'1a;color:'+DJ_ST_COLOR[j.status]+'">'+DJ_ST[j.status]+'</span></h2>'
+    +'<div class="sub">'+(DJ_TYPE[j.job_type]||j.job_type)+' · '+esc(j.job_date)+(j.start_time?' '+esc(j.start_time):'')+' · '+esc(hmap[j.hospital_id]||j.location||'-')+' · '+(j.language||'')+' · 보수 '+won(j.fee)+(j.duration_hours?' · '+j.duration_hours+'시간':'')+'</div></div>'
+    +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderDispatch()">← 콜보드</button><button class="btn ghost" onclick="djModal(\''+j.id+'\')">콜 수정</button>'
+    +(j.status==='assigned'?'<button class="btn" onclick="djComplete(\''+j.id+'\')">완료 처리</button>':'')
+    +(j.status==='open'||j.status==='assigned'?'<button class="btn ghost" onclick="djCancel(\''+j.id+'\')">콜 취소</button>':'')+'</div></div>'
+    +(assignedName?'<div class="panel"><div class="pb" style="padding:14px 16px"><b>배정 파트너:</b> '+esc(assignedName)+(j.status==='done'?' · <span style="color:#0f766e">완료</span>':' · 진행 예정')+'</div></div>':'')
+    +'<div class="panel"><div class="pb"><div style="padding:12px 16px 0;font-weight:800;font-size:13px">지원 파트너 <span class="cny">(포털 셀프지원 · 운영자 대리기록)</span></div><table><thead><tr><th>파트너</th><th>상태</th><th></th></tr></thead><tbody>'+approws+'</tbody></table></div></div>'
+    +(j.status==='open'?'<div class="panel"><div class="pb"><div style="padding:12px 16px 0;font-weight:800;font-size:13px">가용 파트너에서 직접 배정</div><table><thead><tr><th>파트너</th><th></th></tr></thead><tbody>'+availrows+'</tbody></table></div></div>':'');
+}
+async function djAssign(jid,pid){
+  const p=(state._djPartners||[]).find(function(x){return x.id===pid;});
+  if(!confirm('['+((p&&p.name)||'')+'] 파트너를 이 콜에 배정할까요?'))return;
+  const {error}=await db.from('dispatch_jobs').update({status:'assigned',assigned_partner_id:pid,assigned_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',jid);
+  if(error){alert('배정 실패: '+error.message);return;}
+  // 지원 기록 있으면 accepted 처리, 없으면 생성(운영자 대리)
+  await db.from('dispatch_applies').upsert({job_id:jid,partner_id:pid,status:'accepted'},{onConflict:'job_id,partner_id'});
+  await db.from('dispatch_applies').update({status:'rejected'}).eq('job_id',jid).neq('partner_id',pid).eq('status','applied');
+  logAudit('콜 배정',(p&&p.name)||pid);
+  djDetail(jid);
+}
+async function djComplete(jid){
+  if(!confirm('이 콜을 완료 처리할까요? 배정 파트너의 정산 대상이 됩니다.'))return;
+  const {error}=await db.from('dispatch_jobs').update({status:'done',completed_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',jid);
+  if(error){alert('완료 처리 실패: '+error.message);return;}
+  logAudit('콜 완료',jid);djDetail(jid);
+}
+async function djCancel(jid){
+  if(!confirm('이 콜을 취소할까요?'))return;
+  const {error}=await db.from('dispatch_jobs').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',jid);
+  if(error){alert('취소 실패: '+error.message);return;}
+  logAudit('콜 취소',jid);djDetail(jid);
+}
+function djAvailModal(){
+  const list=(state._djPartners||[]).filter(function(p){return p.status!=='terminated';});
+  const rows=list.map(function(p){
+    return '<tr><td><b>'+esc(p.name)+'</b> <span class="cny">'+(DJ_TYPE[p.ptype]||p.ptype)+'</span></td>'
+      +'<td><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" '+(p.is_available?'checked':'')+' onchange="djToggleAvail(\''+p.id+'\',this.checked)"> 가용</label></td>'
+      +'<td><input value="'+esc(p.avail_note||'')+'" placeholder="가능 시간·지역" onchange="djSaveAvailNote(\''+p.id+'\',this.value)" style="width:100%;min-width:140px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px"></td></tr>';
+  }).join('');
+  openModal('<div class="mh">가용 파트너 관리<span onclick="closeModal()">✕</span></div><div class="mb">'
+    +'<div class="cny" style="margin-bottom:10px">지금 활동 가능한 파트너를 켜두면 콜 배정 시 우선 노출됩니다.</div>'
+    +'<table><thead><tr><th>파트너</th><th>가용</th><th>가능 시간·지역</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'</div><div class="mf"><button class="btn" onclick="closeModal();renderDispatch()">닫기</button></div>',true);
+}
+async function djToggleAvail(pid,val){
+  const {error}=await db.from('partners').update({is_available:val,updated_at:new Date().toISOString()}).eq('id',pid);
+  if(error){alert('저장 실패: '+error.message);return;}
+  const p=(state._djPartners||[]).find(function(x){return x.id===pid;}); if(p)p.is_available=val;
+}
+async function djSaveAvailNote(pid,val){
+  const {error}=await db.from('partners').update({avail_note:val||null}).eq('id',pid);
+  if(error){alert('저장 실패: '+error.message);return;}
+  const p=(state._djPartners||[]).find(function(x){return x.id===pid;}); if(p)p.avail_note=val;
+}
+
 /* ============ 병원용 마케팅 리포트 (읽기 전용 · 파트너 개인정보 미노출) ============ */
 async function renderMarketing(){
   const m=el('main');
@@ -1224,6 +1389,7 @@ async function renderPlatHome(){
     +tile('partnerapp','파트너 지원 심사','신규 지원 승인 → 파트너 등록',newApps||'')
     +tile('partnermgmt','파트너 관리','계약 · 서류 · 등급 · 지급경로')
     +tile('campaigns','캠페인 관리','게시물 · 지표 · 전환 퍼널')
+    +tile('dispatch','콜보드','통역·가이드 배차')
     +tile('demoreq','데모 신청','강남펄스 랜딩 리드')
     +tile('wanghongreq','왕홍병원 신청','메타광고 병원 리드')
     +tile('guidereq','가이드 신청','통역 가이드 지원자')
