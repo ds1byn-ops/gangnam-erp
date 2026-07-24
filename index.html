@@ -218,7 +218,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.7.3 · 2026-07-23';
+const APP_VERSION='v1.8.0 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -938,6 +938,8 @@ const CP_ST={planned:'준비중',active:'진행중',done:'완료',cancelled:'취
 const CP_ST_COLOR={planned:'#b45309',active:'#0f766e',done:'#64748b',cancelled:'#dc2626'};
 const CP_PLAT={xiaohongshu:'샤오홍슈',douyin:'더우인',weibo:'웨이보',wechat:'위챗',instagram:'인스타그램',youtube:'유튜브',other:'기타'};
 const CP_PROG=['왕홍1 (500만/1개월)','왕홍22 (1,000만/1개월)','왕홍333 (3,000만/3개월)','기타'];
+const CP_CTYPE={official:'공식채널',review_case:'후기·케이스',promotion:'프로모션',general:'일반'};
+const CP_CTYPE_COLOR={official:'#4338ca',review_case:'#0f766e',promotion:'#b45309',general:'#64748b'};
 const fmtN=n=>Number(n||0).toLocaleString('ko-KR');
 async function cpLoadRefs(){
   if(!state._cpHosps){ const {data}=await db.from('hospitals').select('id,name').order('name'); state._cpHosps=data||[]; }
@@ -1049,9 +1051,11 @@ async function renderCampaignDetail(id){
     }).join('')+'</div>';
   const prow=(posts||[]).length?(posts||[]).map(function(p){
     const l=latest[p.id];
+    const ct=p.content_type||'general';
     return '<tr>'
       +'<td>'+(p.partner_id?esc(pmapP[p.partner_id]||'?'):'<span class="tag" style="background:#eef2ff;color:#4338ca">자사 채널</span>')+'</td>'
       +'<td>'+(CP_PLAT[p.platform]||p.platform)+'</td>'
+      +'<td><span class="tag" style="background:'+CP_CTYPE_COLOR[ct]+'1a;color:'+CP_CTYPE_COLOR[ct]+'">'+(CP_CTYPE[ct]||ct)+'</span></td>'
       +'<td>'+(p.url?'<a href="'+esc(p.url)+'" target="_blank" style="color:var(--brand,#1F3864)">'+esc(p.title||'게시물 링크')+'</a>':esc(p.title||'-'))+'</td>'
       +'<td style="white-space:nowrap">'+(p.posted_on||'-')+'</td>'
       +'<td style="font-size:12px;white-space:nowrap">'+(l?('조회 '+fmtN(l.views)+' · 좋아요 '+fmtN(l.likes)+' · 댓글 '+fmtN(l.comments)+' · 저장 '+fmtN(l.saves)+'<div class="cny">'+l.metric_date+' 기준'+(l.source==='partner'?' · 파트너입력':'')+'</div>'):'<span class="muted">지표 없음</span>')+'</td>'
@@ -1059,22 +1063,33 @@ async function renderCampaignDetail(id){
   }).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:14px">게시물이 없습니다. 아래에서 추가하세요.</td></tr>';
   const partnerOpt='<option value="">자사 채널</option>'+state._cpPartners.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('');
   const platOpt=Object.keys(CP_PLAT).map(function(k){return '<option value="'+k+'">'+CP_PLAT[k]+'</option>';}).join('');
+  const ctypeOpt=Object.keys(CP_CTYPE).map(function(k){return '<option value="'+k+'"'+(k==='general'?' selected':'')+'>'+CP_CTYPE[k]+'</option>';}).join('');
+  // 콘텐츠 유형별 인사이트 (포워드닥터식 마케팅 인사이트)
+  const byType={}; Object.keys(CP_CTYPE).forEach(function(k){byType[k]={cnt:0,views:0};});
+  (posts||[]).forEach(function(p){ var ct=p.content_type||'general'; var l=latest[p.id]; byType[ct].cnt++; if(l)byType[ct].views+=Number(l.views)||0; });
+  const insight=Object.keys(CP_CTYPE).filter(function(k){return byType[k].cnt;}).map(function(k){
+    return '<div style="flex:1;min-width:120px;background:#f4f7fc;border-radius:10px;padding:10px 12px"><div style="font-size:11px;font-weight:800;color:'+CP_CTYPE_COLOR[k]+'">'+CP_CTYPE[k]+'</div><div style="font-size:16px;font-weight:800;margin-top:2px">'+byType[k].cnt+'<span style="font-size:11px;color:var(--muted);font-weight:400"> 건 · 조회 '+fmtN(byType[k].views)+'</span></div></div>';
+  }).join('');
+  const cvr=(bks||[]).length?Math.round(bc.treated/(bks||[]).length*100):0;
   m.innerHTML='<div class="page-head"><div><h2>'+esc(c.name)+'</h2><div class="sub">'+esc(hmap[c.hospital_id]||'')+' · '+esc(c.program||'')+' · '+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+' · '+(c.executor==='yueji_jiangnan'?'悦集江南':'팔로우코리아')+' · <span style="color:'+(CP_ST_COLOR[c.status]||'#64748b')+';font-weight:700">'+(CP_ST[c.status]||c.status)+'</span>'+(c.goal?' · 목표: '+esc(c.goal):'')+'</div></div>'
     +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderCampaigns()">← 목록</button><button class="btn ghost" onclick="cpModal(\''+c.id+'\')">캠페인 수정</button></div></div>'
-    +'<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">전환 퍼널 <span class="cny">(파트너 고객등록 기준)</span></div>'+funnel+'</div></div>'
+    +'<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">전환 퍼널 <span class="cny">(파트너 고객등록 기준 · 문의→시술 전환율 '+cvr+'%)</span></div>'+funnel+'</div></div>'
+    +(insight?'<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">마케팅 인사이트 <span class="cny">(콘텐츠 유형별)</span></div><div style="display:flex;gap:8px;flex-wrap:wrap">'+insight+'</div></div></div>':'')
     +'<div class="panel"><div class="pb"><div style="padding:12px 16px 0;font-weight:800;font-size:13px">게시물 · 지표 <span class="cny">누적: 조회 '+fmtN(tot.views)+' · 좋아요 '+fmtN(tot.likes)+' · 댓글 '+fmtN(tot.comments)+' · 저장 '+fmtN(tot.saves)+'</span></div>'
-    +'<table><thead><tr><th>파트너</th><th>플랫폼</th><th>게시물</th><th>게시일</th><th>최신 지표</th><th></th></tr></thead><tbody>'+prow+'</tbody></table>'
+    +'<table><thead><tr><th>파트너</th><th>플랫폼</th><th>유형</th><th>게시물</th><th>게시일</th><th>최신 지표</th><th></th></tr></thead><tbody>'+prow+'</tbody></table>'
     +'<div style="display:flex;gap:6px;padding:10px 16px 14px;flex-wrap:wrap;align-items:center">'
     +'<select id="cp_p_partner" style="padding:6px;border:1px solid var(--line);border-radius:7px;max-width:150px">'+partnerOpt+'</select>'
     +'<select id="cp_p_plat" style="padding:6px;border:1px solid var(--line);border-radius:7px">'+platOpt+'</select>'
-    +'<input id="cp_p_title" placeholder="제목" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;width:130px">'
-    +'<input id="cp_p_url" placeholder="URL" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;flex:1;min-width:160px">'
+    +'<select id="cp_p_ctype" style="padding:6px;border:1px solid var(--line);border-radius:7px">'+ctypeOpt+'</select>'
+    +'<input id="cp_p_title" placeholder="제목" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;width:120px">'
+    +'<input id="cp_p_url" placeholder="URL" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;flex:1;min-width:150px">'
     +'<input type="date" id="cp_p_date" style="padding:6px;border:1px solid var(--line);border-radius:7px">'
     +'<button class="btn sm" onclick="cpPostAdd(\''+id+'\')">게시물 추가</button></div></div></div>';
 }
 async function cpPostAdd(cid){
   const posted=el('cp_p_date').value;
   const row={campaign_id:cid,partner_id:el('cp_p_partner').value||null,platform:el('cp_p_plat').value,
+    content_type:el('cp_p_ctype').value,
     title:el('cp_p_title').value.trim()||null,url:el('cp_p_url').value.trim()||null,
     posted_on:posted||null,status:posted?'posted':'planned'};
   const {error}=await db.from('campaign_posts').insert(row);
@@ -1128,7 +1143,7 @@ async function renderMarketing(){
     return;
   }
   const cids=cps.map(function(c){return c.id;});
-  const {data:posts}=await db.from('campaign_posts').select('id,campaign_id,platform,title,url,posted_on').in('campaign_id',cids);
+  const {data:posts}=await db.from('campaign_posts').select('id,campaign_id,platform,title,url,posted_on,content_type').in('campaign_id',cids);
   const pids=(posts||[]).map(function(p){return p.id;});
   let ms=[];
   if(pids.length){ ms=((await db.from('campaign_metrics').select('post_id,metric_date,views,likes,comments,saves').in('post_id',pids).order('metric_date')).data)||[]; }
@@ -1154,19 +1169,20 @@ async function renderMarketing(){
       return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11.5px"><span style="width:72px;color:var(--muted);white-space:nowrap">'+d.slice(5)+'</span><div style="height:9px;border-radius:5px;background:var(--brand,#1F3864);opacity:.85;width:'+w+'%"></div><span style="color:var(--muted)">'+fmtN(byDate[d])+'</span></div>';
     }).join('')+'<div class="cny">기준일별 누적 조회수</div></div>':'';
     const prow=cposts.length?cposts.map(function(p){
-      const l=latest[p.id];
+      const l=latest[p.id]; const ct=p.content_type||'general';
       return '<tr><td>'+(CP_PLAT[p.platform]||p.platform)+'</td>'
+        +'<td><span class="tag" style="background:'+CP_CTYPE_COLOR[ct]+'1a;color:'+CP_CTYPE_COLOR[ct]+'">'+(CP_CTYPE[ct]||ct)+'</span></td>'
         +'<td>'+(p.url?'<a href="'+esc(p.url)+'" target="_blank" style="color:var(--brand,#1F3864)">'+esc(p.title||'게시물 보기')+'</a>':esc(p.title||'-'))+'</td>'
         +'<td style="white-space:nowrap">'+(p.posted_on||'-')+'</td>'
         +'<td style="font-size:12px;white-space:nowrap">'+(l?('조회 '+fmtN(l.views)+' · 좋아요 '+fmtN(l.likes)+' · 댓글 '+fmtN(l.comments)+' · 저장 '+fmtN(l.saves)+'<div class="cny">'+l.metric_date+' 기준</div>'):'<span class="muted">집계 전</span>')+'</td></tr>';
-    }).join(''):'<tr><td colspan="4" class="muted" style="text-align:center;padding:12px">게시물 준비 중입니다.</td></tr>';
+    }).join(''):'<tr><td colspan="5" class="muted" style="text-align:center;padding:12px">게시물 준비 중입니다.</td></tr>';
     return '<div class="panel"><div class="pb" style="padding:14px 16px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'
       +'<div><b style="font-size:15px">'+esc(c.name)+'</b> <span class="tag" style="background:'+(CP_ST_COLOR[c.status]||'#64748b')+'1a;color:'+(CP_ST_COLOR[c.status]||'#64748b')+'">'+(CP_ST[c.status]||c.status)+'</span>'
       +'<div class="cny">'+esc(c.program||'')+' · '+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+'</div></div>'
       +'<div style="font-size:12px;color:var(--muted)">누적 조회 <b style="color:var(--brand,#1F3864)">'+fmtN(tot.views)+'</b> · 좋아요 '+fmtN(tot.likes)+' · 저장 '+fmtN(tot.saves)+'</div></div>'
       +funnel+trend
-      +'<table style="margin-top:12px"><thead><tr><th>플랫폼</th><th>게시물</th><th>게시일</th><th>지표</th></tr></thead><tbody>'+prow+'</tbody></table>'
+      +'<table style="margin-top:12px"><thead><tr><th>플랫폼</th><th>유형</th><th>게시물</th><th>게시일</th><th>지표</th></tr></thead><tbody>'+prow+'</tbody></table>'
       +'</div></div>';
   }).join('');
   m.innerHTML='<div class="page-head"><div><h2>마케팅 리포트</h2><div class="sub">왕홍 캠페인 성과 (팔로우코리아 제공 · 읽기 전용) · 캠페인 '+cps.length+'건</div></div><div style="display:flex;gap:8px">'+(state.platformMaster?plBack():'')+'<button class="btn ghost" onclick="renderMarketing()">새로고침</button></div></div>'
