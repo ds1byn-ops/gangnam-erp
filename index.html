@@ -219,7 +219,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.9.5 · 2026-07-23';
+const APP_VERSION='v1.9.6 · 2026-07-24';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -1303,7 +1303,7 @@ async function cpMetricSave(pid,cid){
 /* ============ 콜보드 (대리운전식 통역·가이드 배차 · 하이브리드) ============ */
 const DJ_TYPE={interpret:'통역',guide:'가이드',accompany:'동행',other:'기타'};
 const DJ_LANGS=['중국어','영어','일본어','베트남어','러시아어','태국어','몽골어','아랍어','인도네시아어','스페인어'];
-const PULSE_HOSP=['GV성형외과','JD피부성형센터(장덕한방)','강남다움의원','강남서울안과','강남스마트','고운몸의원','글로비성형외과','더뷰티성형외과','드림성형외과','라미체의원','루비성형외과(신사점)','리프톤의원','바른길산부인과','벤자민의원(룰루랩)','뷰성형외과','셀로라의원','셀리닉의원','신상성형외과','신소애여성의원','오크우드봄의원','원셀의원','원진성형외과피부과20','이에스청담성형외과','지유의원(사적인아름다움)','차움','청담서클의원','트리니티라파엘로청담의원','페이스라인성형외과','히어산부인과','히어피부과','더힐피부과','플래뉴의원','원진성형외과피부과30','준오헤어-공항','스튜디오 숲'];
+const PULSE_HOSP=['GV성형외과','JD피부성형센터(장덕한방)','강남다움의원','강남서울안과','헤어온의원','고운몸의원','글로비성형외과','더뷰티성형외과','드림성형외과','라미체의원','루비성형외과(신사점)','리프톤의원','바른길산부인과','벤자민의원(룰루랩)','뷰성형외과','셀로라의원','셀리닉의원','신상성형외과','신소애여성의원','오크우드봄의원','원셀의원','원진성형외과피부과20','이에스청담성형외과','지유의원(사적인아름다움)','차움','청담서클의원','트리니티라파엘로청담의원','페이스라인성형외과','히어산부인과','히어피부과','더힐피부과','플래뉴의원','원진성형외과피부과30','준오헤어-공항','스튜디오 숲'];
 const DJ_DUR=[['1','1시간'],['2','2시간'],['3','3시간'],['4','반나절 (4시간)'],['6','6시간'],['8','하루 (8시간)']];
 const DJ_FEETYPE={hourly:'시간당',daily:'일당(고정)'};
 function djFeeText(j){var ft=j.fee_type||'daily';if(ft==='hourly'){var base=won(j.fee)+'/시간';if(j.duration_hours)base+=' <span style="color:var(--muted)">(총 '+won((Number(j.fee)||0)*Number(j.duration_hours))+')</span>';return base;}return won(j.fee);}
