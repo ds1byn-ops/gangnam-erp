@@ -218,7 +218,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.8.1 · 2026-07-23';
+const APP_VERSION='v1.8.2 · 2026-07-23';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -1208,15 +1208,15 @@ async function renderPlatHome(){
   const pCn=parts.filter(function(p){return p.residence_country==='CN';}).length;
   const cAct=cps.filter(function(c){return c.status==='active';}).length;
   const newTotal=newApps+leads.length;
-  const stat=function(n,l,sub){return '<div style="flex:1;min-width:150px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px"><div style="font-size:26px;font-weight:800;color:var(--brand,#1F3864)">'+n+'</div><div style="font-size:13px;font-weight:700;margin-top:2px">'+l+'</div><div class="cny">'+sub+'</div></div>';};
+  const stat=function(n,l,sub,view){return '<div'+(view?' onclick="navTo(\''+view+'\')" onmouseover="this.style.boxShadow=\'0 6px 18px rgba(31,56,100,.12)\'" onmouseout="this.style.boxShadow=\'none\'"':'')+' style="flex:1;min-width:150px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px'+(view?';cursor:pointer;transition:box-shadow .15s':'')+'"><div style="font-size:26px;font-weight:800;color:var(--brand,#1F3864)">'+n+'</div><div style="font-size:13px;font-weight:700;margin-top:2px">'+l+(view?' <span style="color:var(--muted);font-weight:400">›</span>':'')+'</div><div class="cny">'+sub+'</div></div>';};
   const tile=function(view,title,desc,badge){return '<div onclick="navTo(\''+view+'\')" style="cursor:pointer;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;transition:box-shadow .15s" onmouseover="this.style.boxShadow=\'0 6px 18px rgba(31,56,100,.1)\'" onmouseout="this.style.boxShadow=\'none\'"><div style="font-weight:800;font-size:14.5px;color:var(--brand,#1F3864)">'+title+(badge?' <span class="nvb" style="display:inline-block">'+badge+'</span>':'')+'</div><div style="font-size:12px;color:var(--muted);margin-top:3px">'+desc+'</div></div>';};
   const ext=function(url,title,desc){return '<a href="'+url+'" target="_blank" style="text-decoration:none;display:block;background:#f4f7fc;border:1px dashed var(--line);border-radius:14px;padding:16px 18px"><div style="font-weight:800;font-size:14.5px;color:var(--brand,#1F3864)">'+title+' ↗</div><div style="font-size:12px;color:var(--muted);margin-top:3px">'+desc+'</div></a>';};
   m.innerHTML='<div class="page-head"><div><h2>플랫폼 홈</h2><div class="sub">팔로우코리아 마스터 콘솔 — 병원 · 파트너 · 캠페인 · 리드 전체 현황</div></div><button class="btn ghost" onclick="renderPlatHome()">새로고침</button></div>'
     +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">'
-    +stat(hosps.length,'병원',hAct+'개 활성')
-    +stat(parts.length,'파트너',pAct+'명 정식 · 중국 거주 '+pCn+'명')
-    +stat(cAct+'/'+cps.length,'캠페인','진행중/전체')
-    +stat(newTotal,'신규 문의·지원',newApps+'건 파트너 지원 · '+leads.length+'건 리드')
+    +stat(hosps.length,'병원',hAct+'개 활성','platform')
+    +stat(parts.length,'파트너',pAct+'명 정식 · 중국 거주 '+pCn+'명','partnermgmt')
+    +stat(cAct+'/'+cps.length,'캠페인','진행중/전체','campaigns')
+    +stat(newTotal,'신규 문의·지원',newApps+'건 파트너 지원 · '+leads.length+'건 리드','partnerapp')
     +'</div>'
     +'<div style="font-weight:800;font-size:13px;margin:6px 0 8px;color:#475569">운영 바로가기</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:16px">'
