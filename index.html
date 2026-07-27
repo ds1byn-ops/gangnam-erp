@@ -201,7 +201,6 @@
         <a data-view="platform" class="platform-only" style="display:none">플랫폼 관리</a>
         <a data-view="demoreq" class="platform-only" style="display:none">데모 신청<span class="nvb" id="bdg_demoreq"></span></a>
         <a data-view="wanghongreq" class="platform-only" style="display:none">왕홍병원 신청<span class="nvb" id="bdg_wanghongreq"></span></a>
-        <a data-view="guidereq" class="platform-only" style="display:none">가이드 신청<span class="nvb" id="bdg_guidereq"></span></a>
         <a data-view="partnerapp" class="platform-only" style="display:none">파트너 지원<span class="nvb" id="bdg_partnerapp"></span></a>
         <a data-view="partnermgmt" class="platform-only" style="display:none">파트너 관리</a>
         <a data-view="campaigns" class="platform-only" style="display:none">캠페인 관리</a>
@@ -219,7 +218,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.10.0 · 2026-07-24';
+const APP_VERSION='v1.11.0 · 2026-07-27';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -701,9 +700,11 @@ async function renderPartnerApps(){
   const stSel=function(r){ return '<select onchange="pAppSetStatus(\''+r.id+'\',this.value)" style="padding:5px;border:1px solid var(--line);border-radius:7px;font-size:12px">'+Object.keys(P_APP_ST).map(function(k){return '<option value="'+k+'"'+(k===r.status?' selected':'')+'>'+P_APP_ST[k]+'</option>';}).join('')+'</select>'; };
   const rows=list.length?list.map(function(r){
     const sns=(r.sns_channels||[]).map(function(s){return esc((s.platform||'')+(s.followers?'('+Number(s.followers).toLocaleString()+')':''));}).join(', ');
+    const srcTag=(r.source==='guide_recruit')?' <span class="tag" style="background:#e0f2fe;color:#0369a1">가이드폼</span>':' <span class="tag" style="background:#f1f5f9;color:#475569">지원폼</span>';
+    const introLine=r.intro?'<div class="muted" style="font-size:11px;margin-top:3px;white-space:pre-line;max-width:260px;line-height:1.5">'+esc(r.intro)+'</div>':'';
     return '<tr>'
       +'<td style="white-space:nowrap">'+fdate(r.created_at)+'</td>'
-      +'<td><b>'+esc(r.name)+'</b>'+(r.has_license?' <span class="tag" style="background:#dcfce7;color:#0f766e">등록보유</span>':(r.reg_support?' <span class="tag" style="background:#fef3c7;color:#b45309">등록대행희망</span>':' <span class="tag" style="background:#eef2ff;color:#4338ca">법적우산</span>'))+'</td>'
+      +'<td><b>'+esc(r.name)+'</b>'+srcTag+(r.has_license?' <span class="tag" style="background:#dcfce7;color:#0f766e">등록보유</span>':(r.reg_support?' <span class="tag" style="background:#fef3c7;color:#b45309">등록대행희망</span>':' <span class="tag" style="background:#eef2ff;color:#4338ca">법적우산</span>'))+introLine+'</td>'
       +'<td>'+esc(P_TYPE[r.ptype]||r.ptype)+'</td>'
       +'<td>'+(r.residence_country==='CN'?'중국':'국내')+'</td>'
       +'<td style="font-size:12px">'+esc(pContact(r.contact))+'</td>'
@@ -713,9 +714,9 @@ async function renderPartnerApps(){
       +'<td class="right" style="white-space:nowrap">'+(r.status!=='approved'?'<button class="btn sm" onclick="pAppApprove(\''+r.id+'\')">승인→파트너 등록</button> ':'')+'<button class="btn sm ghost" onclick="pAppDelete(\''+r.id+'\')">삭제</button></td>'
       +'</tr>';
   }).join(''):'<tr><td colspan="9" class="muted" style="text-align:center;padding:20px">아직 지원자가 없습니다.</td></tr>';
-  m.innerHTML='<div class="page-head"><div><h2>파트너 지원</h2><div class="sub">MCN 파트너 지원자 심사 (팔로우코리아 전용) · 총 '+list.length+'건'+(newCnt?' · <b style="color:#dc2626">신규 '+newCnt+'건</b>':'')+'</div></div><div style="display:flex;gap:8px">'+plBack()+'<a class="btn ghost" href="https://gnpulse.kr/join/" target="_blank" style="text-decoration:none">지원폼 열기</a><a class="btn ghost" href="https://gnpulse.kr/partner/" target="_blank" style="text-decoration:none">파트너 포털</a><button class="btn ghost" onclick="renderPartnerApps()">새로고침</button></div></div>'
+  m.innerHTML='<div class="page-head"><div><h2>파트너 지원</h2><div class="sub">MCN 파트너·가이드 지원자 통합 심사 (파트너 지원폼 + 가이드 모집폼) · 총 '+list.length+'건'+(newCnt?' · <b style="color:#dc2626">신규 '+newCnt+'건</b>':'')+'</div></div><div style="display:flex;gap:8px;flex-wrap:wrap">'+plBack()+'<a class="btn ghost" href="https://gnpulse.kr/join/" target="_blank" style="text-decoration:none">지원폼</a><a class="btn ghost" href="https://gnpulse.kr/guide/" target="_blank" style="text-decoration:none">가이드폼</a><a class="btn ghost" href="https://gnpulse.kr/partner/" target="_blank" style="text-decoration:none">파트너 포털</a><button class="btn ghost" onclick="renderPartnerApps()">새로고침</button></div></div>'
     +'<div class="panel"><div class="pb"><table><thead><tr><th>지원일</th><th>이름</th><th>유형</th><th>거주</th><th>연락처</th><th>SNS 채널</th><th>상태</th><th>메모</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
-    +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· <b>승인→파트너 등록</b>을 누르면 파트너 관리 목록에 온보딩(서류 단계) 상태로 생성됩니다.<br>· 흐름: 신규 → 심사중 → 승인(파트너 생성) / 거절. 거주=중국이면 지급경로가 자동으로 悦集江南 경유로 설정됩니다.</div></div>';
+    +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· <b>지원폼</b>(gnpulse.kr/join)과 <b>가이드폼</b>(gnpulse.kr/guide) 지원자가 한 큐로 통합됩니다. 지원폼 지원자는 파트너 포털 계정도 함께 생성됩니다.<br>· <b>승인→파트너 등록</b>을 누르면 파트너 관리 목록에 온보딩(서류 단계) 상태로 생성됩니다.<br>· 흐름: 신규 → 심사중 → 승인(파트너 생성) / 거절. 거주=중국이면 지급경로가 자동으로 悦集江南 경유로 설정됩니다.</div></div>';
 }
 async function pAppSetStatus(id,val){
   const {error}=await db.from('partner_applications').update({status:val,reviewed_at:new Date().toISOString()}).eq('id',id);
@@ -1602,7 +1603,6 @@ async function renderPlatHome(){
     +tile('dispatch','콜보드','통역·가이드 배차')
     +tile('demoreq','데모 신청','강남펄스 랜딩 리드')
     +tile('wanghongreq','왕홍병원 신청','메타광고 병원 리드')
-    +tile('guidereq','가이드 신청','통역 가이드 지원자')
     +tile('audit','관리자 로그','전체 조작 이력')
     +'</div>'
     +'<div style="font-weight:800;font-size:13px;margin:6px 0 8px;color:#475569">외부 사이트</div>'
