@@ -218,7 +218,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.12.0 · 2026-07-27';
+const APP_VERSION='v1.12.1 · 2026-07-27';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -685,8 +685,8 @@ const PTYPE_RATE={
   guide_kr:{rate:15,unit:'pct',basis:'병원 결제금액'},
   guide_kr_ip:{rate:20,unit:'pct',basis:'병원 결제금액'},
   interpreter:{rate:22000,unit:'hour',basis:'시간당'},
-  wanghong_kr:{rate:20,unit:'pct',basis:'병원 결제금액'},
-  influencer_kr:{rate:20,unit:'pct',basis:'병원 결제금액'},
+  wanghong_kr:{rate:20,unit:'pct',basis:'병원 결제금액',note:'콘텐츠 게시 조건 · 미이행 시 15%'},
+  influencer_kr:{rate:20,unit:'pct',basis:'병원 결제금액',note:'콘텐츠 게시 조건 · 미이행 시 15%'},
   freelancer_kr:{rate:15,unit:'pct',basis:'병원 결제금액'},
   freelancer_kr_ip:{rate:20,unit:'pct',basis:'병원 결제금액'},
   guide_cn:{rate:15,unit:'pct',basis:'병원 결제금액'},
@@ -694,8 +694,8 @@ const PTYPE_RATE={
   inbound_call:{rate:50000,unit:'case',basis:'건당'}
 };
 function rateFmt(rate,unit,basis){ if(rate==null)return '-'; if(unit==='pct')return rate+'% <span class="cny" style="font-size:inherit">('+(basis||'')+')</span>'; if(unit==='hour')return '시간당 '+Number(rate).toLocaleString()+'원'; if(unit==='case')return '건당 '+Number(rate).toLocaleString()+'원'; return '-'; }
-function pRateText(pt){ var r=PTYPE_RATE[pt]; return r?rateFmt(r.rate,r.unit,r.basis):'-'; }
-function pPartnerRate(p){ if(p&&p.commission_rate!=null)return rateFmt(p.commission_rate,p.commission_unit,p.commission_basis); return pRateText(p&&p.ptype); }
+function pRateText(pt){ var r=PTYPE_RATE[pt]; if(!r)return '-'; var s=rateFmt(r.rate,r.unit,r.basis); if(r.note)s+=' <span class="cny" style="font-size:inherit">· '+r.note+'</span>'; return s; }
+function pPartnerRate(p){ if(p&&p.commission_rate!=null){ var s=rateFmt(p.commission_rate,p.commission_unit,p.commission_basis); var r=PTYPE_RATE[p.ptype]; if(r&&r.note)s+=' <span class="cny" style="font-size:inherit">· '+r.note+'</span>'; return s; } return pRateText(p&&p.ptype); }
 const P_APP_ST={submitted:'신규',screening:'심사중',approved:'승인완료',rejected:'거절'};
 const P_ST={onboarding:'온보딩',trial:'수습',active:'정식',dormant:'휴면',terminated:'해지'};
 const P_ST_COLOR={onboarding:'#b45309',trial:'#7c3aed',active:'#0f766e',dormant:'#64748b',terminated:'#dc2626'};
@@ -757,7 +757,7 @@ async function pAppApprove(id){
   const r=(state._pApps||[]).find(function(x){return x.id===id;});
   if(!r){alert('지원서를 찾을 수 없습니다.');return;}
   var _rp=PTYPE_RATE[r.ptype]||{};
-  var _rpTxt=(_rp.unit==='pct'?_rp.rate+'% ('+_rp.basis+')':(_rp.unit==='hour'?'시간당 '+Number(_rp.rate).toLocaleString()+'원':(_rp.unit==='case'?'건당 '+Number(_rp.rate).toLocaleString()+'원':'-')));
+  var _rpTxt=(_rp.unit==='pct'?_rp.rate+'% ('+_rp.basis+')':(_rp.unit==='hour'?'시간당 '+Number(_rp.rate).toLocaleString()+'원':(_rp.unit==='case'?'건당 '+Number(_rp.rate).toLocaleString()+'원':'-')))+(_rp.note?' · '+_rp.note:'');
   if(!confirm('['+r.name+'] 지원자를 승인하고 파트너로 등록할까요?\n\n지원분야: '+(P_TYPE[r.ptype]||r.ptype)+'\n자동 적용 수수료율: '+_rpTxt+'\n\n등록 후 파트너 관리에서 서류·교육·테스트 온보딩을 진행합니다.'))return;
   const _rt=PTYPE_RATE[r.ptype]||{};
   const ins={application_id:r.id,ptype:r.ptype,name:r.name,residence_country:r.residence_country,
