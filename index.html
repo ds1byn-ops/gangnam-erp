@@ -218,7 +218,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.11.0 · 2026-07-27';
+const APP_VERSION='v1.12.0 · 2026-07-27';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -679,7 +679,23 @@ async function renderGuideRequests(){
 }
 function plBack(){return '<button class="btn ghost" onclick="navTo(\'plathome\')" title="플랫폼 홈으로">← 플랫폼 홈</button>';}
 /* ============ 파트너펄스: 파트너 지원 심사큐 · 파트너 관리 (MCN 토털 관리) ============ */
-const P_TYPE={guide_kr:'가이드(국내)',freelancer_kr:'프리랜서(국내)',wanghong_kr:'왕홍(국내)',wanghong_cn:'왕홍(중국)',guide_cn:'가이드(중국)',interpreter:'통역'};
+const P_TYPE={guide_kr:'가이드(국내)',guide_kr_ip:'가이드+통역(국내)',interpreter:'통역',wanghong_kr:'왕홍(국내)',influencer_kr:'인플루언서(국내)',freelancer_kr:'프리랜서(국내)',freelancer_kr_ip:'프리랜서+통역(국내)',guide_cn:'가이드(중국)',wanghong_cn:'왕홍(중국)',inbound_call:'1차상담(인바운드콜)'};
+/* 지원분야(ptype) → 수수료율 단일 소스. 지원 시 자동 적용, 승인 시 파트너에 기록. 기준=병원 결제금액(부가세 제외) */
+const PTYPE_RATE={
+  guide_kr:{rate:15,unit:'pct',basis:'병원 결제금액'},
+  guide_kr_ip:{rate:20,unit:'pct',basis:'병원 결제금액'},
+  interpreter:{rate:22000,unit:'hour',basis:'시간당'},
+  wanghong_kr:{rate:20,unit:'pct',basis:'병원 결제금액'},
+  influencer_kr:{rate:20,unit:'pct',basis:'병원 결제금액'},
+  freelancer_kr:{rate:15,unit:'pct',basis:'병원 결제금액'},
+  freelancer_kr_ip:{rate:20,unit:'pct',basis:'병원 결제금액'},
+  guide_cn:{rate:15,unit:'pct',basis:'병원 결제금액'},
+  wanghong_cn:{rate:15,unit:'pct',basis:'병원 결제금액'},
+  inbound_call:{rate:50000,unit:'case',basis:'건당'}
+};
+function rateFmt(rate,unit,basis){ if(rate==null)return '-'; if(unit==='pct')return rate+'% <span class="cny" style="font-size:inherit">('+(basis||'')+')</span>'; if(unit==='hour')return '시간당 '+Number(rate).toLocaleString()+'원'; if(unit==='case')return '건당 '+Number(rate).toLocaleString()+'원'; return '-'; }
+function pRateText(pt){ var r=PTYPE_RATE[pt]; return r?rateFmt(r.rate,r.unit,r.basis):'-'; }
+function pPartnerRate(p){ if(p&&p.commission_rate!=null)return rateFmt(p.commission_rate,p.commission_unit,p.commission_basis); return pRateText(p&&p.ptype); }
 const P_APP_ST={submitted:'신규',screening:'심사중',approved:'승인완료',rejected:'거절'};
 const P_ST={onboarding:'온보딩',trial:'수습',active:'정식',dormant:'휴면',terminated:'해지'};
 const P_ST_COLOR={onboarding:'#b45309',trial:'#7c3aed',active:'#0f766e',dormant:'#64748b',terminated:'#dc2626'};
@@ -705,7 +721,7 @@ async function renderPartnerApps(){
     return '<tr>'
       +'<td style="white-space:nowrap">'+fdate(r.created_at)+'</td>'
       +'<td><b>'+esc(r.name)+'</b>'+srcTag+(r.has_license?' <span class="tag" style="background:#dcfce7;color:#0f766e">등록보유</span>':(r.reg_support?' <span class="tag" style="background:#fef3c7;color:#b45309">등록대행희망</span>':' <span class="tag" style="background:#eef2ff;color:#4338ca">법적우산</span>'))+introLine+'</td>'
-      +'<td>'+esc(P_TYPE[r.ptype]||r.ptype)+'</td>'
+      +'<td>'+esc(P_TYPE[r.ptype]||r.ptype)+'<div class="cny">'+pRateText(r.ptype)+'</div></td>'
       +'<td>'+(r.residence_country==='CN'?'중국':'국내')+'</td>'
       +'<td style="font-size:12px">'+esc(pContact(r.contact))+'</td>'
       +'<td style="font-size:12px">'+(sns||'-')+'</td>'
@@ -740,10 +756,14 @@ async function pAppDelete(id){
 async function pAppApprove(id){
   const r=(state._pApps||[]).find(function(x){return x.id===id;});
   if(!r){alert('지원서를 찾을 수 없습니다.');return;}
-  if(!confirm('['+r.name+'] 지원자를 승인하고 파트너로 등록할까요?\n등록 후 파트너 관리에서 서류·교육·테스트 온보딩을 진행합니다.'))return;
+  var _rp=PTYPE_RATE[r.ptype]||{};
+  var _rpTxt=(_rp.unit==='pct'?_rp.rate+'% ('+_rp.basis+')':(_rp.unit==='hour'?'시간당 '+Number(_rp.rate).toLocaleString()+'원':(_rp.unit==='case'?'건당 '+Number(_rp.rate).toLocaleString()+'원':'-')));
+  if(!confirm('['+r.name+'] 지원자를 승인하고 파트너로 등록할까요?\n\n지원분야: '+(P_TYPE[r.ptype]||r.ptype)+'\n자동 적용 수수료율: '+_rpTxt+'\n\n등록 후 파트너 관리에서 서류·교육·테스트 온보딩을 진행합니다.'))return;
+  const _rt=PTYPE_RATE[r.ptype]||{};
   const ins={application_id:r.id,ptype:r.ptype,name:r.name,residence_country:r.residence_country,
     payout_route:(r.residence_country==='CN'?'yueji_cny':'domestic_33'),
     languages:r.languages||[],contact:r.contact||{},sns_channels:r.sns_channels||[],memo:r.memo||null,
+    commission_rate:(_rt.rate!=null?_rt.rate:null),commission_unit:(_rt.unit||null),commission_basis:(_rt.basis||null),
     has_license:!!r.has_license,reg_status:(r.has_license?'registered':(r.reg_support?'requested':'umbrella'))};
   const {error}=await db.from('partners').insert(ins);
   if(error){alert('파트너 생성 실패: '+error.message);return;}
@@ -765,7 +785,7 @@ async function renderPartnerMgmt(){
   const rows=state._partners.length?state._partners.map(function(p){
     return '<tr style="cursor:pointer" onclick="pModal(\''+p.id+'\')">'
       +'<td><b>'+esc(p.name)+'</b></td>'
-      +'<td>'+esc(P_TYPE[p.ptype]||p.ptype)+'</td>'
+      +'<td>'+esc(P_TYPE[p.ptype]||p.ptype)+'<div class="cny">'+pPartnerRate(p)+'</div></td>'
       +'<td>'+(p.residence_country==='CN'?'중국':'국내')+'<div class="cny">'+esc(P_ROUTE[p.payout_route]||'')+'</div></td>'
       +'<td style="text-align:center;font-weight:700">'+esc(p.grade||'-')+'</td>'
       +'<td><span class="tag" style="background:'+(P_ST_COLOR[p.status]||'#64748b')+'1a;color:'+(P_ST_COLOR[p.status]||'#64748b')+'">'+(P_ST[p.status]||p.status)+'</span></td>'
@@ -791,7 +811,7 @@ function pModal(id){
   openModal('<div class="mh">'+(p?'파트너 카드 — '+esc(p.name):'＋ 파트너 직접 추가')+'<span onclick="closeModal()">✕</span></div><div class="mb">'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
     +fld('이름','<input id="pm_name" '+inp+' value="'+esc(p?p.name:'')+'">')
-    +fld('유형','<select id="pm_ptype" '+inp+'>'+opt(P_TYPE,p?p.ptype:'guide_kr')+'</select>')
+    +fld('유형 <span class="cny">(요율 자동)</span>','<select id="pm_ptype" '+inp+' onchange="var _r=el(\'pm_rate\');if(_r)_r.innerHTML=pRateText(this.value)">'+opt(P_TYPE,p?p.ptype:'guide_kr')+'</select><div class="cny" style="margin-top:4px">자동 수수료율: <b id="pm_rate">'+pRateText(p?p.ptype:'guide_kr')+'</b></div>')
     +fld('거주','<select id="pm_res" '+inp+' onchange="el(\'pm_route\').value=(this.value===\'CN\'?\'yueji_cny\':\'domestic_33\')"><option value="KR"'+(!p||p.residence_country==='KR'?' selected':'')+'>국내</option><option value="CN"'+(p&&p.residence_country==='CN'?' selected':'')+'>중국</option></select>')
     +fld('지급경로','<select id="pm_route" '+inp+'>'+opt(P_ROUTE,p?p.payout_route:'domestic_33')+'</select>')
     +fld('상태','<select id="pm_status" '+inp+'>'+opt(P_ST,p?p.status:'onboarding')+'</select>')
@@ -924,8 +944,10 @@ async function pSave(id){
   const name=el('pm_name').value.trim();
   if(!name){alert('이름을 입력하세요.');return;}
   const signed=el('pm_contract')?el('pm_contract').checked:false;
+  const _rt=PTYPE_RATE[el('pm_ptype').value]||{};
   const row={name:name,ptype:el('pm_ptype').value,residence_country:el('pm_res').value,payout_route:el('pm_route').value,
     status:el('pm_status').value,onboarding_step:el('pm_step').value,grade:el('pm_grade').value,
+    commission_rate:(_rt.rate!=null?_rt.rate:null),commission_unit:(_rt.unit||null),commission_basis:(_rt.basis||null),
     contact:{phone:el('pm_phone').value.trim()||undefined,wechat:el('pm_wechat').value.trim()||undefined,email:el('pm_email').value.trim()||undefined},
     reg_status:(el('pm_regstatus')?el('pm_regstatus').value:'umbrella'),
     license_no:(el('pm_licno')?el('pm_licno').value.trim()||null:null),
