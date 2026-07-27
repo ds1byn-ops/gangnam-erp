@@ -219,7 +219,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.9.6 · 2026-07-24';
+const APP_VERSION='v1.10.0 · 2026-07-24';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -686,6 +686,7 @@ const P_ST={onboarding:'온보딩',trial:'수습',active:'정식',dormant:'휴�
 const P_ST_COLOR={onboarding:'#b45309',trial:'#7c3aed',active:'#0f766e',dormant:'#64748b',terminated:'#dc2626'};
 const P_STEP={documents:'서류',training:'교육',test_case:'테스트 1건',done:'완료'};
 const P_ROUTE={domestic_33:'국내 3.3%',yueji_cny:'중국(悦集江南)'};
+const P_REGST={umbrella:'법적 우산(FK 계약)',requested:'등록 대행 신청',in_progress:'등록 진행중',registered:'자체 등록완료'};
 function pContact(c){c=c||{};var a=[];if(c.phone)a.push(c.phone);if(c.wechat)a.push('위챗 '+c.wechat);if(c.email)a.push(c.email);return a.join(' · ')||'-';}
 
 async function renderPartnerApps(){
@@ -702,7 +703,7 @@ async function renderPartnerApps(){
     const sns=(r.sns_channels||[]).map(function(s){return esc((s.platform||'')+(s.followers?'('+Number(s.followers).toLocaleString()+')':''));}).join(', ');
     return '<tr>'
       +'<td style="white-space:nowrap">'+fdate(r.created_at)+'</td>'
-      +'<td><b>'+esc(r.name)+'</b></td>'
+      +'<td><b>'+esc(r.name)+'</b>'+(r.has_license?' <span class="tag" style="background:#dcfce7;color:#0f766e">등록보유</span>':(r.reg_support?' <span class="tag" style="background:#fef3c7;color:#b45309">등록대행희망</span>':' <span class="tag" style="background:#eef2ff;color:#4338ca">법적우산</span>'))+'</td>'
       +'<td>'+esc(P_TYPE[r.ptype]||r.ptype)+'</td>'
       +'<td>'+(r.residence_country==='CN'?'중국':'국내')+'</td>'
       +'<td style="font-size:12px">'+esc(pContact(r.contact))+'</td>'
@@ -741,7 +742,8 @@ async function pAppApprove(id){
   if(!confirm('['+r.name+'] 지원자를 승인하고 파트너로 등록할까요?\n등록 후 파트너 관리에서 서류·교육·테스트 온보딩을 진행합니다.'))return;
   const ins={application_id:r.id,ptype:r.ptype,name:r.name,residence_country:r.residence_country,
     payout_route:(r.residence_country==='CN'?'yueji_cny':'domestic_33'),
-    languages:r.languages||[],contact:r.contact||{},sns_channels:r.sns_channels||[],memo:r.memo||null};
+    languages:r.languages||[],contact:r.contact||{},sns_channels:r.sns_channels||[],memo:r.memo||null,
+    has_license:!!r.has_license,reg_status:(r.has_license?'registered':(r.reg_support?'requested':'umbrella'))};
   const {error}=await db.from('partners').insert(ins);
   if(error){alert('파트너 생성 실패: '+error.message);return;}
   await db.from('partner_applications').update({status:'approved',reviewed_at:new Date().toISOString()}).eq('id',id);
@@ -798,6 +800,12 @@ function pModal(id){
     +fld('위챗','<input id="pm_wechat" '+inp+' value="'+esc(c.wechat||'')+'">')
     +fld('이메일','<input id="pm_email" '+inp+' value="'+esc(c.email||'')+'">')
     +'</div>'
+    +'<div style="border-top:1px solid var(--line);margin:6px 0 10px;padding-top:10px;font-weight:800;font-size:13px">유치업 등록 · 법적 우산</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +fld('등록 상태','<select id="pm_regstatus" '+inp+'>'+opt(P_REGST,p?p.reg_status:'umbrella')+'</select>')
+    +fld('유치업 등록번호 (있으면)','<input id="pm_licno" '+inp+' value="'+esc(p&&p.license_no||'')+'" placeholder="제 A-…호">')
+    +'</div>'
+    +'<label style="display:flex;align-items:center;gap:8px;margin:4px 0 2px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" id="pm_contract" style="width:auto" '+(p&&p.contract_signed?'checked':'')+'> 용역계약 체결 완료 <span class="cny">(법적 우산의 근거)</span></label>'
     +fld('메모','<textarea id="pm_memo" rows="3" '+inp+'>'+esc(p?(p.memo||''):'')+'</textarea>')
     +(p?'<div id="pm_extra" style="margin-top:6px"><div class="muted" style="font-size:12px">계약·서류 불러오는 중…</div></div>':'<p style="margin-top:6px;font-size:12px;color:var(--muted)">저장 후 카드를 다시 열면 계약·서류를 등록할 수 있습니다.</p>')
     +'</div><div class="mf">'
@@ -914,9 +922,14 @@ async function pDocDel(did,pid,path){
 async function pSave(id){
   const name=el('pm_name').value.trim();
   if(!name){alert('이름을 입력하세요.');return;}
+  const signed=el('pm_contract')?el('pm_contract').checked:false;
   const row={name:name,ptype:el('pm_ptype').value,residence_country:el('pm_res').value,payout_route:el('pm_route').value,
     status:el('pm_status').value,onboarding_step:el('pm_step').value,grade:el('pm_grade').value,
     contact:{phone:el('pm_phone').value.trim()||undefined,wechat:el('pm_wechat').value.trim()||undefined,email:el('pm_email').value.trim()||undefined},
+    reg_status:(el('pm_regstatus')?el('pm_regstatus').value:'umbrella'),
+    license_no:(el('pm_licno')?el('pm_licno').value.trim()||null:null),
+    has_license:(el('pm_regstatus')&&el('pm_regstatus').value==='registered'),
+    contract_signed:signed, contract_signed_at:(signed?new Date().toISOString().slice(0,10):null),
     memo:el('pm_memo').value.trim()||null,updated_at:new Date().toISOString()};
   let error;
   if(id){ error=(await db.from('partners').update(row).eq('id',id)).error; }
