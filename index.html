@@ -680,20 +680,23 @@ async function renderGuideRequests(){
 function plBack(){return '<button class="btn ghost" onclick="navTo(\'plathome\')" title="플랫폼 홈으로">← 플랫폼 홈</button>';}
 /* ============ 파트너펄스: 파트너 지원 심사큐 · 파트너 관리 (MCN 토털 관리) ============ */
 const P_TYPE={guide_kr:'가이드(국내)',guide_kr_ip:'가이드+통역(국내)',interpreter:'통역',wanghong_kr:'왕홍(국내)',influencer_kr:'인플루언서(국내)',freelancer_kr:'프리랜서(국내)',freelancer_kr_ip:'프리랜서+통역(국내)',guide_cn:'가이드(중국)',wanghong_cn:'왕홍(중국)',inbound_call:'1차상담(인바운드콜)'};
-/* 지원분야(ptype) → 수수료율 단일 소스. 지원 시 자동 적용, 승인 시 파트너에 기록. 기준=병원 결제금액(부가세 제외) */
+/* 지원분야(ptype) → 수수료율 단일 소스. 지원 시 자동 적용, 승인 시 파트너에 기록.
+   2026-07-29 개편: 환자유치형(왕홍·인플루언서·외부영업자·가이드)은 "병원→FK 수수료(hc)"의 50%를 지급,
+   통역을 겸하면(_ip) 65%(=50%+15%p)를 지급하는 구조로 변경(신규 가입자부터 적용, 기존 소개자는 종전 요율 유지).
+   pct=병원 결제금액(부가세 제외) 기준 · pct_hc=병원→FK 수수료(hc) 기준 · hour/case는 정액 */
 const PTYPE_RATE={
-  guide_kr:{rate:15,unit:'pct',basis:'병원 결제금액'},
-  guide_kr_ip:{rate:20,unit:'pct',basis:'병원 결제금액'},
+  guide_kr:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료'},
+  guide_kr_ip:{rate:65,unit:'pct_hc',basis:'병원→FK 수수료',note:'통역 겸업(+15%p)'},
   interpreter:{rate:20000,unit:'hour',basis:'시간당'},
-  wanghong_kr:{rate:20,unit:'pct',basis:'병원 결제금액',note:'콘텐츠 게시 조건 · 미이행 시 15%'},
-  influencer_kr:{rate:20,unit:'pct',basis:'병원 결제금액',note:'콘텐츠 게시 조건 · 미이행 시 15%'},
-  freelancer_kr:{rate:15,unit:'pct',basis:'병원 결제금액'},
-  freelancer_kr_ip:{rate:20,unit:'pct',basis:'병원 결제금액'},
-  guide_cn:{rate:15,unit:'pct',basis:'병원 결제금액'},
-  wanghong_cn:{rate:15,unit:'pct',basis:'병원 결제금액'},
+  wanghong_kr:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료',note:'콘텐츠 게시 조건 · 미이행 시 요율 하향(별도 협의)'},
+  influencer_kr:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료',note:'콘텐츠 게시 조건 · 미이행 시 요율 하향(별도 협의)'},
+  freelancer_kr:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료'},
+  freelancer_kr_ip:{rate:65,unit:'pct_hc',basis:'병원→FK 수수료',note:'통역 겸업(+15%p)'},
+  guide_cn:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료'},
+  wanghong_cn:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료'},
   inbound_call:{rate:50000,unit:'case',basis:'건당'}
 };
-function rateFmt(rate,unit,basis){ if(rate==null)return '-'; if(unit==='pct')return rate+'% <span class="cny" style="font-size:inherit">('+(basis||'')+')</span>'; if(unit==='hour')return '시간당 '+Number(rate).toLocaleString()+'원'; if(unit==='case')return '건당 '+Number(rate).toLocaleString()+'원'; return '-'; }
+function rateFmt(rate,unit,basis){ if(rate==null)return '-'; if(unit==='pct')return rate+'% <span class="cny" style="font-size:inherit">('+(basis||'')+')</span>'; if(unit==='pct_hc')return rate+'% <span class="cny" style="font-size:inherit">('+(basis||'병원→FK 수수료')+' 기준)</span>'; if(unit==='hour')return '시간당 '+Number(rate).toLocaleString()+'원'; if(unit==='case')return '건당 '+Number(rate).toLocaleString()+'원'; return '-'; }
 function pRateText(pt){ var r=PTYPE_RATE[pt]; if(!r)return '-'; var s=rateFmt(r.rate,r.unit,r.basis); if(r.note)s+=' <span class="cny" style="font-size:inherit">· '+r.note+'</span>'; return s; }
 function pPartnerRate(p){ if(p&&p.commission_rate!=null){ var s=rateFmt(p.commission_rate,p.commission_unit,p.commission_basis); var r=PTYPE_RATE[p.ptype]; if(r&&r.note)s+=' <span class="cny" style="font-size:inherit">· '+r.note+'</span>'; return s; } return pRateText(p&&p.ptype); }
 const P_APP_ST={submitted:'신규',screening:'심사중',approved:'승인완료',rejected:'거절'};
