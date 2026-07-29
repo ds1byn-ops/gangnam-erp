@@ -201,8 +201,6 @@
         <a data-view="platform" class="platform-only" style="display:none">플랫폼 관리</a>
         <a data-view="demoreq" class="platform-only" style="display:none">데모 신청<span class="nvb" id="bdg_demoreq"></span></a>
         <a data-view="wanghongreq" class="platform-only" style="display:none">왕홍병원 신청<span class="nvb" id="bdg_wanghongreq"></span></a>
-        <a data-view="partnerapp" class="platform-only" style="display:none">파트너 지원<span class="nvb" id="bdg_partnerapp"></span></a>
-        <a data-view="partnermgmt" class="platform-only" style="display:none">파트너 관리</a>
         <a data-view="campaigns" class="platform-only" style="display:none">캠페인 관리</a>
         <a data-view="dispatch" class="platform-only" style="display:none">콜보드 (통역·가이드)</a>
       </nav>
@@ -488,7 +486,7 @@ function agencyCsv(){
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),guidereq:renderGuideRequests,partnerapp:renderPartnerApps,partnermgmt:renderPartnerMgmt,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),guidereq:renderGuideRequests,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
 
 /* ============ 구독 · 이용권 ============ */
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
@@ -645,7 +643,6 @@ async function refreshLeadBadges(){
     const {data}=await db.from('demo_requests').select('source').eq('status','new');
     const c={demoreq:0,wanghongreq:0,guidereq:0};
     (data||[]).forEach(function(r){ if(r.source==='landing')c.demoreq++; else if(r.source==='meta_ads_wanghong_lp')c.wanghongreq++; else if(r.source==='guide_recruit')c.guidereq++; });
-    try{ const pr=await db.from('partner_applications').select('id',{count:'exact',head:true}).eq('status','submitted'); c.partnerapp=pr.count||0; }catch(_e2){ c.partnerapp=0; }
     Object.keys(c).forEach(function(k){ var b=el('bdg_'+k); if(!b)return; if(c[k]>0){ b.textContent=c[k]>99?'99+':c[k]; b.style.display='inline-block'; } else { b.style.display='none'; } });
   }catch(_e){}
 }
@@ -678,309 +675,7 @@ async function renderGuideRequests(){
     +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· gnpulse.kr/guide 지원폼에서 들어온 통역·가이드 지원자입니다.<br>· 상태 흐름: 신규 → 연락함 → (데모완료=면접/온보딩) → 전환(등록) / 드롭. 메모는 입력 후 칸을 벗어나면 자동 저장됩니다.</div></div>';
 }
 function plBack(){return '<button class="btn ghost" onclick="navTo(\'plathome\')" title="플랫폼 홈으로">← 플랫폼 홈</button>';}
-/* ============ 파트너펄스: 파트너 지원 심사큐 · 파트너 관리 (MCN 토털 관리) ============ */
-const P_TYPE={guide_kr:'가이드(국내)',guide_kr_ip:'가이드+통역(국내)',interpreter:'통역',wanghong_kr:'왕홍(국내)',influencer_kr:'인플루언서(국내)',freelancer_kr:'프리랜서(국내)',freelancer_kr_ip:'프리랜서+통역(국내)',guide_cn:'가이드(중국)',wanghong_cn:'왕홍(중국)',inbound_call:'1차상담(인바운드콜)'};
-/* 지원분야(ptype) → 수수료율 단일 소스. 지원 시 자동 적용, 승인 시 파트너에 기록.
-   2026-07-29 개편: 환자유치형(왕홍·인플루언서·외부영업자·가이드)은 "병원→FK 수수료(hc)"의 50%를 지급,
-   통역을 겸하면(_ip) 65%(=50%+15%p)를 지급하는 구조로 변경(신규 가입자부터 적용, 기존 소개자는 종전 요율 유지).
-   pct=병원 결제금액(부가세 제외) 기준 · pct_hc=병원→FK 수수료(hc) 기준 · hour/case는 정액 */
-const PTYPE_RATE={
-  guide_kr:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료'},
-  guide_kr_ip:{rate:65,unit:'pct_hc',basis:'병원→FK 수수료',note:'통역 겸업(+15%p)'},
-  interpreter:{rate:20000,unit:'hour',basis:'시간당'},
-  wanghong_kr:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료',note:'콘텐츠 게시 조건 · 미이행 시 요율 하향(별도 협의)'},
-  influencer_kr:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료',note:'콘텐츠 게시 조건 · 미이행 시 요율 하향(별도 협의)'},
-  freelancer_kr:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료'},
-  freelancer_kr_ip:{rate:65,unit:'pct_hc',basis:'병원→FK 수수료',note:'통역 겸업(+15%p)'},
-  guide_cn:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료'},
-  wanghong_cn:{rate:50,unit:'pct_hc',basis:'병원→FK 수수료'},
-  inbound_call:{rate:50000,unit:'case',basis:'건당'}
-};
-function rateFmt(rate,unit,basis){ if(rate==null)return '-'; if(unit==='pct')return rate+'% <span class="cny" style="font-size:inherit">('+(basis||'')+')</span>'; if(unit==='pct_hc')return rate+'% <span class="cny" style="font-size:inherit">('+(basis||'병원→FK 수수료')+' 기준)</span>'; if(unit==='hour')return '시간당 '+Number(rate).toLocaleString()+'원'; if(unit==='case')return '건당 '+Number(rate).toLocaleString()+'원'; return '-'; }
-function pRateText(pt){ var r=PTYPE_RATE[pt]; if(!r)return '-'; var s=rateFmt(r.rate,r.unit,r.basis); if(r.note)s+=' <span class="cny" style="font-size:inherit">· '+r.note+'</span>'; return s; }
-function pPartnerRate(p){ if(p&&p.commission_rate!=null){ var s=rateFmt(p.commission_rate,p.commission_unit,p.commission_basis); var r=PTYPE_RATE[p.ptype]; if(r&&r.note)s+=' <span class="cny" style="font-size:inherit">· '+r.note+'</span>'; return s; } return pRateText(p&&p.ptype); }
-const P_APP_ST={submitted:'신규',screening:'심사중',approved:'승인완료',rejected:'거절'};
-const P_ST={onboarding:'온보딩',trial:'수습',active:'정식',dormant:'휴면',terminated:'해지'};
-const P_ST_COLOR={onboarding:'#b45309',trial:'#7c3aed',active:'#0f766e',dormant:'#64748b',terminated:'#dc2626'};
-const P_STEP={documents:'서류',training:'교육',test_case:'테스트 1건',done:'완료'};
-const P_ROUTE={domestic_33:'국내 3.3%',yueji_cny:'중국(悦集江南)'};
-const P_REGST={umbrella:'법적보호(FK 계약)',requested:'등록 대행 신청',in_progress:'등록 진행중',registered:'자체 등록완료'};
-function pContact(c){c=c||{};var a=[];if(c.phone)a.push(c.phone);if(c.wechat)a.push('위챗 '+c.wechat);if(c.email)a.push(c.email);return a.join(' · ')||'-';}
-
-async function renderPartnerApps(){
-  const m=el('main');
-  if(!state.platformMaster){ m.innerHTML='<div class="page-head"><div><h2>접근 불가</h2></div></div><div class="muted" style="padding:20px">플랫폼 마스터만 접근할 수 있습니다.</div>'; return; }
-  m.innerHTML='<div class="loading">불러오는 중…</div>';
-  const {data,error}=await db.from('partner_applications').select('*');
-  if(error){ m.innerHTML='<div class="page-head"><div><h2>파트너 지원</h2></div></div><div class="muted" style="padding:20px;color:var(--danger)">불러오기 실패: '+esc(error.message)+'</div>'; return; }
-  const list=(data||[]).slice().sort(function(a,b){ const an=a.status==='submitted'?0:1,bn=b.status==='submitted'?0:1; if(an!==bn)return an-bn; return new Date(b.created_at)-new Date(a.created_at); });
-  state._pApps=list;
-  const newCnt=list.filter(function(r){return r.status==='submitted';}).length;
-  const stSel=function(r){ return '<select onchange="pAppSetStatus(\''+r.id+'\',this.value)" style="padding:5px;border:1px solid var(--line);border-radius:7px;font-size:12px">'+Object.keys(P_APP_ST).map(function(k){return '<option value="'+k+'"'+(k===r.status?' selected':'')+'>'+P_APP_ST[k]+'</option>';}).join('')+'</select>'; };
-  const rows=list.length?list.map(function(r){
-    const sns=(r.sns_channels||[]).map(function(s){return esc((s.platform||'')+(s.followers?'('+Number(s.followers).toLocaleString()+')':''));}).join(', ');
-    const srcTag=(r.source==='guide_recruit')?' <span class="tag" style="background:#e0f2fe;color:#0369a1">가이드폼</span>':' <span class="tag" style="background:#f1f5f9;color:#475569">지원폼</span>';
-    const introLine=r.intro?'<div class="muted" style="font-size:11px;margin-top:3px;white-space:pre-line;max-width:260px;line-height:1.5">'+esc(r.intro)+'</div>':'';
-    return '<tr>'
-      +'<td style="white-space:nowrap">'+fdate(r.created_at)+'</td>'
-      +'<td><b>'+esc(r.name)+'</b>'+srcTag+(r.has_license?' <span class="tag" style="background:#dcfce7;color:#0f766e">등록보유</span>':(r.reg_support?' <span class="tag" style="background:#fef3c7;color:#b45309">등록대행희망</span>':' <span class="tag" style="background:#eef2ff;color:#4338ca">법적보호</span>'))+introLine+'</td>'
-      +'<td>'+esc(P_TYPE[r.ptype]||r.ptype)+'<div class="cny">'+pRateText(r.ptype)+'</div></td>'
-      +'<td>'+(r.residence_country==='CN'?'중국':'국내')+'</td>'
-      +'<td style="font-size:12px">'+esc(pContact(r.contact))+'</td>'
-      +'<td style="font-size:12px">'+(sns||'-')+'</td>'
-      +'<td>'+stSel(r)+'</td>'
-      +'<td><input value="'+esc(r.memo||'')+'" placeholder="심사 메모…" onchange="pAppSaveMemo(\''+r.id+'\',this.value)" style="width:100%;min-width:120px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px"></td>'
-      +'<td class="right" style="white-space:nowrap">'+(r.status!=='approved'?'<button class="btn sm" onclick="pAppApprove(\''+r.id+'\')">승인→파트너 등록</button> ':'')+'<button class="btn sm ghost" onclick="pAppDelete(\''+r.id+'\')">삭제</button></td>'
-      +'</tr>';
-  }).join(''):'<tr><td colspan="9" class="muted" style="text-align:center;padding:20px">아직 지원자가 없습니다.</td></tr>';
-  m.innerHTML='<div class="page-head"><div><h2>파트너 지원</h2><div class="sub">MCN 파트너·가이드 지원자 통합 심사 (파트너 지원폼 + 가이드 모집폼) · 총 '+list.length+'건'+(newCnt?' · <b style="color:#dc2626">신규 '+newCnt+'건</b>':'')+'</div></div><div style="display:flex;gap:8px;flex-wrap:wrap">'+plBack()+'<a class="btn ghost" href="https://gnpulse.kr/join/" target="_blank" style="text-decoration:none">지원폼</a><a class="btn ghost" href="https://gnpulse.kr/guide/" target="_blank" style="text-decoration:none">가이드폼</a><a class="btn ghost" href="https://gnpulse.kr/partner/" target="_blank" style="text-decoration:none">파트너 포털</a><button class="btn ghost" onclick="renderPartnerApps()">새로고침</button></div></div>'
-    +'<div class="panel"><div class="pb"><table><thead><tr><th>지원일</th><th>이름</th><th>유형</th><th>거주</th><th>연락처</th><th>SNS 채널</th><th>상태</th><th>메모</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
-    +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· <b>지원폼</b>(gnpulse.kr/join)과 <b>가이드폼</b>(gnpulse.kr/guide) 지원자가 한 큐로 통합됩니다. 지원폼 지원자는 파트너 포털 계정도 함께 생성됩니다.<br>· <b>승인→파트너 등록</b>을 누르면 파트너 관리 목록에 온보딩(서류 단계) 상태로 생성됩니다.<br>· 흐름: 신규 → 심사중 → 승인(파트너 생성) / 거절. 거주=중국이면 지급경로가 자동으로 悦集江南 경유로 설정됩니다.</div></div>';
-}
-async function pAppSetStatus(id,val){
-  const {error}=await db.from('partner_applications').update({status:val,reviewed_at:new Date().toISOString()}).eq('id',id);
-  if(error){alert('상태 변경 실패: '+error.message);return;}
-  const r=(state._pApps||[]).find(function(x){return x.id===id;}); if(r)r.status=val;
-  logAudit('파트너지원 상태변경',(r?r.name+' · ':'')+(P_APP_ST[val]||val));
-  refreshLeadBadges();
-}
-async function pAppSaveMemo(id,val){
-  const {error}=await db.from('partner_applications').update({memo:val}).eq('id',id);
-  if(error){alert('메모 저장 실패: '+error.message);}
-}
-async function pAppDelete(id){
-  if(!confirm('이 지원서를 삭제할까요? 되돌릴 수 없습니다.'))return;
-  const r=(state._pApps||[]).find(function(x){return x.id===id;});
-  // 이미 승인되어 파트너 관리에 연동된 지원서는 partners.application_id가 이 id를 참조하므로 FK 제약으로 삭제가 막힘 — 연동 파트너도 같이 지울지 확인
-  const {data:linked}=await db.from('partners').select('id,name').eq('application_id',id);
-  if(linked&&linked.length){
-    if(!confirm('이 지원서는 이미 [파트너 관리]에 "'+(linked[0].name||r&&r.name||'')+'"(으)로 등록되어 있습니다.\n연동된 파트너 정보도 함께 삭제할까요? (되돌릴 수 없습니다)'))return;
-    const {error:pe}=await db.from('partners').delete().eq('application_id',id);
-    if(pe){alert('연동 파트너 삭제 실패: '+pe.message);return;}
-  }
-  const {error}=await db.from('partner_applications').delete().eq('id',id);
-  if(error){alert('삭제 실패: '+error.message);return;}
-  logAudit('파트너지원 삭제',(r&&r.name)||id);
-  renderPartnerApps();refreshLeadBadges();
-  if(linked&&linked.length)renderPartnerMgmt();
-}
-async function pAppApprove(id){
-  const r=(state._pApps||[]).find(function(x){return x.id===id;});
-  if(!r){alert('지원서를 찾을 수 없습니다.');return;}
-  var _rp=PTYPE_RATE[r.ptype]||{};
-  var _rpTxt=(_rp.unit==='pct'?_rp.rate+'% ('+_rp.basis+')':(_rp.unit==='hour'?'시간당 '+Number(_rp.rate).toLocaleString()+'원':(_rp.unit==='case'?'건당 '+Number(_rp.rate).toLocaleString()+'원':'-')))+(_rp.note?' · '+_rp.note:'');
-  if(!confirm('['+r.name+'] 지원자를 승인하고 파트너로 등록할까요?\n\n지원분야: '+(P_TYPE[r.ptype]||r.ptype)+'\n자동 적용 수수료율: '+_rpTxt+'\n\n등록 후 파트너 관리에서 서류·교육·테스트 온보딩을 진행합니다.'))return;
-  const _rt=PTYPE_RATE[r.ptype]||{};
-  const ins={application_id:r.id,ptype:r.ptype,name:r.name,residence_country:r.residence_country,
-    payout_route:(r.residence_country==='CN'?'yueji_cny':'domestic_33'),
-    languages:r.languages||[],contact:r.contact||{},sns_channels:r.sns_channels||[],memo:r.memo||null,
-    commission_rate:(_rt.rate!=null?_rt.rate:null),commission_unit:(_rt.unit||null),commission_basis:(_rt.basis||null),
-    has_license:!!r.has_license,reg_status:(r.has_license?'registered':(r.reg_support?'requested':'umbrella'))};
-  const {error}=await db.from('partners').insert(ins);
-  if(error){alert('파트너 생성 실패: '+error.message);return;}
-  await db.from('partner_applications').update({status:'approved',reviewed_at:new Date().toISOString()}).eq('id',id);
-  logAudit('파트너 승인·등록',r.name+' ('+(P_TYPE[r.ptype]||r.ptype)+')');
-  alert('['+r.name+'] 파트너로 등록되었습니다. 파트너 관리에서 온보딩을 진행하세요.');
-  renderPartnerApps();refreshLeadBadges();
-}
-
-async function renderPartnerMgmt(){
-  const m=el('main');
-  if(!state.platformMaster){ m.innerHTML='<div class="page-head"><div><h2>접근 불가</h2></div></div><div class="muted" style="padding:20px">플랫폼 마스터만 접근할 수 있습니다.</div>'; return; }
-  m.innerHTML='<div class="loading">불러오는 중…</div>';
-  const {data,error}=await db.from('partners').select('*').order('created_at',{ascending:false});
-  if(error){ m.innerHTML='<div class="page-head"><div><h2>파트너 관리</h2></div></div><div class="muted" style="padding:20px;color:var(--danger)">불러오기 실패: '+esc(error.message)+'</div>'; return; }
-  state._partners=data||[];
-  const cnt={}; state._partners.forEach(function(p){cnt[p.status]=(cnt[p.status]||0)+1;});
-  const chips=Object.keys(P_ST).filter(function(k){return cnt[k];}).map(function(k){return '<span class="tag" style="margin-left:6px;background:'+P_ST_COLOR[k]+'1a;color:'+P_ST_COLOR[k]+'">'+P_ST[k]+' '+cnt[k]+'</span>';}).join('');
-  const rows=state._partners.length?state._partners.map(function(p){
-    return '<tr style="cursor:pointer" onclick="pModal(\''+p.id+'\')">'
-      +'<td><b>'+esc(p.name)+'</b></td>'
-      +'<td>'+esc(P_TYPE[p.ptype]||p.ptype)+'<div class="cny">'+pPartnerRate(p)+'</div></td>'
-      +'<td>'+(p.residence_country==='CN'?'중국':'국내')+'<div class="cny">'+esc(P_ROUTE[p.payout_route]||'')+'</div></td>'
-      +'<td style="text-align:center;font-weight:700">'+esc(p.grade||'-')+'</td>'
-      +'<td><span class="tag" style="background:'+(P_ST_COLOR[p.status]||'#64748b')+'1a;color:'+(P_ST_COLOR[p.status]||'#64748b')+'">'+(P_ST[p.status]||p.status)+'</span></td>'
-      +'<td>'+(p.status==='onboarding'?(P_STEP[p.onboarding_step]||p.onboarding_step):'-')+'</td>'
-      +'<td style="font-size:12px">'+esc(pContact(p.contact))+'</td>'
-      +'<td style="white-space:nowrap">'+fdate(p.created_at)+'</td>'
-      +'</tr>';
-  }).join(''):'<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">등록된 파트너가 없습니다. 파트너 지원 메뉴에서 승인하거나 직접 추가하세요.</td></tr>';
-  m.innerHTML='<div class="page-head"><div><h2>파트너 관리</h2><div class="sub">MCN 파트너 마스터 (팔로우코리아 전용) · 총 '+state._partners.length+'명'+chips+'</div></div>'
-    +'<div style="display:flex;gap:8px">'+plBack()+'<a class="btn ghost" href="https://gnpulse.kr/partner/" target="_blank" style="text-decoration:none">파트너 포털</a><button class="btn ghost" onclick="renderPartnerMgmt()">새로고침</button><button class="btn" onclick="pModal()">＋ 파트너 직접 추가</button></div></div>'
-    +'<div class="panel"><div class="pb"><table><thead><tr><th>이름</th><th>유형</th><th>거주 · 지급경로</th><th style="text-align:center">등급</th><th>상태</th><th>온보딩</th><th>연락처</th><th>등록일</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
-    +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· 행을 클릭하면 파트너 카드를 열어 상태·온보딩 단계·등급·지급경로를 수정할 수 있습니다.<br>· 온보딩: 서류 → 교육 → 테스트 1건 → 완료. 완료 후 상태를 수습/정식으로 전환하세요. 계약·서류 파일 관리는 다음 단계에서 추가됩니다.</div></div>';
-}
-const P_C_ENT={followkorea:'팔로우코리아',yueji_jiangnan:'悦集江南(중국법인)'};
-const P_C_ST={draft:'초안',sent:'발송',signed:'서명완료',expired:'만료',terminated:'해지'};
-const P_D_TYPE={id_card:'신분증',bankbook:'통장사본',passport:'여권',biz_reg:'사업자등록',other:'기타'};
-function pModal(id){
-  const p=id?(state._partners||[]).find(function(x){return x.id===id;}):null;
-  const c=(p&&p.contact)||{};
-  const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
-  const fld=function(label,inner){ return '<div class="field"><label>'+label+'</label>'+inner+'</div>'; };
-  const opt=function(obj,cur){return Object.keys(obj).map(function(k){return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+obj[k]+'</option>';}).join('');};
-  openModal('<div class="mh">'+(p?'파트너 카드 — '+esc(p.name):'＋ 파트너 직접 추가')+'<span onclick="closeModal()">✕</span></div><div class="mb">'
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +fld('이름','<input id="pm_name" '+inp+' value="'+esc(p?p.name:'')+'">')
-    +fld('유형 <span class="cny">(요율 자동)</span>','<select id="pm_ptype" '+inp+' onchange="var _r=el(\'pm_rate\');if(_r)_r.innerHTML=pRateText(this.value)">'+opt(P_TYPE,p?p.ptype:'guide_kr')+'</select><div class="cny" style="margin-top:4px">자동 수수료율: <b id="pm_rate">'+pRateText(p?p.ptype:'guide_kr')+'</b></div>')
-    +fld('거주','<select id="pm_res" '+inp+' onchange="el(\'pm_route\').value=(this.value===\'CN\'?\'yueji_cny\':\'domestic_33\')"><option value="KR"'+(!p||p.residence_country==='KR'?' selected':'')+'>국내</option><option value="CN"'+(p&&p.residence_country==='CN'?' selected':'')+'>중국</option></select>')
-    +fld('지급경로','<select id="pm_route" '+inp+'>'+opt(P_ROUTE,p?p.payout_route:'domestic_33')+'</select>')
-    +fld('상태','<select id="pm_status" '+inp+'>'+opt(P_ST,p?p.status:'onboarding')+'</select>')
-    +fld('온보딩 단계','<select id="pm_step" '+inp+'>'+opt(P_STEP,p?p.onboarding_step:'documents')+'</select>')
-    +fld('등급','<select id="pm_grade" '+inp+'>'+['S','A','B','C'].map(function(g){return '<option'+(p&&p.grade===g?' selected':(!p&&g==='C'?' selected':''))+'>'+g+'</option>';}).join('')+'</select>')
-    +fld('전화','<input id="pm_phone" '+inp+' value="'+esc(c.phone||'')+'">')
-    +fld('위챗','<input id="pm_wechat" '+inp+' value="'+esc(c.wechat||'')+'">')
-    +fld('이메일','<input id="pm_email" '+inp+' value="'+esc(c.email||'')+'">')
-    +'</div>'
-    +'<div style="border-top:1px solid var(--line);margin:6px 0 10px;padding-top:10px;font-weight:800;font-size:13px">유치업 등록 · 법적보호</div>'
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +fld('등록 상태','<select id="pm_regstatus" '+inp+'>'+opt(P_REGST,p?p.reg_status:'umbrella')+'</select>')
-    +fld('유치업 등록번호 (있으면)','<input id="pm_licno" '+inp+' value="'+esc(p&&p.license_no||'')+'" placeholder="제 A-…호">')
-    +'</div>'
-    +'<label style="display:flex;align-items:center;gap:8px;margin:4px 0 2px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" id="pm_contract" style="width:auto" '+(p&&p.contract_signed?'checked':'')+'> 용역계약 체결 완료 <span class="cny">(법적보호의 근거)</span></label>'
-    +fld('메모','<textarea id="pm_memo" rows="3" '+inp+'>'+esc(p?(p.memo||''):'')+'</textarea>')
-    +(p?'<div id="pm_extra" style="margin-top:6px"><div class="muted" style="font-size:12px">계약·서류 불러오는 중…</div></div>':'<p style="margin-top:6px;font-size:12px;color:var(--muted)">저장 후 카드를 다시 열면 계약·서류를 등록할 수 있습니다.</p>')
-    +'</div><div class="mf">'
-    +(p?'<button class="btn ghost" style="color:#dc2626;border-color:#fecaca;margin-right:auto" onclick="pDelete(\''+p.id+'\')">삭제</button>':'')
-    +'<button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="pSave(\''+(p?p.id:'')+'\')">저장</button></div>',true);
-  if(p)pLoadExtra(p.id);
-}
-async function pLoadExtra(pid){
-  const [cr,dr]=await Promise.all([
-    db.from('partner_contracts').select('*').eq('partner_id',pid).order('created_at',{ascending:false}),
-    db.from('partner_documents').select('*').eq('partner_id',pid).order('created_at',{ascending:false})
-  ]);
-  const cs=cr.data||[],ds=dr.data||[];
-  const box=el('pm_extra'); if(!box)return;
-  const today=new Date(); today.setHours(0,0,0,0);
-  const expBadge=function(d){ if(!d)return ''; const dd=Math.ceil((new Date(d+'T00:00:00')-today)/86400000);
-    if(dd<0)return ' <span class="tag" style="background:#fee2e2;color:#dc2626">만료</span>';
-    if(dd<=30)return ' <span class="tag" style="background:#fef3c7;color:#b45309">D-'+dd+'</span>'; return ''; };
-  const crows=cs.length?cs.map(function(x){
-    return '<tr><td>'+(P_C_ENT[x.contract_entity]||x.contract_entity)+'</td>'
-      +'<td><span class="tag" style="background:'+(x.status==='signed'?'#dcfce7;color:#0f766e':'#f1f5f9;color:#64748b')+'">'+(P_C_ST[x.status]||x.status)+'</span>'+(x.signed_at?' <span class="cny">'+x.signed_at+'</span>':'')+'</td>'
-      +'<td>'+(x.valid_to||'-')+expBadge(x.valid_to)+'</td>'
-      +'<td class="right" style="white-space:nowrap">'+(x.file_path?'<button class="btn sm ghost" onclick="pFileOpen(\''+esc(x.file_path)+'\')">파일</button> ':'')
-      +(x.status!=='signed'?'<button class="btn sm" onclick="pContractSign(\''+x.id+'\',\''+pid+'\')">서명완료</button> ':'')
-      +'<button class="btn sm ghost" onclick="pContractDel(\''+x.id+'\',\''+pid+'\')">삭제</button></td></tr>';
-  }).join(''):'<tr><td colspan="4" class="muted" style="text-align:center;padding:10px">등록된 계약이 없습니다.</td></tr>';
-  const drows=ds.length?ds.map(function(x){
-    return '<tr><td>'+(P_D_TYPE[x.dtype]||x.dtype)+'</td>'
-      +'<td><button class="btn sm ghost" onclick="pFileOpen(\''+esc(x.file_path)+'\')">열기</button></td>'
-      +'<td>'+(x.expires_on||'-')+expBadge(x.expires_on)+'</td>'
-      +'<td style="text-align:center"><input type="checkbox" '+(x.verified?'checked':'')+' onchange="pDocVerify(\''+x.id+'\',\''+pid+'\',this.checked)" title="확인 완료"></td>'
-      +'<td class="right"><button class="btn sm ghost" onclick="pDocDel(\''+x.id+'\',\''+pid+'\',\''+esc(x.file_path)+'\')">삭제</button></td></tr>';
-  }).join(''):'<tr><td colspan="5" class="muted" style="text-align:center;padding:10px">등록된 서류가 없습니다.</td></tr>';
-  const eopt=Object.keys(P_C_ENT).map(function(k){return '<option value="'+k+'">'+P_C_ENT[k]+'</option>';}).join('');
-  const dopt=Object.keys(P_D_TYPE).map(function(k){return '<option value="'+k+'">'+P_D_TYPE[k]+'</option>';}).join('');
-  box.innerHTML='<div style="font-weight:800;font-size:13px;margin-bottom:6px">계약 (업무위탁 용역)</div>'
-    +'<table style="font-size:12.5px"><thead><tr><th>명의</th><th>상태</th><th>만료일</th><th></th></tr></thead><tbody>'+crows+'</tbody></table>'
-    +'<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">'
-    +'<select id="pm_c_ent" style="padding:6px;border:1px solid var(--line);border-radius:7px">'+eopt+'</select>'
-    +'<input type="date" id="pm_c_signed" title="서명일(비우면 초안)" style="padding:6px;border:1px solid var(--line);border-radius:7px">'
-    +'<input type="date" id="pm_c_valid" title="만료일" style="padding:6px;border:1px solid var(--line);border-radius:7px">'
-    +'<input type="file" id="pm_c_file" style="font-size:12px;max-width:180px">'
-    +'<button class="btn sm" onclick="pAddContract(\''+pid+'\')">계약 등록</button></div>'
-    +'<div style="font-weight:800;font-size:13px;margin:16px 0 6px">서류</div>'
-    +'<table style="font-size:12.5px"><thead><tr><th>유형</th><th>파일</th><th>만료일</th><th style="text-align:center">확인</th><th></th></tr></thead><tbody>'+drows+'</tbody></table>'
-    +'<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">'
-    +'<select id="pm_d_type" style="padding:6px;border:1px solid var(--line);border-radius:7px">'+dopt+'</select>'
-    +'<input type="date" id="pm_d_exp" title="만료일(선택)" style="padding:6px;border:1px solid var(--line);border-radius:7px">'
-    +'<input type="file" id="pm_d_file" style="font-size:12px;max-width:180px">'
-    +'<button class="btn sm" onclick="pDocUpload(\''+pid+'\')">서류 업로드</button></div>';
-}
-function pSafeName(n){var i=n.lastIndexOf('.');var ext=i>0?n.slice(i):'';return n.slice(0,i>0?i:n.length).replace(/[^0-9A-Za-z가-힣_-]/g,'_').slice(0,40)+ext;}
-async function pUploadFile(pid,kind,f){
-  const path=pid+'/'+kind+'_'+Date.now()+'_'+pSafeName(f.name);
-  const up=await db.storage.from('partner-docs').upload(path,f,{contentType:f.type||undefined,upsert:false});
-  if(up.error)throw up.error;
-  return path;
-}
-async function pFileOpen(path){
-  const {data,error}=await db.storage.from('partner-docs').createSignedUrl(path,3600);
-  if(error||!data||!data.signedUrl){alert('파일을 열 수 없습니다: '+((error&&error.message)||''));return;}
-  window.open(data.signedUrl,'_blank');
-}
-async function pAddContract(pid){
-  try{
-    const ent=el('pm_c_ent').value, signed=el('pm_c_signed').value, valid=el('pm_c_valid').value;
-    const f=el('pm_c_file').files[0];
-    let fp=null; if(f)fp=await pUploadFile(pid,'contract',f);
-    const {error}=await db.from('partner_contracts').insert({partner_id:pid,contract_entity:ent,
-      status:signed?'signed':'draft',signed_at:signed||null,valid_from:signed||null,valid_to:valid||null,file_path:fp});
-    if(error)throw error;
-    logAudit('파트너 계약 등록',pid+' · '+(P_C_ENT[ent]||ent));
-    pLoadExtra(pid);
-  }catch(e){alert('계약 등록 실패: '+(e.message||e));}
-}
-async function pContractSign(cid,pid){
-  const today=new Date().toISOString().slice(0,10);
-  const {error}=await db.from('partner_contracts').update({status:'signed',signed_at:today,valid_from:today}).eq('id',cid);
-  if(error){alert('처리 실패: '+error.message);return;}
-  logAudit('파트너 계약 서명처리',cid);
-  pLoadExtra(pid);
-}
-async function pContractDel(cid,pid){
-  if(!confirm('이 계약 기록을 삭제할까요?'))return;
-  const {error}=await db.from('partner_contracts').delete().eq('id',cid);
-  if(error){alert('삭제 실패: '+error.message);return;}
-  pLoadExtra(pid);
-}
-async function pDocUpload(pid){
-  try{
-    const f=el('pm_d_file').files[0];
-    if(!f){alert('파일을 선택하세요.');return;}
-    if(f.size>10*1024*1024){alert('10MB 이하 파일만 업로드할 수 있습니다.');return;}
-    const dtype=el('pm_d_type').value, exp=el('pm_d_exp').value;
-    const fp=await pUploadFile(pid,dtype,f);
-    const {error}=await db.from('partner_documents').insert({partner_id:pid,dtype:dtype,file_path:fp,expires_on:exp||null});
-    if(error)throw error;
-    logAudit('파트너 서류 업로드',pid+' · '+(P_D_TYPE[dtype]||dtype));
-    pLoadExtra(pid);
-  }catch(e){alert('업로드 실패: '+(e.message||e));}
-}
-async function pDocVerify(did,pid,val){
-  const {error}=await db.from('partner_documents').update({verified:val}).eq('id',did);
-  if(error){alert('저장 실패: '+error.message);pLoadExtra(pid);}
-}
-async function pDocDel(did,pid,path){
-  if(!confirm('이 서류를 삭제할까요? 파일도 함께 삭제됩니다.'))return;
-  const {error}=await db.from('partner_documents').delete().eq('id',did);
-  if(error){alert('삭제 실패: '+error.message);return;}
-  try{ await db.storage.from('partner-docs').remove([path]); }catch(e){}
-  logAudit('파트너 서류 삭제',path);
-  pLoadExtra(pid);
-}
-async function pSave(id){
-  const name=el('pm_name').value.trim();
-  if(!name){alert('이름을 입력하세요.');return;}
-  const signed=el('pm_contract')?el('pm_contract').checked:false;
-  const _rt=PTYPE_RATE[el('pm_ptype').value]||{};
-  const row={name:name,ptype:el('pm_ptype').value,residence_country:el('pm_res').value,payout_route:el('pm_route').value,
-    status:el('pm_status').value,onboarding_step:el('pm_step').value,grade:el('pm_grade').value,
-    commission_rate:(_rt.rate!=null?_rt.rate:null),commission_unit:(_rt.unit||null),commission_basis:(_rt.basis||null),
-    contact:{phone:el('pm_phone').value.trim()||undefined,wechat:el('pm_wechat').value.trim()||undefined,email:el('pm_email').value.trim()||undefined},
-    reg_status:(el('pm_regstatus')?el('pm_regstatus').value:'umbrella'),
-    license_no:(el('pm_licno')?el('pm_licno').value.trim()||null:null),
-    has_license:(el('pm_regstatus')&&el('pm_regstatus').value==='registered'),
-    contract_signed:signed, contract_signed_at:(signed?new Date().toISOString().slice(0,10):null),
-    memo:el('pm_memo').value.trim()||null,updated_at:new Date().toISOString()};
-  let error;
-  if(id){ error=(await db.from('partners').update(row).eq('id',id)).error; }
-  else { error=(await db.from('partners').insert(row)).error; }
-  if(error){alert('저장 실패: '+error.message);return;}
-  logAudit(id?'파트너 수정':'파트너 추가',name);
-  closeModal();renderPartnerMgmt();
-}
-async function pDelete(id){
-  const p=(state._partners||[]).find(function(x){return x.id===id;});
-  if(!confirm('['+((p&&p.name)||'')+'] 파트너를 삭제할까요?\n정산·지급 이력이 있으면 삭제 대신 상태를 해지로 변경하는 것을 권장합니다.'))return;
-  const {error}=await db.from('partners').delete().eq('id',id);
-  if(error){alert('삭제 실패: '+error.message+'\n(이력이 연결된 파트너는 삭제할 수 없습니다 — 상태를 해지로 변경하세요)');return;}
-  logAudit('파트너 삭제',(p&&p.name)||id);
-  closeModal();renderPartnerMgmt();
-}
-
+/* 2026-07-29: 파트너 지원 심사·파트너 관리 화면 제거 — 승인은 펄스(followkorea)로 단일화됨. partners 테이블 자체는 콜보드·캠페인 관리가 계속 사용하므로 유지, 펄스 승인 시 자동 동기화(partner-sync 함수)됨. */
 /* ============ 파트너펄스: 캠페인 관리 (병원 프로그램 → 캠페인 → 게시물 → 지표 → 전환) ============ */
 const CP_ST={planned:'준비중',active:'진행중',done:'완료',cancelled:'취소'};
 const CP_ST_COLOR={planned:'#b45309',active:'#0f766e',done:'#64748b',cancelled:'#dc2626'};
@@ -1604,34 +1299,31 @@ async function renderPlatHome(){
   const m=el('main');
   if(!state.platformMaster){ navTo('dashboard'); return; }
   m.innerHTML='<div class="loading">불러오는 중…</div>';
-  const [hr,pr,ar,dr,cr]=await Promise.all([
+  const [hr,pr,dr,cr]=await Promise.all([
     db.from('hospitals').select('id,status'),
     db.from('partners').select('id,status,residence_country'),
-    db.from('partner_applications').select('id',{count:'exact',head:true}).eq('status','submitted'),
     db.from('demo_requests').select('source').eq('status','new'),
     db.from('campaigns').select('id,status')
   ]);
-  const hosps=hr.data||[], parts=pr.data||[], newApps=ar.count||0, leads=dr.data||[], cps=cr.data||[];
+  const hosps=hr.data||[], parts=pr.data||[], leads=dr.data||[], cps=cr.data||[];
   const hAct=hosps.filter(function(h){return h.status==='active';}).length;
   const pAct=parts.filter(function(p){return p.status==='active';}).length;
   const pCn=parts.filter(function(p){return p.residence_country==='CN';}).length;
   const cAct=cps.filter(function(c){return c.status==='active';}).length;
-  const newTotal=newApps+leads.length;
+  const newTotal=leads.length;
   const stat=function(n,l,sub,view){return '<div'+(view?' onclick="navTo(\''+view+'\')" onmouseover="this.style.boxShadow=\'0 6px 18px rgba(31,56,100,.12)\'" onmouseout="this.style.boxShadow=\'none\'"':'')+' style="flex:1;min-width:150px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px'+(view?';cursor:pointer;transition:box-shadow .15s':'')+'"><div style="font-size:26px;font-weight:800;color:var(--brand,#1F3864)">'+n+'</div><div style="font-size:13px;font-weight:700;margin-top:2px">'+l+(view?' <span style="color:var(--muted);font-weight:400">›</span>':'')+'</div><div class="cny">'+sub+'</div></div>';};
   const tile=function(view,title,desc,badge){return '<div onclick="navTo(\''+view+'\')" style="cursor:pointer;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;transition:box-shadow .15s" onmouseover="this.style.boxShadow=\'0 6px 18px rgba(31,56,100,.1)\'" onmouseout="this.style.boxShadow=\'none\'"><div style="font-weight:800;font-size:14.5px;color:var(--brand,#1F3864)">'+title+(badge?' <span class="nvb" style="display:inline-block">'+badge+'</span>':'')+'</div><div style="font-size:12px;color:var(--muted);margin-top:3px">'+desc+'</div></div>';};
   const ext=function(url,title,desc){return '<a href="'+url+'" target="_blank" style="text-decoration:none;display:block;background:#f4f7fc;border:1px dashed var(--line);border-radius:14px;padding:16px 18px"><div style="font-weight:800;font-size:14.5px;color:var(--brand,#1F3864)">'+title+' ↗</div><div style="font-size:12px;color:var(--muted);margin-top:3px">'+desc+'</div></a>';};
   m.innerHTML='<div class="page-head"><div><h2>플랫폼 홈</h2><div class="sub">팔로우코리아 마스터 콘솔 — 병원 · 파트너 · 캠페인 · 리드 전체 현황</div></div><button class="btn ghost" onclick="renderPlatHome()">새로고침</button></div>'
     +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">'
     +stat(hosps.length,'병원',hAct+'개 활성','platform')
-    +stat(parts.length,'파트너',pAct+'명 정식 · 중국 거주 '+pCn+'명','partnermgmt')
+    +stat(parts.length,'파트너',pAct+'명 정식 · 중국 거주 '+pCn+'명 (승인은 펄스에서)')
     +stat(cAct+'/'+cps.length,'캠페인','진행중/전체','campaigns')
-    +stat(newTotal,'신규 문의·지원',newApps+'건 파트너 지원 · '+leads.length+'건 리드','partnerapp')
+    +stat(newTotal,'신규 리드',leads.length+'건 (데모·왕홍병원)','demoreq')
     +'</div>'
     +'<div style="font-weight:800;font-size:13px;margin:6px 0 8px;color:#475569">운영 바로가기</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:16px">'
     +tile('platform','병원 관리','플랜·상태·계정·한도·삭제')
-    +tile('partnerapp','파트너 지원 심사','신규 지원 승인 → 파트너 등록',newApps||'')
-    +tile('partnermgmt','파트너 관리','계약 · 서류 · 등급 · 지급경로')
     +tile('campaigns','캠페인 관리','게시물 · 지표 · 전환 퍼널')
     +tile('dispatch','콜보드','통역·가이드 배차')
     +tile('demoreq','데모 신청','강남펄스 랜딩 리드')
