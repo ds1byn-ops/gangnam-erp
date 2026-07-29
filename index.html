@@ -750,11 +750,19 @@ async function pAppSaveMemo(id,val){
 }
 async function pAppDelete(id){
   if(!confirm('이 지원서를 삭제할까요? 되돌릴 수 없습니다.'))return;
+  const r=(state._pApps||[]).find(function(x){return x.id===id;});
+  // 이미 승인되어 파트너 관리에 연동된 지원서는 partners.application_id가 이 id를 참조하므로 FK 제약으로 삭제가 막힘 — 연동 파트너도 같이 지울지 확인
+  const {data:linked}=await db.from('partners').select('id,name').eq('application_id',id);
+  if(linked&&linked.length){
+    if(!confirm('이 지원서는 이미 [파트너 관리]에 "'+(linked[0].name||r&&r.name||'')+'"(으)로 등록되어 있습니다.\n연동된 파트너 정보도 함께 삭제할까요? (되돌릴 수 없습니다)'))return;
+    const {error:pe}=await db.from('partners').delete().eq('application_id',id);
+    if(pe){alert('연동 파트너 삭제 실패: '+pe.message);return;}
+  }
   const {error}=await db.from('partner_applications').delete().eq('id',id);
   if(error){alert('삭제 실패: '+error.message);return;}
-  const r=(state._pApps||[]).find(function(x){return x.id===id;});
   logAudit('파트너지원 삭제',(r&&r.name)||id);
   renderPartnerApps();refreshLeadBadges();
+  if(linked&&linked.length)renderPartnerMgmt();
 }
 async function pAppApprove(id){
   const r=(state._pApps||[]).find(function(x){return x.id===id;});
