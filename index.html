@@ -123,8 +123,10 @@
   .cal .cell{min-height:78px;border:1px solid var(--line);border-radius:9px;padding:6px;background:#fff;cursor:pointer;position:relative}
   .cal .cell:hover{border-color:var(--brand)}
   .cal .cell.other{background:#f8fafc;color:#cbd5e1}
-  .cal .cell.today{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+  .cal .cell.today{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand);background:#eef4ff}
   .cal .dnum{font-size:12px;font-weight:700}
+  .cal .cell.today .dnum{display:inline-block;min-width:20px;height:20px;line-height:20px;text-align:center;background:var(--brand);color:#fff;border-radius:10px;padding:0 4px}
+  .cal .dow.sun{color:#dc2626}.cal .dow.sat{color:#4f86c6}
   .cal .ev{font-size:11px;background:#e0f2f1;color:#0f766e;border-radius:5px;padding:1px 5px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .cal .more{font-size:11px;color:var(--muted);margin-top:2px}
   .pb{overflow-x:auto}
@@ -1651,15 +1653,17 @@ async function renderCalendar(){
       evs.length>3?`<div class="more">+${evs.length-3}</div>`:''}</div>`;}
   m.innerHTML=`
    <div class="page-head"><div><h2>예약 캘린더</h2><div class="sub">날짜를 클릭하면 예약을 보고 추가할 수 있어요</div></div>
-     <div><button class="btn ghost sm" onclick="calMove(-1)">◀</button>
+     <div><button class="btn ghost sm" onclick="calGoToday()">오늘</button>
+       <button class="btn ghost sm" onclick="calMove(-1)">〈</button>
        <b style="margin:0 12px">${y}년 ${mo+1}월</b>
-       <button class="btn ghost sm" onclick="calMove(1)">▶</button>
+       <button class="btn ghost sm" onclick="calMove(1)">〉</button>
        <button class="btn sm" style="margin-left:10px" onclick="apptModal()">+ 예약</button></div></div>
    <div class="panel"><div class="pb" style="padding:14px">
-     <div class="cal">${['일','월','화','수','목','금','토'].map(d=>`<div class="dow">${d}</div>`).join('')}${cells}</div>
+     <div class="cal">${['일','월','화','수','목','금','토'].map((d,i)=>`<div class="dow${i===0?' sun':(i===6?' sat':'')}">${d}</div>`).join('')}${cells}</div>
    </div></div>`;
 }
 function calMove(d){calYM.m+=d;if(calYM.m<0){calYM.m=11;calYM.y--;}if(calYM.m>11){calYM.m=0;calYM.y++;}renderCalendar();}
+function calGoToday(){const n=new Date();calYM={y:n.getFullYear(),m:n.getMonth()};renderCalendar();}
 async function dayModal(y,mo,d){
   const ds=new Date(y,mo,d).toISOString(),de=new Date(y,mo,d+1).toISOString();
   const {data}=await db.from('appointments').select('*').eq('hospital_id',state.hospital_id).gte('appointment_at',ds).lt('appointment_at',de).order('appointment_at');
