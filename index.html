@@ -684,27 +684,34 @@ function plBack(){return '<button class="btn ghost" onclick="navTo(\'plathome\')
 const CP_ST={planned:'준비중',active:'진행중',done:'완료',cancelled:'취소'};
 const CP_ST_COLOR={planned:'#b45309',active:'#0f766e',done:'#64748b',cancelled:'#dc2626'};
 const CP_PLAT={xiaohongshu:'샤오홍슈',douyin:'더우인',weibo:'웨이보',wechat:'위챗',instagram:'인스타그램',youtube:'유튜브',other:'기타'};
-const CP_PROG=['왕홍1 (500만/1개월)','왕홍22 (1,000만/1개월)','왕홍333 (3,000만/3개월)','기타'];
-const CP_GOAL={leads:'상담 문의 건수',treatments:'시술 완료 건수',views:'총 조회수',revenue:'매출 (원)',custom:'직접 입력'};
-const CP_GOAL_UNIT={leads:'건',treatments:'건',views:'회',revenue:'원',custom:''};
-const CP_GOAL_AUTO={leads:1,treatments:1,views:1}; // 자동 집계 지표
-function cpAchieveCalc(g,leadsTotal,treated,viewsTotal){
+const CP_PROG=['왕홍333 1단계 · 유치 첫 검증 (500만/1개월·왕홍1명·피드30건)','왕홍333 2단계 · 유치 확장 검증 (1,500만/2개월·왕홍3명·피드100건)','왕홍333 3단계 · 유치 본격 가동 (3,000만/3개월·왕홍5~7명·피드300건, 추천)','기타'];
+// 프로그램 등급 선택 시 자동으로 채울 피드(게시물) 목표 건수
+const CP_PROG_FEED_GOAL={
+  '왕홍333 1단계 · 유치 첫 검증 (500만/1개월·왕홍1명·피드30건)':30,
+  '왕홍333 2단계 · 유치 확장 검증 (1,500만/2개월·왕홍3명·피드100건)':100,
+  '왕홍333 3단계 · 유치 본격 가동 (3,000만/3개월·왕홍5~7명·피드300건, 추천)':300,
+};
+const CP_GOAL={leads:'상담 문의 건수',treatments:'시술 완료 건수',views:'총 조회수',posts:'피드(게시물) 건수',revenue:'매출 (원)',custom:'직접 입력'};
+const CP_GOAL_UNIT={leads:'건',treatments:'건',views:'회',posts:'건',revenue:'원',custom:''};
+const CP_GOAL_AUTO={leads:1,treatments:1,views:1,posts:1}; // 자동 집계 지표
+function cpAchieveCalc(g,leadsTotal,treated,viewsTotal,postsTotal){
   if(!g||!g.metric||g.value==null)return null;
   const gv=Number(g.value)||0;
   let actual,auto=true;
   if(g.metric==='leads')actual=leadsTotal;
   else if(g.metric==='treatments')actual=treated;
   else if(g.metric==='views')actual=viewsTotal;
+  else if(g.metric==='posts')actual=postsTotal;
   else {actual=Number(g.actual)||0;auto=false;}
   const pct=gv?Math.round(actual/gv*100):0;
   const unit=g.metric==='custom'?(g.unit||''):CP_GOAL_UNIT[g.metric];
   return {actual:actual,goal:gv,pct:pct,auto:auto,metric:g.metric,unit:unit,label:CP_GOAL[g.metric]};
 }
 // 캠페인의 모든 목표 달성 바 (배열)
-function cpAchieveBars(c,leadsTotal,treated,viewsTotal){
+function cpAchieveBars(c,leadsTotal,treated,viewsTotal,postsTotal){
   const goals=(c&&Array.isArray(c.goals))?c.goals:[];
   if(!goals.length)return '';
-  return goals.map(function(g){var a=cpAchieveCalc(g,leadsTotal,treated,viewsTotal);return a?'<div style="margin-bottom:10px">'+cpAchieveBar(a)+'</div>':'';}).join('');
+  return goals.map(function(g){var a=cpAchieveCalc(g,leadsTotal,treated,viewsTotal,postsTotal);return a?'<div style="margin-bottom:10px">'+cpAchieveBar(a)+'</div>':'';}).join('');
 }
 function cpHasManualGoal(c){ return ((c&&c.goals)||[]).some(function(g){return g.metric==='revenue'||g.metric==='custom';}); }
 function cpAchieveBar(a){
@@ -778,6 +785,7 @@ async function renderCampaigns(){
 }
 function cpModal(id){
   const c=id?(state._cpCampaigns||[]).find(function(x){return x.id===id;}):null;
+  window._cpModalIsNew=!c; // 신규 캠페인일 때만 프로그램 등급 선택 시 피드 목표 자동 반영
   const inp='style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"';
   const fld=function(label,inner){ return '<div class="field"><label>'+label+'</label>'+inner+'</div>'; };
   const hopt='<option value=""'+(c&&!c.hospital_id?' selected':'')+'>(미가입 병원 · 직접 입력)</option>'+state._cpHosps.map(function(h){return '<option value="'+h.id+'"'+(c&&c.hospital_id===h.id?' selected':'')+'>'+esc(h.name)+'</option>';}).join('');
@@ -789,7 +797,7 @@ function cpModal(id){
     +fld('미가입 병원명 (직접입력 시)','<input id="cp_exthosp" '+inp+' value="'+esc(c&&c.ext_hospital_name||'')+'" placeholder="예: 서울다운의원 (미가입)" style="display:'+(c&&c.hospital_id?'none':'block')+'">')
     +fld('캠페인명','<input id="cp_name" '+inp+' value="'+esc(c?c.name:'')+'" placeholder="예: 글로비 왕홍22 7월">')
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +fld('프로그램','<select id="cp_prog" '+inp+'>'+popt+'</select>')
+    +fld('프로그램','<select id="cp_prog" '+inp+' onchange="cpProgChange()">'+popt+'</select>')
     +fld('집행 주체','<select id="cp_exec" '+inp+'><option value="followkorea"'+(!c||c.executor==='followkorea'?' selected':'')+'>팔로우코리아</option><option value="yueji_jiangnan"'+(c&&c.executor==='yueji_jiangnan'?' selected':'')+'>悦集江南(중국)</option></select>')
     +'</div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
@@ -822,6 +830,19 @@ function cpGoalRowHtml(g){
 function cpAddGoalRow(g){
   const box=el('cp_goals_box'); if(!box)return;
   box.insertAdjacentHTML('beforeend',cpGoalRowHtml(g));
+}
+function cpProgChange(){
+  if(!window._cpModalIsNew)return; // 기존 캠페인 수정 시엔 목표를 자동으로 건드리지 않음
+  const feedGoal=CP_PROG_FEED_GOAL[el('cp_prog').value];
+  if(!feedGoal)return;
+  const box=el('cp_goals_box'); if(!box)return;
+  const rows=box.querySelectorAll('.cpgoal-row');
+  if(rows.length){
+    rows[0].querySelector('.cpg-metric').value='posts';
+    rows[0].querySelector('.cpg-value').value=feedGoal;
+  } else {
+    cpAddGoalRow({metric:'posts',value:feedGoal});
+  }
 }
 function cpCollectGoals(){
   const rows=document.querySelectorAll('#cp_goals_box .cpgoal-row');
@@ -968,6 +989,7 @@ async function renderCampaignDetail(id){
     const l=latest[p.id];
     const ct=p.content_type||'general';
     return '<tr>'
+      +'<td>'+(p.screenshot_url?'<a href="'+esc(p.screenshot_url)+'" target="_blank"><img src="'+esc(p.screenshot_url)+'" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"></a>':'<span class="muted" style="font-size:11px">-</span>')+'</td>'
       +'<td>'+(p.partner_id?esc(pmapP[p.partner_id]||'?'):'<span class="tag" style="background:#eef2ff;color:#4338ca">자사 채널</span>')+'</td>'
       +'<td>'+(CP_PLAT[p.platform]||p.platform)+'</td>'
       +'<td><span class="tag" style="background:'+CP_CTYPE_COLOR[ct]+'1a;color:'+CP_CTYPE_COLOR[ct]+'">'+(CP_CTYPE[ct]||ct)+'</span></td>'
@@ -975,7 +997,7 @@ async function renderCampaignDetail(id){
       +'<td style="white-space:nowrap">'+(p.posted_on||'-')+'</td>'
       +'<td style="font-size:12px;white-space:nowrap">'+(l?('조회 '+fmtN(l.views)+' · 좋아요 '+fmtN(l.likes)+' · 댓글 '+fmtN(l.comments)+' · 저장 '+fmtN(l.saves)+'<div class="cny">'+l.metric_date+' 기준'+(l.source==='partner'?' · 파트너입력':'')+'</div>'):'<span class="muted">지표 없음</span>')+'</td>'
       +'<td class="right" style="white-space:nowrap"><button class="btn sm" onclick="cpMetricModal(\''+p.id+'\',\''+id+'\')">지표 입력</button> <button class="btn sm ghost" onclick="cpPostDel(\''+p.id+'\',\''+id+'\')">삭제</button></td></tr>';
-  }).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:14px">게시물이 없습니다. 아래에서 추가하세요.</td></tr>';
+  }).join(''):'<tr><td colspan="7" class="muted" style="text-align:center;padding:14px">게시물이 없습니다. 아래에서 추가하세요.</td></tr>';
   const partnerOpt='<option value="">자사 채널</option>'+state._cpPartners.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('');
   const platOpt=Object.keys(CP_PLAT).map(function(k){return '<option value="'+k+'">'+CP_PLAT[k]+'</option>';}).join('');
   const ctypeOpt=Object.keys(CP_CTYPE).map(function(k){return '<option value="'+k+'"'+(k==='general'?' selected':'')+'>'+CP_CTYPE[k]+'</option>';}).join('');
@@ -988,28 +1010,46 @@ async function renderCampaignDetail(id){
   const cvr=(bks||[]).length?Math.round(bc.treated/(bks||[]).length*100):0;
   m.innerHTML='<div class="page-head"><div><h2>'+esc(c.name)+'</h2><div class="sub">'+esc(hmap[c.hospital_id]||c.ext_hospital_name||'')+(c.hospital_id?'':' (미가입)')+' · '+esc(c.program||'')+' · '+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+' · '+(c.executor==='yueji_jiangnan'?'悦集江南':'팔로우코리아')+' · <span style="color:'+(CP_ST_COLOR[c.status]||'#64748b')+';font-weight:700">'+(CP_ST[c.status]||c.status)+'</span>'+(c.goal?' · 목표: '+esc(c.goal):'')+'</div></div>'
     +'<div style="display:flex;gap:8px"><button class="btn ghost" onclick="renderCampaigns()">← 목록</button><button class="btn" onclick="cpReport(\''+c.id+'\')">병원 보고서</button><button class="btn ghost" onclick="cpModal(\''+c.id+'\')">캠페인 수정</button></div></div>'
-    +(function(){var bars=cpAchieveBars(c,(bks||[]).length,bc.treated,tot.views);return bars?('<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:10px">목표 달성률</div>'+bars+(cpHasManualGoal(c)?'<div style="margin-top:6px"><button class="btn sm ghost" onclick="cpGoalActualModal(\''+c.id+'\')">매출·직접입력 실적 확인</button></div>':'')+'</div></div>'):'';})()
+    +(function(){var bars=cpAchieveBars(c,(bks||[]).length,bc.treated,tot.views,(posts||[]).length);return bars?('<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:10px">목표 달성률</div>'+bars+(cpHasManualGoal(c)?'<div style="margin-top:6px"><button class="btn sm ghost" onclick="cpGoalActualModal(\''+c.id+'\')">매출·직접입력 실적 확인</button></div>':'')+'</div></div>'):'';})()
     +'<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">전환 퍼널 <span class="cny">(파트너 고객등록 기준 · 문의→시술 전환율 '+cvr+'%)</span></div>'+funnel+'</div></div>'
     +(insight?'<div class="panel"><div class="pb" style="padding:14px 16px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">마케팅 인사이트 <span class="cny">(콘텐츠 유형별)</span></div><div style="display:flex;gap:8px;flex-wrap:wrap">'+insight+'</div></div></div>':'')
     +'<div class="panel"><div class="pb"><div style="padding:12px 16px 0;font-weight:800;font-size:13px">게시물 · 지표 <span class="cny">누적: 조회 '+fmtN(tot.views)+' · 좋아요 '+fmtN(tot.likes)+' · 댓글 '+fmtN(tot.comments)+' · 저장 '+fmtN(tot.saves)+'</span></div>'
-    +'<table><thead><tr><th>파트너</th><th>플랫폼</th><th>유형</th><th>게시물</th><th>게시일</th><th>최신 지표</th><th></th></tr></thead><tbody>'+prow+'</tbody></table>'
+    +'<table><thead><tr><th>캡처</th><th>파트너</th><th>플랫폼</th><th>유형</th><th>게시물</th><th>게시일</th><th>최신 지표</th><th></th></tr></thead><tbody>'+prow+'</tbody></table>'
     +'<div style="display:flex;gap:6px;padding:10px 16px 14px;flex-wrap:wrap;align-items:center">'
     +'<select id="cp_p_partner" style="padding:6px;border:1px solid var(--line);border-radius:7px;max-width:150px">'+partnerOpt+'</select>'
     +'<select id="cp_p_plat" style="padding:6px;border:1px solid var(--line);border-radius:7px">'+platOpt+'</select>'
     +'<select id="cp_p_ctype" style="padding:6px;border:1px solid var(--line);border-radius:7px">'+ctypeOpt+'</select>'
     +'<input id="cp_p_title" placeholder="제목" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;width:120px">'
-    +'<input id="cp_p_url" placeholder="URL" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;flex:1;min-width:150px">'
+    +'<input id="cp_p_url" placeholder="URL(링크)" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;flex:1;min-width:150px">'
     +'<input type="date" id="cp_p_date" style="padding:6px;border:1px solid var(--line);border-radius:7px">'
-    +'<button class="btn sm" onclick="cpPostAdd(\''+id+'\')">게시물 추가</button></div></div></div>';
+    +'<label class="btn sm ghost" style="cursor:pointer;margin:0">캡처 선택<input type="file" id="cp_p_shot" accept="image/*" style="display:none" onchange="cpShotPreview()"></label>'
+    +'<img id="cp_p_shot_prev" style="display:none;width:32px;height:32px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">'
+    +'<button class="btn sm" id="cp_p_addbtn" onclick="cpPostAdd(\''+id+'\')">게시물 추가</button></div></div></div>';
+}
+function cpShotPreview(){
+  const f=el('cp_p_shot').files&&el('cp_p_shot').files[0]; const pv=el('cp_p_shot_prev'); if(!f||!pv)return;
+  const rd=new FileReader();
+  rd.onload=function(){ pv.src=rd.result; pv.style.display=''; };
+  rd.readAsDataURL(f);
 }
 async function cpPostAdd(cid){
   const posted=el('cp_p_date').value;
+  const btn=el('cp_p_addbtn'); if(btn){btn.disabled=true;btn.textContent='추가 중…';}
+  let screenshot_url=null;
+  const f=el('cp_p_shot').files&&el('cp_p_shot').files[0];
+  if(f){
+    const path=cid+'/'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const up=await db.storage.from('campaign-post-images').upload(path,f,{contentType:f.type||undefined,upsert:false});
+    if(up.error){ alert('캡처 업로드 실패: '+up.error.message); if(btn){btn.disabled=false;btn.textContent='게시물 추가';} return; }
+    screenshot_url=db.storage.from('campaign-post-images').getPublicUrl(path).data.publicUrl;
+  }
   const row={campaign_id:cid,partner_id:el('cp_p_partner').value||null,platform:el('cp_p_plat').value,
     content_type:el('cp_p_ctype').value,
     title:el('cp_p_title').value.trim()||null,url:el('cp_p_url').value.trim()||null,
+    screenshot_url:screenshot_url,
     posted_on:posted||null,status:posted?'posted':'planned'};
   const {error}=await db.from('campaign_posts').insert(row);
-  if(error){alert('추가 실패: '+error.message);return;}
+  if(error){alert('추가 실패: '+error.message);if(btn){btn.disabled=false;btn.textContent='게시물 추가';}return;}
   logAudit('캠페인 게시물 추가',cid);
   renderCampaignDetail(cid);
 }
