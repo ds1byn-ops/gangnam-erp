@@ -205,7 +205,7 @@
         <a data-view="wanghongreq" class="platform-only" style="display:none">왕홍병원 신청<span class="nvb" id="bdg_wanghongreq"></span></a>
         <a data-view="viralreq" class="platform-only" style="display:none">바이럴 병원문의<span class="nvb" id="bdg_viralreq"></span></a>
         <a data-view="b2creq" class="platform-only" style="display:none">B2C 맞춤견적<span class="nvb" id="bdg_b2creq"></span></a>
-        <a data-view="campaigns" class="platform-only" style="display:none">캠페인 관리</a>
+        <a data-view="campaigns" class="platform-only" style="display:none">캠페인 관리 (팔로우코리아)</a>
         <a data-view="dispatch" class="platform-only" style="display:none">콜보드 (통역·가이드)</a>
       </nav>
       <div class="who"><b id="whoName">-</b><span id="whoRole" class="muted"></span>
@@ -900,7 +900,7 @@ async function cpReport(cid){
   const isMember=!!c.hospital_id;
   const cvr=funnel.total?Math.round(funnel.treated/funnel.total*100):0;
   // 목표 달성 바 (문자열)
-  const goalBars=cpAchieveBars(c,funnel.total,funnel.treated,tot.views);
+  const goalBars=cpAchieveBars(c,funnel.total,funnel.treated,tot.views,(posts||[]).length);
   // 퍼널 카드
   const funCards=[['상담 문의',funnel.total],['예약 확정',funnel.confirmed],['내원',funnel.visited],['시술 진행',funnel.treated]].map(function(x){
     return '<div class="fcard"><div class="fn">'+fmtN(x[1])+'</div><div class="fl">'+x[0]+'</div></div>';
@@ -908,9 +908,10 @@ async function cpReport(cid){
   // 게시물 표
   const prows=(posts||[]).length?(posts||[]).map(function(p){
     const l=latest[p.id]; const ct=p.content_type||'general';
-    return '<tr><td>'+(CP_PLAT[p.platform]||p.platform)+'</td><td>'+(CP_CTYPE[ct]||ct)+'</td><td>'+esc(p.title||'-')+'</td><td>'+(p.posted_on||'-')+'</td>'
+    return '<tr><td>'+(p.screenshot_url?'<img src="'+esc(p.screenshot_url)+'" style="width:34px;height:34px;object-fit:cover;border-radius:5px">':'-')+'</td>'
+      +'<td>'+(CP_PLAT[p.platform]||p.platform)+'</td><td>'+(CP_CTYPE[ct]||ct)+'</td><td>'+esc(p.title||'-')+'</td><td>'+(p.posted_on||'-')+'</td>'
       +'<td style="text-align:right">'+(l?fmtN(l.views):'-')+'</td><td style="text-align:right">'+(l?fmtN(l.likes):'-')+'</td><td style="text-align:right">'+(l?fmtN(l.comments):'-')+'</td></tr>';
-  }).join(''):'<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:12px">게시물 데이터 없음</td></tr>';
+  }).join(''):'<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:12px">게시물 데이터 없음</td></tr>';
   const today=new Date().toISOString().slice(0,10);
   const styles='<style>'
     +'*{margin:0;padding:0;box-sizing:border-box}body{font-family:"Malgun Gothic",sans-serif;color:#1b2a4a;padding:32px 40px;font-size:13px;line-height:1.5}'
@@ -948,7 +949,7 @@ async function cpReport(cid){
     +'<div class="kbox"><div class="v">'+fmtN(tot.saves)+'</div><div class="k">저장</div></div>'
     +'<div class="kbox"><div class="v">'+(posts||[]).length+'</div><div class="k">게시물</div></div></div>'
     +'<h2>환자 전환 퍼널 <span style="font-size:11px;color:#667085;font-weight:400">(문의→시술 전환율 '+cvr+'%)</span></h2><div class="fgrid">'+funCards+'</div>'
-    +'<h2>게시물별 성과</h2><table><thead><tr><th>플랫폼</th><th>유형</th><th>제목</th><th>게시일</th><th style="text-align:right">조회</th><th style="text-align:right">좋아요</th><th style="text-align:right">댓글</th></tr></thead><tbody>'+prows+'</tbody></table>'
+    +'<h2>게시물별 성과</h2><table><thead><tr><th>캡처</th><th>플랫폼</th><th>유형</th><th>제목</th><th>게시일</th><th style="text-align:right">조회</th><th style="text-align:right">좋아요</th><th style="text-align:right">댓글</th></tr></thead><tbody>'+prows+'</tbody></table>'
     +'<div class="note">'+(isMember?'✔ 이 보고서 내용은 병원 계정 <b>강남펄스 → 마케팅 리포트</b>에서 실시간으로도 확인하실 수 있습니다.':'※ 미가입 병원용 보고서입니다. <b>PDF로 저장</b>해 전달하세요. 강남펄스 도입 시 이 리포트를 실시간 대시보드로 제공받으실 수 있습니다.')+'</div>'
     +'<div class="foot">주식회사 팔로우코리아 · 외국인환자 유치업 등록 제 A-2026-01-01-06622 호 · 서울 서초구 강남대로 373, 13층<br>본 보고서의 지표는 각 플랫폼에서 수집한 스냅샷 기준이며, 전환 퍼널은 팔로우코리아 파트너 채널을 통해 등록된 고객 기준입니다.</div>'
     +'</body></html>';
@@ -1290,7 +1291,7 @@ async function renderMarketing(){
     return;
   }
   const cids=cps.map(function(c){return c.id;});
-  const {data:posts}=await db.from('campaign_posts').select('id,campaign_id,platform,title,url,posted_on,content_type').in('campaign_id',cids);
+  const {data:posts}=await db.from('campaign_posts').select('id,campaign_id,platform,title,url,posted_on,content_type,screenshot_url').in('campaign_id',cids);
   const pids=(posts||[]).map(function(p){return p.id;});
   let ms=[];
   if(pids.length){ ms=((await db.from('campaign_metrics').select('post_id,metric_date,views,likes,comments,saves').in('post_id',pids).order('metric_date')).data)||[]; }
@@ -1317,20 +1318,23 @@ async function renderMarketing(){
     }).join('')+'<div class="cny">기준일별 누적 조회수</div></div>':'';
     const prow=cposts.length?cposts.map(function(p){
       const l=latest[p.id]; const ct=p.content_type||'general';
-      return '<tr><td>'+(CP_PLAT[p.platform]||p.platform)+'</td>'
+      return '<tr><td>'+(p.screenshot_url?'<a href="'+esc(p.screenshot_url)+'" target="_blank"><img src="'+esc(p.screenshot_url)+'" style="width:34px;height:34px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"></a>':'<span class="muted" style="font-size:11px">-</span>')+'</td>'
+        +'<td>'+(CP_PLAT[p.platform]||p.platform)+'</td>'
         +'<td><span class="tag" style="background:'+CP_CTYPE_COLOR[ct]+'1a;color:'+CP_CTYPE_COLOR[ct]+'">'+(CP_CTYPE[ct]||ct)+'</span></td>'
         +'<td>'+(p.url?'<a href="'+esc(p.url)+'" target="_blank" style="color:var(--brand,#1F3864)">'+esc(p.title||'게시물 보기')+'</a>':esc(p.title||'-'))+'</td>'
         +'<td style="white-space:nowrap">'+(p.posted_on||'-')+'</td>'
         +'<td style="font-size:12px;white-space:nowrap">'+(l?('조회 '+fmtN(l.views)+' · 좋아요 '+fmtN(l.likes)+' · 댓글 '+fmtN(l.comments)+' · 저장 '+fmtN(l.saves)+'<div class="cny">'+l.metric_date+' 기준</div>'):'<span class="muted">집계 전</span>')+'</td></tr>';
-    }).join(''):'<tr><td colspan="5" class="muted" style="text-align:center;padding:12px">게시물 준비 중입니다.</td></tr>';
+    }).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">게시물 준비 중입니다.</td></tr>';
     return '<div class="panel"><div class="pb" style="padding:14px 16px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'
       +'<div><b style="font-size:15px">'+esc(c.name)+'</b> <span class="tag" style="background:'+(CP_ST_COLOR[c.status]||'#64748b')+'1a;color:'+(CP_ST_COLOR[c.status]||'#64748b')+'">'+(CP_ST[c.status]||c.status)+'</span>'
       +'<div class="cny">'+esc(c.program||'')+' · '+(c.starts_on||'?')+' ~ '+(c.ends_on||'?')+'</div></div>'
-      +'<div style="font-size:12px;color:var(--muted)">누적 조회 <b style="color:var(--brand,#1F3864)">'+fmtN(tot.views)+'</b> · 좋아요 '+fmtN(tot.likes)+' · 저장 '+fmtN(tot.saves)+'</div></div>'
-      +(function(){var bars=cpAchieveBars(c,f.total,f.treated,tot.views);return bars?('<div style="margin-top:12px">'+bars+'</div>'):'';})()
+      +'<div style="display:flex;align-items:center;gap:10px">'
+      +'<div style="font-size:12px;color:var(--muted)">누적 조회 <b style="color:var(--brand,#1F3864)">'+fmtN(tot.views)+'</b> · 좋아요 '+fmtN(tot.likes)+' · 저장 '+fmtN(tot.saves)+'</div>'
+      +'<button class="btn sm ghost" onclick="cpReport(\''+c.id+'\')">📄 PDF 다운로드</button></div></div>'
+      +(function(){var bars=cpAchieveBars(c,f.total,f.treated,tot.views,cposts.length);return bars?('<div style="margin-top:12px">'+bars+'</div>'):'';})()
       +funnel+trend
-      +'<table style="margin-top:12px"><thead><tr><th>플랫폼</th><th>유형</th><th>게시물</th><th>게시일</th><th>지표</th></tr></thead><tbody>'+prow+'</tbody></table>'
+      +'<table style="margin-top:12px"><thead><tr><th>캡처</th><th>플랫폼</th><th>유형</th><th>게시물</th><th>게시일</th><th>지표</th></tr></thead><tbody>'+prow+'</tbody></table>'
       +'</div></div>';
   }).join('');
   m.innerHTML='<div class="page-head"><div><h2>마케팅 리포트</h2><div class="sub">왕홍 캠페인 성과 (팔로우코리아 제공 · 읽기 전용) · 캠페인 '+cps.length+'건</div></div><div style="display:flex;gap:8px">'+(state.platformMaster?plBack():'')+'<button class="btn ghost" onclick="renderMarketing()">새로고침</button></div></div>'
