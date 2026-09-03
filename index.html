@@ -177,7 +177,7 @@
         <a data-view="dashboard" class="active">대시보드</a>
         <div class="grp">진료 · 접수</div>
         <a data-view="calendar">예약 캘린더</a>
-        <a data-view="reception">접수 현황</a>
+        <a data-view="reception">접수 현황<span class="nvb" id="bdg_reception"></span></a>
         <a data-view="patients">환자 CRM</a>
         <a data-view="quote">상담 · 견적</a><a data-view="platq">플랫폼 문의</a>
         <a data-view="charts">진료차트</a>
@@ -375,6 +375,7 @@ async function loadHospitalContext(hid){
   state.packages=(pkgs||[]).map(p=>({...p,items:(pkgItems||[]).filter(i=>i.package_id===p.id)}));
   state.referrers=refs||[];
   el('hospName').textContent=state.hospital_name;
+  refreshReceptionBadge();
   applyHospitalConfig();
 }
 function applyHospitalConfig(){
@@ -1638,8 +1639,42 @@ async function renderDashboard(){
    <div class="panel"><div class="ph">최근 상담·견적 <button class="btn sm" onclick="navTo('billing')">수납 →</button></div>
      <div class="pb">${(recent.data||[]).length?`<table><thead><tr><th>No</th><th>환자</th><th>에이전시</th><th class="right">금액</th><th>수납</th></tr></thead><tbody>${
        recent.data.map(o=>`<tr><td>#${o.order_no}</td><td>${esc(PM[o.patient_id]||'-')}</td><td>${esc(AM[o.agency_id]||'-')}</td><td class="right">${won(o.total)}</td><td><span class="tag t-${o.pay_status}">${PAY_LABEL[o.pay_status]}</span>${o.pay_status==='paid'?methodBadge(o.pay_method):''}</td></tr>`).join('')
-     }</tbody></table>`:'<div class="empty">견적이 없습니다.</div>'}</div></div>`;
+     }</tbody></table>`:'<div class="empty">견적이 없습니다.</div>'}</div></div>`+await b2cLeadsPanel();
+  refreshReceptionBadge();
 }
+/* B2C 맞춤견적(followkorea.co.kr/b2c) 중 우리 병원 매칭 접수 — SECURITY DEFINER RPC로 자기 병원분만 조회 */
+const B2C_ST={new:'신규',contacted:'연락함',converted:'전환',dropped:'드롭'};
+async function b2cLeadsPanel(){
+  let rows=[];
+  try{ const r=await db.rpc('b2c_leads_for_my_hospital'); rows=r.data||[]; }catch(_e){ return ''; }
+  const tr=rows.map(function(r){
+    const memo=esc(String(r.memo||'')).replace(/\n/g,'<br>');
+    const sel='<select onchange="b2cSetStatus(\''+r.id+'\',this.value)" style="padding:5px;border:1px solid var(--line);border-radius:7px;font-size:12px">'
+      +Object.keys(B2C_ST).map(function(k){return '<option value="'+k+'"'+(k===r.status?' selected':'')+'>'+B2C_ST[k]+'</option>';}).join('')+'</select>';
+    return '<tr><td style="white-space:nowrap">'+fdate(r.created_at)+'</td><td><b>'+esc(r.contact_name||'-')+'</b></td>'
+      +'<td style="white-space:nowrap"><a href="tel:'+esc(String(r.phone||'').replace(/[^0-9+]/g,''))+'" style="color:var(--brand,#1F3864);text-decoration:none">'+esc(r.phone||'-')+'</a></td>'
+      +'<td style="font-size:12px;line-height:1.7">'+memo+'</td><td>'+sel+'</td></tr>';
+  }).join('');
+  return '<div class="page-head" style="margin-top:18px"><div><h2 style="font-size:16px">B2C 맞춤견적 접수</h2>'
+    +'<div class="sub">팔로우코리아 견적 서비스에서 우리 병원으로 매칭된 상담 신청 · '+rows.length+'건</div></div></div>'
+    +'<div class="panel"><div class="pb">'
+    +(rows.length?('<table><thead><tr><th>신청일</th><th>이름</th><th>연락처</th><th>요청 내용</th><th>상태</th></tr></thead><tbody>'+tr+'</tbody></table>')
+      :'<div class="empty">매칭된 견적 신청이 없습니다.</div>')
+    +'</div></div>';
+}
+async function b2cSetStatus(id,val){
+  try{ const r=await db.rpc('b2c_lead_set_status',{p_id:id,p_status:val}); if(r.error||r.data===false)alert('상태 변경 실패'); }catch(_e){ alert('상태 변경 실패'); }
+  refreshReceptionBadge();
+}
+async function refreshReceptionBadge(){
+  try{
+    const r=await db.rpc('b2c_leads_for_my_hospital');
+    const c=(r.data||[]).filter(function(x){return x.status==='new';}).length;
+    const b=el('bdg_reception'); if(!b)return;
+    if(c>0){ b.textContent=c>99?'99+':c; b.style.display='inline-block'; } else b.style.display='none';
+  }catch(_e){}
+}
+
 
 /* ===== 케어 연속성: 구조화된 케어 가이드 (Conivo식 — 진료 후 케어→재방문 유도) ===== */
 function CARE_GUIDES(hosp,nm){
