@@ -204,6 +204,7 @@
         <a data-view="demoreq" class="platform-only" style="display:none">데모 신청<span class="nvb" id="bdg_demoreq"></span></a>
         <a data-view="wanghongreq" class="platform-only" style="display:none">왕홍병원 신청<span class="nvb" id="bdg_wanghongreq"></span></a>
         <a data-view="viralreq" class="platform-only" style="display:none">바이럴 병원문의<span class="nvb" id="bdg_viralreq"></span></a>
+        <a data-view="b2creq" class="platform-only" style="display:none">B2C 맞춤견적<span class="nvb" id="bdg_b2creq"></span></a>
         <a data-view="campaigns" class="platform-only" style="display:none">캠페인 관리</a>
         <a data-view="dispatch" class="platform-only" style="display:none">콜보드 (통역·가이드)</a>
       </nav>
@@ -489,7 +490,7 @@ function agencyCsv(){
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),viralreq:()=>renderDemoRequests('viral_marketing_lp','바이럴 병원문의'),guidereq:renderGuideRequests,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),viralreq:()=>renderDemoRequests('viral_marketing_lp','바이럴 병원문의'),b2creq:()=>renderDemoRequests('b2c_quote_lead','B2C 맞춤견적'),guidereq:renderGuideRequests,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
 
 /* ============ 구독 · 이용권 ============ */
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
@@ -644,8 +645,8 @@ async function refreshLeadBadges(){
   if(!state.platformMaster) return;
   try{
     const {data}=await db.from('demo_requests').select('source').eq('status','new');
-    const c={demoreq:0,wanghongreq:0,guidereq:0,viralreq:0};
-    (data||[]).forEach(function(r){ if(r.source==='landing')c.demoreq++; else if(r.source==='meta_ads_wanghong_lp')c.wanghongreq++; else if(r.source==='guide_recruit')c.guidereq++; else if(r.source==='viral_marketing_lp')c.viralreq++; });
+    const c={demoreq:0,wanghongreq:0,guidereq:0,viralreq:0,b2creq:0};
+    (data||[]).forEach(function(r){ if(r.source==='landing')c.demoreq++; else if(r.source==='meta_ads_wanghong_lp')c.wanghongreq++; else if(r.source==='guide_recruit')c.guidereq++; else if(r.source==='viral_marketing_lp')c.viralreq++; else if(r.source==='b2c_quote_lead')c.b2creq++; });
     Object.keys(c).forEach(function(k){ var b=el('bdg_'+k); if(!b)return; if(c[k]>0){ b.textContent=c[k]>99?'99+':c[k]; b.style.display='inline-block'; } else { b.style.display='none'; } });
   }catch(_e){}
 }
@@ -1332,6 +1333,7 @@ async function renderPlatHome(){
     +tile('demoreq','데모 신청','강남펄스 랜딩 리드')
     +tile('wanghongreq','왕홍병원 신청','메타광고 병원 리드')
     +tile('viralreq','바이럴 병원문의','네이버 바이럴 랜딩 리드')
+    +tile('b2creq','B2C 맞춤견적','followkorea.co.kr/b2c 견적 리드')
     +tile('audit','관리자 로그','전체 조작 이력')
     +'</div>'
     +'<div style="font-weight:800;font-size:13px;margin:6px 0 8px;color:#475569">외부 사이트</div>'
