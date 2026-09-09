@@ -178,6 +178,7 @@
         <div class="grp">진료 · 접수</div>
         <a data-view="calendar">예약 캘린더</a>
         <a data-view="reception">접수 현황<span class="nvb" id="bdg_reception"></span></a>
+        <a data-view="inbox">상담 인박스<span class="nvb" id="bdg_inbox"></span></a>
         <a data-view="patients">환자 CRM</a>
         <a data-view="quote">상담 · 견적</a><a data-view="platq">플랫폼 문의</a>
         <a data-view="charts">진료차트</a>
@@ -220,7 +221,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.12.1 · 2026-07-27';
+const APP_VERSION='v1.13.0 · 2026-09-09';
 let curView='dashboard';
 const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
 
@@ -231,9 +232,9 @@ const state={hospital_id:null,hospital_name:'강남펄스',staff:null,procedures
 const PLAN_LABEL={basic:'기본',advanced:'고급',premium:'프리미엄'};
 const PLAN_PRICE={basic:50000,advanced:100000,premium:150000};
 const TIER_MENUS={
-  basic:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings','marketing'],
-  advanced:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','marketing'],
-  premium:['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','audit','marketing']
+  basic:['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing','staff','settings','marketing'],
+  advanced:['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','marketing'],
+  premium:['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','audit','marketing']
 };
 
 const won=n=>'₩'+Number(n||0).toLocaleString('ko-KR');
@@ -376,6 +377,8 @@ async function loadHospitalContext(hid){
   state.referrers=refs||[];
   el('hospName').textContent=state.hospital_name;
   refreshReceptionBadge();
+  refreshInboxBadge();
+  if(!window._inbBdgTimer)window._inbBdgTimer=setInterval(refreshInboxBadge,60000);
   applyHospitalConfig();
 }
 function applyHospitalConfig(){
@@ -415,7 +418,7 @@ async function boot(){
   el('appVer').textContent=APP_VERSION;
   el('whoName').textContent=staff.name;
   el('whoRole').textContent=({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[staff.role]||staff.role;
-  const _allm=['dashboard','calendar','reception','patients','quote','platq','charts','tasks','files','billing','stats','marketing','settlement','agencies','packages','referrers','refsettle','staff','settings','audit','subscription'];
+  const _allm=['dashboard','calendar','reception','inbox','patients','quote','platq','charts','tasks','files','billing','stats','marketing','settlement','agencies','packages','referrers','refsettle','staff','settings','audit','subscription'];
   let _allowed=(staff.role==='owner')?_allm.slice():((Array.isArray(staff.menu_perms)&&staff.menu_perms.length)?staff.menu_perms.slice():roleMenus(staff.role));
   if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings'&&k!=='audit'&&k!=='subscription');
   try{ const {data:pa}=await db.from('platform_admins').select('id,role').eq('id',user.id).maybeSingle(); state.isPlatformAdmin=!!pa; state.platformMaster=!!(pa&&(pa.role||'master')==='master'); }catch(e){ state.isPlatformAdmin=false; state.platformMaster=false; }
@@ -491,7 +494,314 @@ function agencyCsv(){
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),viralreq:()=>renderDemoRequests('viral_marketing_lp','바이럴 병원문의'),b2creq:()=>renderDemoRequests('b2c_quote_lead','B2C 맞춤견적'),guidereq:renderGuideRequests,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,inbox:renderInbox,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),viralreq:()=>renderDemoRequests('viral_marketing_lp','바이럴 병원문의'),b2creq:()=>renderDemoRequests('b2c_quote_lead','B2C 맞춤견적'),guidereq:renderGuideRequests,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
+
+/* ============ 상담 인박스 (인스타·페북 DM + 수기상담) ============ */
+const INB_CH_LABEL={instagram:'인스타',facebook:'페이스북',manual:'수기'};
+const INB_CH_COLOR={instagram:'#d62976',facebook:'#1877f2',manual:'#64748b'};
+const INB_ST_LABEL={open:'진행중',hold:'보류',closed:'종료'};
+let inb={tab:'open',ch:'',asg:'',q:'',convs:[],tags:[],staffList:[],cur:null,msgs:[],timer:null,view:'list'};
+
+async function refreshInboxBadge(){
+  try{
+    const {data}=await db.from('gp_conversations').select('unread').eq('hospital_id',state.hospital_id).gt('unread',0);
+    const n=(data||[]).reduce((s,r)=>s+(r.unread||0),0);
+    const b=el('bdg_inbox'); if(b){ if(n>0){b.textContent=n>99?'99+':n;b.style.display='inline-block';} else b.style.display='none'; }
+  }catch(e){}
+}
+async function inbApi(payload){
+  try{
+    const {data:{session}}=await db.auth.getSession();
+    const r=await fetch(SB_URL+'/functions/v1/inbox-send',{method:'POST',headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+(session?session.access_token:'')},body:JSON.stringify(payload)});
+    return await r.json();
+  }catch(e){return {error:(e&&e.message)||'네트워크 오류'};}
+}
+async function inbLoad(){
+  const [cv,tg,st]=await Promise.all([
+    db.from('gp_conversations').select('*').eq('hospital_id',state.hospital_id).order('last_message_at',{ascending:false}).limit(500),
+    db.from('gp_tags').select('*').eq('hospital_id',state.hospital_id).order('name'),
+    db.from('staff_accounts').select('id,name,role').eq('hospital_id',state.hospital_id)
+  ]);
+  inb.convs=cv.data||[];inb.tags=tg.data||[];inb.staffList=st.data||[];
+}
+async function renderInbox(){
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  await inbLoad();
+  if(inb.view==='stats'){return inbRenderStats();}
+  const isOwner=(state.staff&&state.staff.role==='owner')||state.isPlatformAdmin;
+  m.innerHTML=`<div class="page-head"><div><h2>상담 인박스</h2><div class="sub">인스타그램 · 페이스북 DM · 수기상담(위챗 등) 통합 수신함</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn ghost" onclick="inb.view='stats';renderInbox()">상담 통계</button>
+      <button class="btn ghost" onclick="inbTagModal()">태그 설정</button>
+      ${isOwner?'<button class="btn ghost" onclick="inbChannelModal()">채널 연동</button>':''}
+      <button class="btn ghost" onclick="renderInbox()">새로고침</button>
+      <button class="btn" onclick="inbNewManual()">+ 수기 상담</button>
+    </div></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+    ${['open','hold','closed',''].map(s=>`<button class="btn sm ${inb.tab===s?'':'ghost'}" onclick="inb.tab='${s}';inbRefreshList()">${s?INB_ST_LABEL[s]:'전체'}</button>`).join('')}
+    <select id="inb_ch" onchange="inb.ch=this.value;inbRefreshList()" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">
+      <option value="">모든 채널</option><option value="instagram" ${inb.ch==='instagram'?'selected':''}>인스타그램</option><option value="facebook" ${inb.ch==='facebook'?'selected':''}>페이스북</option><option value="manual" ${inb.ch==='manual'?'selected':''}>수기</option></select>
+    <select id="inb_asg" onchange="inb.asg=this.value;inbRefreshList()" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">
+      <option value="">모든 담당자</option><option value="me" ${inb.asg==='me'?'selected':''}>내 상담</option><option value="none" ${inb.asg==='none'?'selected':''}>담당자 없음</option>
+      ${inb.staffList.map(s=>`<option value="${s.id}" ${inb.asg===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
+    <input id="inb_q" value="${esc(inb.q)}" oninput="inb.q=this.value;inbRefreshList()" placeholder="이름·내용 검색" style="padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;width:160px">
+  </div>
+  <div style="display:flex;gap:12px;align-items:stretch;min-height:520px">
+    <div class="panel" style="width:340px;min-width:280px;max-height:72vh;overflow-y:auto"><div id="inbList"></div></div>
+    <div class="panel" style="flex:1;display:flex;flex-direction:column;max-height:72vh"><div id="inbChat" style="display:flex;flex-direction:column;flex:1;min-height:0"></div></div>
+  </div>`;
+  inbRefreshList();
+  inbRenderChat();
+  if(inb.timer)clearInterval(inb.timer);
+  inb.timer=setInterval(async()=>{ if(curView!=='inbox'){clearInterval(inb.timer);inb.timer=null;return;}
+    await inbLoad(); inbRefreshList(); if(inb.cur)await inbReloadMsgs(false); refreshInboxBadge(); },15000);
+}
+function inbFiltered(){
+  let L=inb.convs.slice();
+  if(inb.tab)L=L.filter(c=>c.status===inb.tab);
+  if(inb.ch)L=L.filter(c=>c.channel===inb.ch);
+  if(inb.asg==='me')L=L.filter(c=>c.assignee_id===(state.staff&&state.staff.id));
+  else if(inb.asg==='none')L=L.filter(c=>!c.assignee_id);
+  else if(inb.asg)L=L.filter(c=>c.assignee_id===inb.asg);
+  if(inb.q){const q=inb.q.toLowerCase();L=L.filter(c=>((c.customer_name||'')+' '+(c.last_preview||'')).toLowerCase().includes(q));}
+  return L;
+}
+function inbChChip(ch){return `<span class="tag" style="background:${INB_CH_COLOR[ch]}18;color:${INB_CH_COLOR[ch]};font-size:10.5px">${INB_CH_LABEL[ch]||ch}</span>`;}
+function inbRefreshList(){
+  const box=el('inbList');if(!box)return;
+  const L=inbFiltered();const smap=Object.fromEntries(inb.staffList.map(s=>[s.id,s.name]));
+  box.innerHTML=L.length?L.map(c=>{
+    const sel=inb.cur&&inb.cur.id===c.id;
+    const tags=(c.tags||[]).slice(0,3).map(t=>{const tg=inb.tags.find(x=>x.name===t);return `<span class="tag" style="background:${(tg?tg.color:'#6366f1')}18;color:${tg?tg.color:'#6366f1'};font-size:10px">${esc(t)}</span>`;}).join(' ');
+    return `<div onclick="inbOpen('${c.id}')" style="padding:11px 13px;border-bottom:1px solid var(--line);cursor:pointer;${sel?'background:#eef2ff;':''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+        <b style="font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.customer_name||'이름 미확인')}</b>
+        <span style="display:flex;align-items:center;gap:5px;flex-shrink:0">${c.unread>0?`<span style="background:#dc2626;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px">${c.unread}</span>`:''}
+        <span class="muted" style="font-size:10.5px">${fdt(c.last_message_at)}</span></span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;gap:6px">
+        <span class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(c.last_preview||'')}</span>${inbChChip(c.channel)}</div>
+      <div style="margin-top:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">${tags}${c.assignee_id?`<span class="muted" style="font-size:10.5px">👤${esc(smap[c.assignee_id]||'')}</span>`:''}</div>
+    </div>`;
+  }).join(''):'<div class="muted" style="padding:26px;text-align:center;font-size:13px">상담이 없습니다.<br><span style="font-size:11.5px">채널 연동 후 인스타·페북 DM이 자동으로 들어옵니다.</span></div>';
+}
+async function inbOpen(id){
+  inb.cur=inb.convs.find(c=>c.id===id)||null;if(!inb.cur)return;
+  if(inb.cur.unread>0){try{await db.from('gp_conversations').update({unread:0}).eq('id',id);inb.cur.unread=0;refreshInboxBadge();}catch(e){}}
+  await inbReloadMsgs(true);inbRefreshList();
+}
+async function inbReloadMsgs(render){
+  if(!inb.cur)return;
+  const {data}=await db.from('gp_messages').select('*').eq('conversation_id',inb.cur.id).order('created_at').limit(500);
+  inb.msgs=data||[];if(render!==false)inbRenderChat();
+  else{const bx=el('inbMsgs');if(bx){bx.innerHTML=inbMsgsHtml();bx.scrollTop=bx.scrollHeight;}}
+}
+function inbMsgsHtml(){
+  return inb.msgs.map(ms=>{
+    const out=ms.direction==='out',note=ms.direction==='note';
+    const atts=(ms.attachments||[]).map(a=>a.url?(a.type==='image'?`<a href="${esc(a.url)}" target="_blank"><img src="${esc(a.url)}" style="max-width:200px;border-radius:8px;display:block;margin-top:4px"></a>`:`<a href="${esc(a.url)}" target="_blank" style="font-size:12px">[${esc(a.type||'첨부')}]</a>`):`<span class="muted" style="font-size:11px">[${esc(a.type||'첨부')}]</span>`).join('');
+    return `<div style="display:flex;justify-content:${out||note?'flex-end':'flex-start'};margin-bottom:8px">
+      <div style="max-width:72%;padding:8px 12px;border-radius:12px;font-size:13.5px;white-space:pre-wrap;word-break:break-word;${note?'background:#fef9c3;border:1px dashed #d4a373':(out?'background:var(--brand,#1F3864);color:#fff':'background:#f1f5f9')}">
+        ${ms.body?esc(ms.body):''}${atts}
+        <div style="font-size:10px;opacity:.65;margin-top:3px;text-align:right">${note?'메모 · ':''}${ms.sender_name?esc(ms.sender_name)+' · ':''}${fdt(ms.created_at)}${ms.send_status==='failed'?' · <b style="color:#fca5a5">발송실패</b>':''}</div>
+      </div></div>`;
+  }).join('')||'<div class="muted" style="text-align:center;padding:30px;font-size:13px">메시지가 없습니다.</div>';
+}
+function inbRenderChat(){
+  const box=el('inbChat');if(!box)return;
+  const c=inb.cur;
+  if(!c){box.innerHTML='<div class="muted" style="display:flex;align-items:center;justify-content:center;flex:1;font-size:13.5px">왼쪽에서 상담을 선택하세요.</div>';return;}
+  const smap=inb.staffList;const pm=pmap();
+  const lastIn=[...inb.msgs].reverse().find(x=>x.direction==='in');
+  const over24=c.channel!=='manual'&&lastIn&&(Date.now()-new Date(lastIn.created_at).getTime()>24*3600*1000);
+  box.innerHTML=`
+  <div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+    <div><b style="font-size:15px">${esc(c.customer_name||'이름 미확인')}</b> ${inbChChip(c.channel)} <span class="tag ${c.status==='open'?'t-done':(c.status==='hold'?'t-cancelled':'')}" style="font-size:10.5px">${INB_ST_LABEL[c.status]}</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <select onchange="inbSetAssignee(this.value)" style="padding:5px 7px;border:1px solid var(--line);border-radius:7px;font-size:12px">
+        <option value="">담당자 없음</option>${smap.map(s=>`<option value="${s.id}" ${c.assignee_id===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
+      <select onchange="inbLinkPatient(this.value)" style="padding:5px 7px;border:1px solid var(--line);border-radius:7px;font-size:12px;max-width:150px">
+        <option value="">환자 연결…</option>${state.patients.map(p=>`<option value="${p.id}" ${c.patient_id===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>
+      ${c.status!=='hold'?'<button class="btn sm ghost" onclick="inbSetStatus(\'hold\')">보류</button>':''}
+      ${c.status!=='closed'?'<button class="btn sm ghost" onclick="inbSetStatus(\'closed\')">종료</button>':'<button class="btn sm" onclick="inbSetStatus(\'open\')">재개</button>'}
+    </div></div>
+  <div style="padding:8px 16px;border-bottom:1px solid var(--line);display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+    ${inb.tags.map(t=>{const on=(c.tags||[]).includes(t.name);return `<span onclick="inbToggleTag('${esc(t.name)}')" class="tag" style="cursor:pointer;font-size:11px;background:${on?t.color:'#f1f5f9'};color:${on?'#fff':'#64748b'}">${esc(t.name)}</span>`;}).join('')}
+    <span onclick="inbTagModal()" class="muted" style="cursor:pointer;font-size:11px">+ 태그 관리</span></div>
+  <div id="inbMsgs" style="flex:1;overflow-y:auto;padding:14px 16px;min-height:0">${inbMsgsHtml()}</div>
+  <div style="padding:10px 14px;border-top:1px solid var(--line)">
+    ${over24?'<div style="font-size:11px;color:#d97706;margin-bottom:6px">⚠ 고객의 마지막 메시지 후 24시간이 지나 메타 정책상 발송이 거부될 수 있습니다.</div>':''}
+    <div style="display:flex;gap:8px;align-items:flex-end">
+      <textarea id="inbReply" rows="2" placeholder="${c.channel==='manual'?'상담 기록 입력 (내부 기록용)…':'답장 입력… (Enter 전송 · Shift+Enter 줄바꿈)'}" style="flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:10px;font-size:13.5px;resize:vertical"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();inbSend();}"></textarea>
+      <button class="btn" onclick="inbSend()" id="inbSendBtn">전송</button>
+      <button class="btn ghost" onclick="inbNote()" title="고객에게 전송되지 않는 내부 메모">메모</button>
+    </div></div>`;
+  const bx=el('inbMsgs');if(bx)bx.scrollTop=bx.scrollHeight;
+}
+async function inbSetStatus(st){
+  if(!inb.cur)return;
+  const upd={status:st};if(st==='closed')upd.closed_at=new Date().toISOString();else upd.closed_at=null;
+  const {error}=await db.from('gp_conversations').update(upd).eq('id',inb.cur.id);
+  if(error){alert('변경 실패: '+error.message);return;}
+  inb.cur.status=st;Object.assign(inb.convs.find(c=>c.id===inb.cur.id)||{},upd);
+  logAudit('상담 상태변경',INB_ST_LABEL[st]);inbRenderChat();inbRefreshList();
+}
+async function inbSetAssignee(sid){
+  if(!inb.cur)return;
+  const {error}=await db.from('gp_conversations').update({assignee_id:sid||null}).eq('id',inb.cur.id);
+  if(error){alert('변경 실패: '+error.message);return;}
+  inb.cur.assignee_id=sid||null;const cc=inb.convs.find(c=>c.id===inb.cur.id);if(cc)cc.assignee_id=sid||null;inbRefreshList();
+}
+async function inbLinkPatient(pid){
+  if(!inb.cur)return;
+  const {error}=await db.from('gp_conversations').update({patient_id:pid||null}).eq('id',inb.cur.id);
+  if(error){alert('연결 실패: '+error.message);return;}
+  inb.cur.patient_id=pid||null;
+}
+async function inbToggleTag(name){
+  if(!inb.cur)return;
+  let tags=(inb.cur.tags||[]).slice();
+  if(tags.includes(name))tags=tags.filter(t=>t!==name);else tags.push(name);
+  const {error}=await db.from('gp_conversations').update({tags:tags}).eq('id',inb.cur.id);
+  if(error){alert('태그 변경 실패: '+error.message);return;}
+  inb.cur.tags=tags;const cc=inb.convs.find(c=>c.id===inb.cur.id);if(cc)cc.tags=tags;inbRenderChat();inbRefreshList();
+}
+async function inbSend(){
+  if(!inb.cur)return;
+  const ta=el('inbReply');const text=(ta&&ta.value||'').trim();if(!text)return;
+  const btn=el('inbSendBtn');btn.disabled=true;btn.textContent='전송중…';
+  const res=await inbApi({action:'send',conversation_id:inb.cur.id,text:text});
+  btn.disabled=false;btn.textContent='전송';
+  if(res.error){alert('전송 실패: '+res.error);return;}
+  ta.value='';logAudit('상담 답장',inb.cur.channel);
+  await inbReloadMsgs(false);await inbLoad();inbRefreshList();
+}
+async function inbNote(){
+  if(!inb.cur)return;
+  const ta=el('inbReply');const text=(ta&&ta.value||'').trim();if(!text){alert('메모 내용을 입력하세요.');return;}
+  const {error}=await db.from('gp_messages').insert({conversation_id:inb.cur.id,hospital_id:state.hospital_id,direction:'note',body:text,sender_name:state.staff?state.staff.name:'관리자'});
+  if(error){alert('메모 실패: '+error.message);return;}
+  ta.value='';await inbReloadMsgs(false);
+}
+function inbNewManual(){
+  openModal(`<div class="mh">수기 상담 등록<span onclick="closeModal()">✕</span></div><div class="mb">
+    <div class="field"><label>고객 이름 *</label><input id="nm_name" placeholder="예: 왕리리 (위챗)"></div>
+    <div class="field"><label>환자 연결 (선택)</label><select id="nm_pat"><option value="">-</option>${state.patients.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
+    <div class="field"><label>첫 기록 (선택)</label><textarea id="nm_body" rows="3" placeholder="위챗·전화 등으로 받은 상담 내용"></textarea></div>
+    <div class="muted" style="font-size:11.5px">위챗·전화 등 연동되지 않은 채널의 상담을 기록용으로 관리합니다.</div>
+  </div><div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="inbCreateManual()">등록</button></div>`);
+}
+async function inbCreateManual(){
+  const name=(el('nm_name').value||'').trim();if(!name){alert('고객 이름을 입력하세요.');return;}
+  const pid=el('nm_pat').value||null;const body=(el('nm_body').value||'').trim();
+  const now=new Date().toISOString();
+  const {data:conv,error}=await db.from('gp_conversations').insert({hospital_id:state.hospital_id,channel:'manual',customer_name:name,patient_id:pid,status:'open',first_inbound_at:now,last_message_at:now,last_preview:body.slice(0,120)||'(수기 상담)'}).select('*').single();
+  if(error){alert('등록 실패: '+error.message);return;}
+  if(body)await db.from('gp_messages').insert({conversation_id:conv.id,hospital_id:state.hospital_id,direction:'in',body:body,sender_name:name});
+  closeModal();logAudit('수기 상담 등록',name);await inbLoad();inb.cur=inb.convs.find(c=>c.id===conv.id)||null;await inbReloadMsgs(true);inbRefreshList();
+}
+/* --- 태그 설정 --- */
+function inbTagModal(){
+  const rows=inb.tags.map(t=>`<tr><td><span class="tag" style="background:${t.color}18;color:${t.color}">${esc(t.name)}</span></td><td style="font-family:monospace;font-size:11px">${t.color}</td><td class="right"><button class="btn sm ghost" onclick="inbDelTag('${t.id}')">삭제</button></td></tr>`).join('')||'<tr><td colspan="3" class="muted" style="text-align:center;padding:14px">태그가 없습니다.</td></tr>';
+  openModal(`<div class="mh">상담 태그 설정<span onclick="closeModal()">✕</span></div><div class="mb">
+    <table><thead><tr><th>태그</th><th>색</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+      <input id="tg_name" placeholder="새 태그 이름 (예: 결제, 예약문의)" style="flex:1"><input type="color" id="tg_color" value="#6366f1" style="width:44px;height:34px;border:1px solid var(--line);border-radius:8px;padding:2px">
+      <button class="btn" onclick="inbAddTag()">추가</button></div>
+  </div>`);
+}
+async function inbAddTag(){
+  const name=(el('tg_name').value||'').trim();if(!name)return;
+  const {error}=await db.from('gp_tags').insert({hospital_id:state.hospital_id,name:name,color:el('tg_color').value||'#6366f1'});
+  if(error){alert('추가 실패: '+error.message);return;}
+  await inbLoad();inbTagModal();inbRenderChat();
+}
+async function inbDelTag(id){
+  if(!confirm('이 태그를 삭제할까요? (상담에 붙은 태그 표기는 유지됩니다)'))return;
+  await db.from('gp_tags').delete().eq('id',id);
+  await inbLoad();inbTagModal();inbRenderChat();
+}
+/* --- 채널 연동 (owner/플랫폼) --- */
+async function inbChannelModal(){
+  const {data:accts}=await db.from('gp_channel_accounts').select('id,provider,page_id,ig_account_id,page_name,is_active,created_at').eq('hospital_id',state.hospital_id).order('created_at');
+  const info=await inbApi({action:'setup_info'});
+  const rows=(accts||[]).map(a=>`<tr><td>${inbChChip(a.provider)}</td><td><b>${esc(a.page_name||'-')}</b></td><td style="font-family:monospace;font-size:11px">${esc(a.page_id)}${a.ig_account_id?'<br>IG:'+esc(a.ig_account_id):''}</td><td>${a.is_active?'<span class="tag t-done">활성</span>':'<span class="tag t-cancelled">중지</span>'}</td><td class="right"><button class="btn sm ghost" onclick="inbAcctForm('${a.id}')">수정</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">연동된 채널이 없습니다.</td></tr>';
+  openModal(`<div class="mh">메신저 채널 연동<span onclick="closeModal()">✕</span></div><div class="mb">
+    <table><thead><tr><th>채널</th><th>페이지</th><th>ID</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <div style="margin-top:10px"><button class="btn sm" onclick="inbAcctForm('')">+ 채널 추가</button></div>
+    <div style="margin-top:16px;padding:12px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;font-size:12px;line-height:1.7">
+      <b>메타 개발자 콘솔 설정값</b> (Meta for Developers → 앱 → Messenger/Instagram → Webhooks)<br>
+      콜백 URL: <code style="user-select:all">${esc(info.webhook_url||'-')}</code><br>
+      확인 토큰: <code style="user-select:all">${esc(info.verify_token||'-')}</code><br>
+      앱 시크릿(서명검증): ${info.app_secret_set?'<span class="tag t-done">등록됨</span>':'<span class="tag t-cancelled">미등록</span>'} ${state.isPlatformAdmin?'<button class="btn sm ghost" onclick="inbSetAppSecret()">등록/변경</button>':'(플랫폼 관리자에게 요청)'}<br>
+      구독 필드: <b>messages</b> (페이지·인스타그램 각각) · 페이지 액세스 토큰은 채널 추가에서 입력<br>
+      <span class="muted">인스타 DM은 인스타 프로페셔널 계정 + 페이스북 페이지 연결 + 앱 권한(instagram_manage_messages, pages_messaging) 승인 필요</span>
+    </div></div>`);
+}
+function inbAcctForm(id){
+  const a=id?null:null; // 수정 시 값은 아래에서 채움
+  (async()=>{
+    let cur={provider:'instagram',page_id:'',ig_account_id:'',page_name:'',is_active:true};
+    if(id){const {data}=await db.from('gp_channel_accounts').select('id,provider,page_id,ig_account_id,page_name,is_active').eq('id',id).single();if(data)cur=data;}
+    openModal(`<div class="mh">${id?'채널 수정':'채널 추가'}<span onclick="closeModal()">✕</span></div><div class="mb">
+      <div class="field"><label>채널</label><select id="ca_provider"><option value="instagram" ${cur.provider==='instagram'?'selected':''}>인스타그램 DM</option><option value="facebook" ${cur.provider==='facebook'?'selected':''}>페이스북 메신저</option></select></div>
+      <div class="field"><label>페이스북 페이지 ID *</label><input id="ca_page" value="${esc(cur.page_id)}" placeholder="페이지 설정 → 페이지 정보에서 확인"></div>
+      <div class="field"><label>인스타그램 계정 ID (IG 연동 시)</label><input id="ca_ig" value="${esc(cur.ig_account_id||'')}" placeholder="IG 프로페셔널 계정 ID"></div>
+      <div class="field"><label>페이지 이름</label><input id="ca_name" value="${esc(cur.page_name||'')}"></div>
+      <div class="field"><label>페이지 액세스 토큰 ${id?'(변경 시에만 입력)':'*'}</label><input id="ca_token" placeholder="EAAG… (저장 후 다시 표시되지 않습니다)"></div>
+      <div class="field"><label><input type="checkbox" id="ca_active" ${cur.is_active?'checked':''}> 활성</label></div>
+    </div><div class="mf"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn" onclick="inbAcctSave('${id||''}')">저장</button></div>`);
+  })();
+}
+async function inbAcctSave(id){
+  const row={hospital_id:state.hospital_id,provider:el('ca_provider').value,page_id:(el('ca_page').value||'').trim(),ig_account_id:(el('ca_ig').value||'').trim()||null,page_name:(el('ca_name').value||'').trim()||null,is_active:el('ca_active').checked};
+  if(!row.page_id){alert('페이지 ID를 입력하세요.');return;}
+  const token=(el('ca_token').value||'').trim();if(token)row.access_token=token;
+  let error;
+  if(id){({error}=await db.from('gp_channel_accounts').update(row).eq('id',id));}
+  else{if(!token){alert('페이지 액세스 토큰을 입력하세요.');return;}({error}=await db.from('gp_channel_accounts').insert(row));}
+  if(error){alert('저장 실패: '+error.message);return;}
+  logAudit('채널 연동 저장',row.provider+' '+row.page_id);closeModal();inbChannelModal();
+}
+async function inbSetAppSecret(){
+  const s=prompt('메타 앱 시크릿을 입력하세요 (Meta 앱 → 설정 → 기본 설정):');if(!s)return;
+  const res=await inbApi({action:'set_app_secret',secret:s.trim()});
+  if(res.error){alert('실패: '+res.error);return;}
+  alert('앱 시크릿이 등록되었습니다. 이후 웹훅 서명이 검증됩니다.');inbChannelModal();
+}
+/* --- 상담 통계 --- */
+async function inbRenderStats(){
+  const m=el('main');
+  const from=new Date(Date.now()-30*86400000).toISOString();
+  const {data}=await db.from('gp_conversations').select('*').eq('hospital_id',state.hospital_id).gte('created_at',from);
+  const L=data||[];const smap=Object.fromEntries(inb.staffList.map(s=>[s.id,s.name]));
+  const avg=(arr)=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
+  const fmtDur=(ms)=>{if(ms==null)return '-';const mn=Math.round(ms/60000);if(mn<60)return mn+'분';const h=Math.floor(mn/60);if(h<24)return h+'시간 '+(mn%60)+'분';return Math.floor(h/24)+'일 '+(h%24)+'시간';};
+  const firstResp=avg(L.filter(c=>c.first_inbound_at&&c.first_reply_at).map(c=>new Date(c.first_reply_at)-new Date(c.first_inbound_at)).filter(x=>x>=0));
+  const closeDur=avg(L.filter(c=>c.closed_at).map(c=>new Date(c.closed_at)-new Date(c.created_at)).filter(x=>x>=0));
+  const replied=L.filter(c=>c.first_reply_at).length;
+  const byCh={},byTag={},byAsg={};
+  L.forEach(c=>{byCh[c.channel]=(byCh[c.channel]||0)+1;(c.tags||[]).forEach(t=>byTag[t]=(byTag[t]||0)+1);if(c.assignee_id)byAsg[c.assignee_id]=(byAsg[c.assignee_id]||0)+1;});
+  const days=[...Array(14)].map((_,i)=>{const d=new Date(Date.now()-(13-i)*86400000);const k=d.toISOString().slice(0,10);return {k,label:(d.getMonth()+1)+'/'+d.getDate(),n:L.filter(c=>String(c.created_at).slice(0,10)===k).length};});
+  const mx=Math.max(1,...days.map(d=>d.n));
+  const stat=(k,v,sub)=>`<div class="stat"><div class="k">${k}</div><div class="v" style="font-size:22px">${v}</div>${sub?`<div class="cny">${sub}</div>`:''}</div>`;
+  const bar=(o,total)=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12.5px"><span style="width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(k)}</span><div style="flex:1;height:9px;background:#f1f5f9;border-radius:5px;overflow:hidden"><div style="width:${Math.round(n/Math.max(1,total)*100)}%;height:100%;background:var(--brand,#1F3864)"></div></div><b style="width:36px;text-align:right">${n}</b></div>`).join('')||'<div class="muted" style="font-size:12px">데이터 없음</div>';
+  m.innerHTML=`<div class="page-head"><div><h2>상담 통계</h2><div class="sub">최근 30일 · 상담 ${L.length}건</div></div>
+    <div style="display:flex;gap:8px"><button class="btn ghost" onclick="inb.view='list';renderInbox()">← 수신함</button><button class="btn ghost" onclick="renderInbox()">새로고침</button></div></div>
+  <div class="stats" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+    ${stat('첫 응답까지의 시간',fmtDur(firstResp))}
+    ${stat('응답률',L.length?Math.round(replied/L.length*100)+'%':'-',replied+'/'+L.length+'건')}
+    ${stat('상담 종료까지의 시간',fmtDur(closeDur))}
+    ${stat('진행중 / 보류 / 종료',L.filter(c=>c.status==='open').length+' / '+L.filter(c=>c.status==='hold').length+' / '+L.filter(c=>c.status==='closed').length)}
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start">
+    <div class="panel" style="flex:1;min-width:300px"><div class="ph">일별 인입 (최근 14일)</div><div class="pb" style="padding:16px;display:flex;align-items:flex-end;gap:5px;height:130px">
+      ${days.map(d=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><span style="font-size:10px;color:#64748b">${d.n||''}</span><div style="width:100%;max-width:26px;height:${Math.round(d.n/mx*80)}px;min-height:2px;background:var(--brand,#1F3864);border-radius:4px 4px 0 0"></div><span style="font-size:9px;color:#94a3b8">${d.label}</span></div>`).join('')}</div></div>
+    <div class="panel" style="width:300px;min-width:260px"><div class="ph">채널별</div><div class="pb" style="padding:14px">${bar(Object.fromEntries(Object.entries(byCh).map(([k,v])=>[INB_CH_LABEL[k]||k,v])),L.length)}</div>
+      <div class="ph">태그별</div><div class="pb" style="padding:14px">${bar(byTag,L.length)}</div>
+      <div class="ph">담당자별</div><div class="pb" style="padding:14px">${bar(Object.fromEntries(Object.entries(byAsg).map(([k,v])=>[smap[k]||'?',v])),L.length)}</div></div>
+  </div>`;
+}
 
 /* ============ 구독 · 이용권 ============ */
 function subDaysLeft(){ if(!state.subscription_end) return null; const t=new Date(); t.setHours(0,0,0,0); const e=new Date(state.subscription_end+'T00:00:00'); return Math.ceil((e-t)/86400000); }
@@ -2968,9 +3278,9 @@ function exportAuditCSV(){const rows=(state._audit||[]).map(l=>[new Date(l.creat
 
 /* ============ 직원 계정·권한 ============ */
 const ROLE_LABEL={owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'};
-const MENUS=[{k:'dashboard',label:'대시보드'},{k:'calendar',label:'예약 캘린더'},{k:'reception',label:'접수 현황'},{k:'patients',label:'환자 CRM'},{k:'quote',label:'상담·견적'},{k:'charts',label:'진료차트'},{k:'tasks',label:'할일'},{k:'files',label:'자료실'},{k:'billing',label:'수납·매출'},{k:'stats',label:'통계'},{k:'marketing',label:'마케팅 리포트'},{k:'settlement',label:'에이전시 정산'},{k:'agencies',label:'에이전시 관리'},{k:'packages',label:'패키지 관리'},{k:'referrers',label:'왕홍·소개자'},{k:'refsettle',label:'소개자 정산'},{k:'staff',label:'직원 관리'},{k:'settings',label:'병원 설정'},{k:'audit',label:'관리자 로그'}];
+const MENUS=[{k:'dashboard',label:'대시보드'},{k:'calendar',label:'예약 캘린더'},{k:'reception',label:'접수 현황'},{k:'inbox',label:'상담 인박스'},{k:'patients',label:'환자 CRM'},{k:'quote',label:'상담·견적'},{k:'charts',label:'진료차트'},{k:'tasks',label:'할일'},{k:'files',label:'자료실'},{k:'billing',label:'수납·매출'},{k:'stats',label:'통계'},{k:'marketing',label:'마케팅 리포트'},{k:'settlement',label:'에이전시 정산'},{k:'agencies',label:'에이전시 관리'},{k:'packages',label:'패키지 관리'},{k:'referrers',label:'왕홍·소개자'},{k:'refsettle',label:'소개자 정산'},{k:'staff',label:'직원 관리'},{k:'settings',label:'병원 설정'},{k:'audit',label:'관리자 로그'}];
 const ROLE_DESC='원장: 모든 메뉴·병원설정·직원관리 접근(전권). 매니저: 직원관리·병원설정 제외 전체 접근·편집(정산·통계 포함). 데스크: 접수·예약·환자·상담견적·진료차트·수납 등 일선 업무. 열람: 조회 전용(데이터 편집 불가).';
-function roleMenus(role){const all=MENUS.map(x=>x.k);if(role==='owner')return all;const noAdmin=all.filter(k=>k!=='staff'&&k!=='settings');if(role==='desk')return ['dashboard','calendar','reception','patients','quote','charts','tasks','files','billing'];if(role==='viewer')return ['dashboard','stats','patients','billing'];return noAdmin;}
+function roleMenus(role){const all=MENUS.map(x=>x.k);if(role==='owner')return all;const noAdmin=all.filter(k=>k!=='staff'&&k!=='settings');if(role==='desk')return ['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing'];if(role==='viewer')return ['dashboard','stats','patients','billing'];return noAdmin;}
 function menuCheckboxes(sel){return MENUS.filter(x=>x.k!=='staff'&&x.k!=='settings'&&x.k!=='audit').map(x=>`<label style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:5px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px"><input type="checkbox" value="${x.k}" ${sel.includes(x.k)?'checked':''}> ${x.label}</label>`).join('');}
 function permModal(id){const s=(state._staff||[]).find(x=>x.id===id);if(!s)return;
   const sel=(Array.isArray(s.menu_perms)&&s.menu_perms.length)?s.menu_perms:roleMenus(s.role);
