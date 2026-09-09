@@ -497,8 +497,8 @@ function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a'
   ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,inbox:renderInbox,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),viralreq:()=>renderDemoRequests('viral_marketing_lp','바이럴 병원문의'),b2creq:()=>renderDemoRequests('b2c_quote_lead','B2C 맞춤견적'),guidereq:renderGuideRequests,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
 
 /* ============ 상담 인박스 (인스타·페북 DM + 수기상담) ============ */
-const INB_CH_LABEL={instagram:'인스타',facebook:'페이스북',manual:'수기'};
-const INB_CH_COLOR={instagram:'#d62976',facebook:'#1877f2',manual:'#64748b'};
+const INB_CH_LABEL={instagram:'인스타',facebook:'페이스북',whatsapp:'왓츠앱',manual:'수기'};
+const INB_CH_COLOR={instagram:'#d62976',facebook:'#1877f2',whatsapp:'#25D366',manual:'#64748b'};
 const INB_ST_LABEL={open:'진행중',hold:'보류',closed:'종료'};
 let inb={tab:'open',ch:'',asg:'',q:'',convs:[],tags:[],staffList:[],cur:null,msgs:[],timer:null,view:'list'};
 
@@ -540,7 +540,7 @@ async function renderInbox(){
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
     ${['open','hold','closed',''].map(s=>`<button class="btn sm ${inb.tab===s?'':'ghost'}" onclick="inb.tab='${s}';inbRefreshList()">${s?INB_ST_LABEL[s]:'전체'}</button>`).join('')}
     <select id="inb_ch" onchange="inb.ch=this.value;inbRefreshList()" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">
-      <option value="">모든 채널</option><option value="instagram" ${inb.ch==='instagram'?'selected':''}>인스타그램</option><option value="facebook" ${inb.ch==='facebook'?'selected':''}>페이스북</option><option value="manual" ${inb.ch==='manual'?'selected':''}>수기</option></select>
+      <option value="">모든 채널</option><option value="instagram" ${inb.ch==='instagram'?'selected':''}>인스타그램</option><option value="facebook" ${inb.ch==='facebook'?'selected':''}>페이스북</option><option value="whatsapp" ${inb.ch==='whatsapp'?'selected':''}>왓츠앱</option><option value="manual" ${inb.ch==='manual'?'selected':''}>수기</option></select>
     <select id="inb_asg" onchange="inb.asg=this.value;inbRefreshList()" style="padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">
       <option value="">모든 담당자</option><option value="me" ${inb.asg==='me'?'selected':''}>내 상담</option><option value="none" ${inb.asg==='none'?'selected':''}>담당자 없음</option>
       ${inb.staffList.map(s=>`<option value="${s.id}" ${inb.asg===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
@@ -754,7 +754,7 @@ async function inbChannelModal(){
     ${connHtml}
     ${steps}
     ${bigBtn}
-    <div class="muted" style="font-size:11px;margin-top:10px">연결 후 고객이 병원 인스타/페북으로 DM을 보내면 상담 인박스에 자동으로 들어오고, 인박스에서 바로 답장할 수 있습니다. 문제가 있으면 팔로우코리아에 문의하세요.</div>
+    <div class="muted" style="font-size:11px;margin-top:10px">연결 후 고객이 병원 인스타/페북으로 DM을 보내면 상담 인박스에 자동으로 들어오고, 인박스에서 바로 답장할 수 있습니다. 왓츠앱 상담도 지원됩니다(전용 번호 인증 필요 — 팔로우코리아에 요청). 문제가 있으면 팔로우코리아에 문의하세요.</div>
     ${devPanel}</div>`);
 }
 function inbAcctForm(id){
@@ -763,9 +763,9 @@ function inbAcctForm(id){
     let cur={provider:'instagram',page_id:'',ig_account_id:'',page_name:'',is_active:true};
     if(id){const {data}=await db.from('gp_channel_accounts').select('id,provider,page_id,ig_account_id,page_name,is_active').eq('id',id).single();if(data)cur=data;}
     openModal(`<div class="mh">${id?'채널 수정':'채널 추가'}<span onclick="closeModal()">✕</span></div><div class="mb">
-      <div class="field"><label>채널</label><select id="ca_provider"><option value="instagram" ${cur.provider==='instagram'?'selected':''}>인스타그램 DM</option><option value="facebook" ${cur.provider==='facebook'?'selected':''}>페이스북 메신저</option></select></div>
-      <div class="field"><label>페이스북 페이지 ID *</label><input id="ca_page" value="${esc(cur.page_id)}" placeholder="페이지 설정 → 페이지 정보에서 확인"></div>
-      <div class="field"><label>인스타그램 계정 ID (IG 연동 시)</label><input id="ca_ig" value="${esc(cur.ig_account_id||'')}" placeholder="IG 프로페셔널 계정 ID"></div>
+      <div class="field"><label>채널</label><select id="ca_provider"><option value="instagram" ${cur.provider==='instagram'?'selected':''}>인스타그램 DM</option><option value="facebook" ${cur.provider==='facebook'?'selected':''}>페이스북 메신저</option><option value="whatsapp" ${cur.provider==='whatsapp'?'selected':''}>왓츠앱</option></select></div>
+      <div class="field"><label>페이지 ID (왓츠앱은 전화번호 ID) *</label><input id="ca_page" value="${esc(cur.page_id)}" placeholder="페이지 ID / 왓츠앱 Phone Number ID"></div>
+      <div class="field"><label>인스타 계정 ID (IG) / WABA ID (왓츠앱)</label><input id="ca_ig" value="${esc(cur.ig_account_id||'')}" placeholder="선택 입력"></div>
       <div class="field"><label>페이지 이름</label><input id="ca_name" value="${esc(cur.page_name||'')}"></div>
       <div class="field"><label>페이지 액세스 토큰 ${id?'(변경 시에만 입력)':'*'}</label><input id="ca_token" placeholder="EAAG… (저장 후 다시 표시되지 않습니다)"></div>
       <div class="field"><label><input type="checkbox" id="ca_active" ${cur.is_active?'checked':''}> 활성</label></div>
