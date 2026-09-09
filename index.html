@@ -728,12 +728,16 @@ async function inbChannelModal(){
   const rows=(accts||[]).map(a=>`<tr><td>${inbChChip(a.provider)}</td><td><b>${esc(a.page_name||'-')}</b></td><td style="font-family:monospace;font-size:11px">${esc(a.page_id)}${a.ig_account_id?'<br>IG:'+esc(a.ig_account_id):''}</td><td>${a.is_active?'<span class="tag t-done">활성</span>':'<span class="tag t-cancelled">중지</span>'}</td><td class="right"><button class="btn sm ghost" onclick="inbAcctForm('${a.id}')">수정</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">연동된 채널이 없습니다.</td></tr>';
   openModal(`<div class="mh">메신저 채널 연동<span onclick="closeModal()">✕</span></div><div class="mb">
     <table><thead><tr><th>채널</th><th>페이지</th><th>ID</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-    <div style="margin-top:10px"><button class="btn sm" onclick="inbAcctForm('')">+ 채널 추가</button></div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" onclick="inbOauthConnect()" ${info.app_id_set?'':'disabled title="플랫폼 관리자가 메타 앱 ID/시크릿을 등록하면 활성화됩니다"'}>페이스북으로 연결 (권장)</button>
+      <button class="btn sm ghost" onclick="inbAcctForm('')">+ 수동 추가 (토큰 직접입력)</button></div>
+    <div class="muted" style="font-size:11px;margin-top:6px">병원 페이스북 페이지 관리자 계정으로 로그인하면 페이지 선택만으로 인스타·페북 DM이 자동 연결됩니다(웹훅 구독까지 자동).</div>
     <div style="margin-top:16px;padding:12px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;font-size:12px;line-height:1.7">
       <b>메타 개발자 콘솔 설정값</b> (Meta for Developers → 앱 → Messenger/Instagram → Webhooks)<br>
       콜백 URL: <code style="user-select:all">${esc(info.webhook_url||'-')}</code><br>
       확인 토큰: <code style="user-select:all">${esc(info.verify_token||'-')}</code><br>
-      앱 시크릿(서명검증): ${info.app_secret_set?'<span class="tag t-done">등록됨</span>':'<span class="tag t-cancelled">미등록</span>'} ${state.isPlatformAdmin?'<button class="btn sm ghost" onclick="inbSetAppSecret()">등록/변경</button>':'(플랫폼 관리자에게 요청)'}<br>
+      앱 ID: ${info.app_id_set?'<span class="tag t-done">등록됨</span>':'<span class="tag t-cancelled">미등록</span>'} · 앱 시크릿(서명검증): ${info.app_secret_set?'<span class="tag t-done">등록됨</span>':'<span class="tag t-cancelled">미등록</span>'} ${state.isPlatformAdmin?'<button class="btn sm ghost" onclick="inbSetAppConfig()">앱 ID/시크릿 등록</button>':'(플랫폼 관리자에게 요청)'}<br>
+      OAuth 리디렉션 URI(앱 설정에 등록): <code style="user-select:all">${esc(info.oauth_redirect||'-')}</code><br>
       구독 필드: <b>messages</b> (페이지·인스타그램 각각) · 페이지 액세스 토큰은 채널 추가에서 입력<br>
       <span class="muted">인스타 DM은 인스타 프로페셔널 계정 + 페이스북 페이지 연결 + 앱 권한(instagram_manage_messages, pages_messaging) 승인 필요</span>
     </div></div>`);
@@ -763,11 +767,18 @@ async function inbAcctSave(id){
   if(error){alert('저장 실패: '+error.message);return;}
   logAudit('채널 연동 저장',row.provider+' '+row.page_id);closeModal();inbChannelModal();
 }
-async function inbSetAppSecret(){
-  const s=prompt('메타 앱 시크릿을 입력하세요 (Meta 앱 → 설정 → 기본 설정):');if(!s)return;
-  const res=await inbApi({action:'set_app_secret',secret:s.trim()});
+async function inbSetAppConfig(){
+  const id=prompt('메타 앱 ID (Meta 앱 → 설정 → 기본 설정 · 유지하려면 비워두기):')||'';
+  const s=prompt('메타 앱 시크릿 (유지하려면 비워두기):')||'';
+  if(!id.trim()&&!s.trim())return;
+  const res=await inbApi({action:'set_app_config',app_id:id.trim(),secret:s.trim()});
   if(res.error){alert('실패: '+res.error);return;}
-  alert('앱 시크릿이 등록되었습니다. 이후 웹훅 서명이 검증됩니다.');inbChannelModal();
+  alert('메타 앱 설정이 등록되었습니다.');inbChannelModal();
+}
+async function inbOauthConnect(){
+  const res=await inbApi({action:'oauth_start',hospital_id:state.hospital_id});
+  if(res.error){alert(res.error);return;}
+  window.open(res.url,'metaoauth','width=620,height=760');
 }
 /* --- 상담 통계 --- */
 async function inbRenderStats(){
