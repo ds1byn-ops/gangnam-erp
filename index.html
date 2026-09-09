@@ -533,7 +533,7 @@ async function renderInbox(){
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn ghost" onclick="inb.view='stats';renderInbox()">상담 통계</button>
       <button class="btn ghost" onclick="inbTagModal()">태그 설정</button>
-      ${isOwner?'<button class="btn ghost" onclick="inbChannelModal()">채널 연동</button>':''}
+      ${isOwner?'<button class="btn ghost" onclick="inbChannelModal()">인스타·페북 연결</button>':''}
       <button class="btn ghost" onclick="renderInbox()">새로고침</button>
       <button class="btn" onclick="inbNewManual()">+ 수기 상담</button>
     </div></div>
@@ -582,7 +582,7 @@ function inbRefreshList(){
         <span class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(c.last_preview||'')}</span>${inbChChip(c.channel)}</div>
       <div style="margin-top:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">${tags}${c.assignee_id?`<span class="muted" style="font-size:10.5px">👤${esc(smap[c.assignee_id]||'')}</span>`:''}</div>
     </div>`;
-  }).join(''):'<div class="muted" style="padding:26px;text-align:center;font-size:13px">상담이 없습니다.<br><span style="font-size:11.5px">채널 연동 후 인스타·페북 DM이 자동으로 들어옵니다.</span></div>';
+  }).join(''):'<div class="muted" style="padding:26px;text-align:center;font-size:13px">상담이 없습니다.<br><span style="font-size:11.5px">병원 인스타·페북 DM을 연결하면 자동으로 들어옵니다.</span><br><button class="btn sm" style="margin-top:10px" onclick="inbChannelModal()">인스타·페북 DM 연결하기</button></div>';
 }
 async function inbOpen(id){
   inb.cur=inb.convs.find(c=>c.id===id)||null;if(!inb.cur)return;
@@ -721,26 +721,41 @@ async function inbDelTag(id){
   await db.from('gp_tags').delete().eq('id',id);
   await inbLoad();inbTagModal();inbRenderChat();
 }
-/* --- 채널 연동 (owner/플랫폼) --- */
+/* --- 채널 연동 (owner/플랫폼) — 병원용은 원클릭 마법사, 개발 설정은 플랫폼 관리자에게만 노출 --- */
 async function inbChannelModal(){
   const {data:accts}=await db.from('gp_channel_accounts').select('id,provider,page_id,ig_account_id,page_name,is_active,created_at').eq('hospital_id',state.hospital_id).order('created_at');
   const info=await inbApi({action:'setup_info'});
-  const rows=(accts||[]).map(a=>`<tr><td>${inbChChip(a.provider)}</td><td><b>${esc(a.page_name||'-')}</b></td><td style="font-family:monospace;font-size:11px">${esc(a.page_id)}${a.ig_account_id?'<br>IG:'+esc(a.ig_account_id):''}</td><td>${a.is_active?'<span class="tag t-done">활성</span>':'<span class="tag t-cancelled">중지</span>'}</td><td class="right"><button class="btn sm ghost" onclick="inbAcctForm('${a.id}')">수정</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">연동된 채널이 없습니다.</td></tr>';
-  openModal(`<div class="mh">메신저 채널 연동<span onclick="closeModal()">✕</span></div><div class="mb">
-    <table><thead><tr><th>채널</th><th>페이지</th><th>ID</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn" onclick="inbOauthConnect()" ${info.app_id_set?'':'disabled title="플랫폼 관리자가 메타 앱 ID/시크릿을 등록하면 활성화됩니다"'}>페이스북으로 연결 (권장)</button>
-      <button class="btn sm ghost" onclick="inbAcctForm('')">+ 수동 추가 (토큰 직접입력)</button></div>
-    <div class="muted" style="font-size:11px;margin-top:6px">병원 페이스북 페이지 관리자 계정으로 로그인하면 페이지 선택만으로 인스타·페북 DM이 자동 연결됩니다(웹훅 구독까지 자동).</div>
+  window._inbAcctCount=(accts||[]).length;
+  const connected=(accts||[]).filter(a=>a.is_active);
+  const connHtml=connected.length
+    ? connected.map(a=>`<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:12px;margin-bottom:8px">
+        <span style="font-size:20px">✅</span>
+        <div style="flex:1"><b>${esc(a.page_name||a.page_id)}</b><div class="muted" style="font-size:11.5px">${a.ig_account_id?'인스타그램 DM + 페이스북 메신저':'페이스북 메신저'} 연결됨</div></div>
+        ${state.isPlatformAdmin?`<button class="btn sm ghost" onclick="inbAcctForm('${a.id}')">수정</button>`:''}</div>`).join('')
+    : '<div class="muted" style="padding:6px 2px 12px;font-size:13px">아직 연결된 페이지가 없습니다.</div>';
+  const steps=`<ol style="margin:10px 0 4px;padding-left:20px;font-size:13px;line-height:2;color:#334155">
+      <li>아래 파란 버튼을 누르면 <b>페이스북 로그인 창</b>이 열립니다</li>
+      <li><b>병원 페이스북 페이지의 관리자 계정</b>으로 로그인하세요</li>
+      <li>병원 페이지를 선택하면 <b>자동으로 연결 완료</b> — 인스타 DM은 페이지에 인스타 계정이 연결돼 있으면 함께 붙습니다</li></ol>`;
+  const bigBtn=info.app_id_set
+    ? `<button onclick="inbOauthConnect()" style="width:100%;padding:14px;border:none;border-radius:12px;background:#1877f2;color:#fff;font-size:15px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px"><svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M24 12.07C24 5.41 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.09 10.13 24v-8.44H7.08v-3.49h3.04V9.41c0-3.02 1.8-4.7 4.54-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.5c-1.5 0-1.96.93-1.96 1.89v2.26h3.32l-.53 3.5h-2.8V24C19.62 23.1 24 18.1 24 12.07z"/></svg>${connected.length?'다른 페이지 추가 연결':'페이스북으로 연결하기'}</button>
+       <div id="inbConnWait" class="muted" style="display:none;text-align:center;font-size:12px;margin-top:8px">연결 창에서 로그인·페이지 선택을 완료하면 여기가 자동으로 갱신됩니다…</div>`
+    : `<div style="padding:14px;border:1px dashed var(--line);border-radius:12px;text-align:center;color:#94a3b8;font-size:13px">준비 중입니다 — 플랫폼(팔로우코리아) 쪽 앱 등록이 끝나면 버튼이 활성화됩니다.</div>`;
+  const devPanel=state.isPlatformAdmin?`
     <div style="margin-top:16px;padding:12px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;font-size:12px;line-height:1.7">
-      <b>메타 개발자 콘솔 설정값</b> (Meta for Developers → 앱 → Messenger/Instagram → Webhooks)<br>
+      <b>[플랫폼 전용] 메타 앱 설정값</b><br>
       콜백 URL: <code style="user-select:all">${esc(info.webhook_url||'-')}</code><br>
       확인 토큰: <code style="user-select:all">${esc(info.verify_token||'-')}</code><br>
-      앱 ID: ${info.app_id_set?'<span class="tag t-done">등록됨</span>':'<span class="tag t-cancelled">미등록</span>'} · 앱 시크릿(서명검증): ${info.app_secret_set?'<span class="tag t-done">등록됨</span>':'<span class="tag t-cancelled">미등록</span>'} ${state.isPlatformAdmin?'<button class="btn sm ghost" onclick="inbSetAppConfig()">앱 ID/시크릿 등록</button>':'(플랫폼 관리자에게 요청)'}<br>
-      OAuth 리디렉션 URI(앱 설정에 등록): <code style="user-select:all">${esc(info.oauth_redirect||'-')}</code><br>
-      구독 필드: <b>messages</b> (페이지·인스타그램 각각) · 페이지 액세스 토큰은 채널 추가에서 입력<br>
-      <span class="muted">인스타 DM은 인스타 프로페셔널 계정 + 페이스북 페이지 연결 + 앱 권한(instagram_manage_messages, pages_messaging) 승인 필요</span>
-    </div></div>`);
+      OAuth 리디렉션 URI: <code style="user-select:all">${esc(info.oauth_redirect||'-')}</code><br>
+      앱 ID: ${info.app_id_set?'<span class="tag t-done">등록됨</span>':'<span class="tag t-cancelled">미등록</span>'} · 앱 시크릿: ${info.app_secret_set?'<span class="tag t-done">등록됨</span>':'<span class="tag t-cancelled">미등록</span>'} <button class="btn sm ghost" onclick="inbSetAppConfig()">앱 ID/시크릿 등록</button><br>
+      구독 필드: <b>messages</b>(페이지·인스타 각각) · <button class="btn sm ghost" onclick="inbAcctForm('')">수동 채널 추가(토큰 직접입력)</button>
+    </div>`:'';
+  openModal(`<div class="mh">인스타·페북 DM 연결<span onclick="closeModal()">✕</span></div><div class="mb">
+    ${connHtml}
+    ${steps}
+    ${bigBtn}
+    <div class="muted" style="font-size:11px;margin-top:10px">연결 후 고객이 병원 인스타/페북으로 DM을 보내면 상담 인박스에 자동으로 들어오고, 인박스에서 바로 답장할 수 있습니다. 문제가 있으면 팔로우코리아에 문의하세요.</div>
+    ${devPanel}</div>`);
 }
 function inbAcctForm(id){
   const a=id?null:null; // 수정 시 값은 아래에서 채움
@@ -779,6 +794,17 @@ async function inbOauthConnect(){
   const res=await inbApi({action:'oauth_start',hospital_id:state.hospital_id});
   if(res.error){alert(res.error);return;}
   window.open(res.url,'metaoauth','width=620,height=760');
+  const w=el('inbConnWait');if(w)w.style.display='block';
+  // 연결 완료 감지: 채널 계정 수가 늘거나 토큰이 갱신되면 모달 자동 갱신
+  if(window._inbConnPoll)clearInterval(window._inbConnPoll);
+  let tries=0;const base=window._inbAcctCount||0;
+  window._inbConnPoll=setInterval(async()=>{
+    tries++;if(tries>60){clearInterval(window._inbConnPoll);return;}
+    try{
+      const {data}=await db.from('gp_channel_accounts').select('id').eq('hospital_id',state.hospital_id);
+      if((data||[]).length>base){clearInterval(window._inbConnPoll);inbChannelModal();}
+    }catch(e){}
+  },3000);
 }
 /* --- 상담 통계 --- */
 async function inbRenderStats(){
