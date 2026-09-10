@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>인스타·페북 DM 연결</title>
+<style>
+body{font-family:'Pretendard','Malgun Gothic',sans-serif;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:32px;max-width:460px;width:92%;box-shadow:0 8px 24px rgba(15,23,42,.06)}
+h2{margin:0 0 10px;font-size:19px;color:#0f172a}
+p{color:#475569;font-size:14px;line-height:1.7}
+button.b{display:block;width:100%;margin:8px 0;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;color:#0f172a;font-weight:600;font-size:14px;cursor:pointer;text-align:left}
+button.b:hover{background:#f8fafc}
+.ok{color:#0f766e}.err{color:#dc2626}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid #cbd5e1;border-top-color:#1877f2;border-radius:50%;animation:s 0.8s linear infinite;vertical-align:-3px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="card" id="card"><h2><span class="spin"></span>연결 처리 중…</h2><p>잠시만 기다려주세요.</p></div>
+<script>
+const FN='https://utbhlvybdutepnkvboko.supabase.co/functions/v1/meta-oauth';
+const card=document.getElementById('card');
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const q=new URLSearchParams(location.search);
+function fail(msg){card.innerHTML='<h2 class="err">연결 실패</h2><p>'+esc(msg)+'</p><p>이 창을 닫고 인박스의 채널 연동에서 다시 시도하세요.</p>';}
+function done(r){card.innerHTML='<h2 class="ok">✓ 연결 완료</h2><p><b>'+esc(r.page_name)+'</b>'+(r.ig?' (인스타 @'+esc(r.ig)+' 포함)':'')+' 페이지가 연결됐습니다.'
+  +(r.subscribed?'<br>메시지 웹훅 구독 완료.':(r.sub_msg?'<br><span class="err">웹훅 구독 실패: '+esc(r.sub_msg)+'</span>':''))
+  +'</p><p>이 창을 닫고 인박스를 새로고침하세요.</p>';}
+async function api(body){
+  const r=await fetch(FN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  return await r.json().catch(()=>({error:'응답 오류'}));
+}
+async function pick(state,id){
+  card.innerHTML='<h2><span class="spin"></span>페이지 연결 중…</h2>';
+  const r=await api({action:'pick',state:state,page_id:id});
+  if(r.error){fail(r.error);return;}
+  done(r);
+}
+(async()=>{
+  if(q.get('err')){fail(q.get('err'));return;}
+  const state=q.get('state');
+  if(!state){fail('잘못된 접근입니다. 인박스의 채널 연동에서 시작하세요.');return;}
+  const r=await api({action:'pages',state:state});
+  if(r.error){fail(r.error);return;}
+  const pages=r.pages||[];
+  if(!pages.length){
+    fail('이 페이스북 계정이 관리하는 페이지가 없습니다.'+(r.graph_error?' ('+r.graph_error+')':'')+' 페이지 관리자 권한을 확인하고, 연결 과정에서 페이지를 체크했는지 확인하세요.');
+    return;
+  }
+  if(pages.length===1){pick(state,pages[0].id);return;}
+  card.innerHTML='<h2>연결할 페이지를 선택하세요</h2>'+pages.map(p=>'<button class="b" onclick="pick(\''+esc(state)+'\',\''+esc(p.id)+'\')">'+esc(p.name)+(p.ig?' · IG @'+esc(p.ig.username):'')+'</button>').join('');
+  window.pick=pick;
+})();
+window.pick=pick;
+</script>
+</body>
+</html>
