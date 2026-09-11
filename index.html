@@ -223,7 +223,7 @@ const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
 const APP_VERSION='v1.13.0 · 2026-09-09';
 let curView='dashboard';
-const KRW_PER_CNY=218; // 환율(대략) : CNY = KRW / 218
+const KRW_PER_CNY=200; // 환율(고정, 2026-09-11) : CNY = KRW / 200
 
 const STATUS_LABEL={booked:'예약',confirmed:'확정',checked_in:'접수완료',in_progress:'진료중',done:'완료',no_show:'노쇼',cancelled:'취소'};
 const PAY_LABEL={unpaid:'미수납',partial:'부분납',paid:'완납',refunded:'환불'};
