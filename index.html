@@ -221,7 +221,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.13.0 · 2026-09-09';
+const APP_VERSION='v1.14.0 · 2026-09-14';
 let curView='dashboard';
 const KRW_PER_CNY=200; // 환율(고정, 2026-09-11) : CNY = KRW / 200
 
@@ -3504,7 +3504,32 @@ const w=window.open('','_blank','width=820,height=920');
   w.document.write(html);w.document.close();w.focus();setTimeout(function(){w.print();},350);logAudit('거래명세서 출력',a.name);closeModal();
 }
 
-boot(); /* build: v6 statement */
+/* ── 체험 데모 자동 로그인 (gnpulse.kr/demo → ?demo=1) ──
+   데모 계정(demo@gnpulse.kr)은 가짜 데이터 병원 "서울라인의원 (데모)" 전용 manager.
+   RLS가 hospital_id로 격리하므로 실제 병원 데이터에는 접근 불가. */
+async function demoBoot(){
+  const isDemo=new URLSearchParams(location.search).get('demo')==='1';
+  if(isDemo){
+    const {data:{user}}=await db.auth.getUser();
+    if(!user){
+      const {error}=await db.auth.signInWithPassword({email:'demo@gnpulse.kr',password:'pulse-demo-2026'});
+      if(error){ boot(); return; }
+    }
+  }
+  await boot();
+  // 데모 병원 접속 중이면 상단 배너 표시 (config.demo 병원 + 비관리자)
+  try{
+    if(state.config&&state.config.demo&&!state.isPlatformAdmin&&!document.getElementById('demoBar')){
+      const bar=document.createElement('div');bar.id='demoBar';
+      bar.style.cssText='position:fixed;left:0;right:0;top:0;z-index:9999;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;background:#0f766e;color:#fff;font-size:13px;font-weight:600;padding:8px 14px;box-shadow:0 2px 10px rgba(0,0,0,.18)';
+      bar.innerHTML='체험 모드 — 가상의 병원 <b>서울라인의원(데모)</b> 데이터입니다. 자유롭게 눌러보세요.'
+        +'<a href="https://gnpulse.kr/demo/#demo" style="background:#fff;color:#0f766e;font-weight:800;padding:5px 14px;border-radius:7px;text-decoration:none;font-size:12.5px;white-space:nowrap">우리 병원에 도입 상담 →</a>';
+      document.body.appendChild(bar);
+      document.body.style.paddingTop='40px';
+    }
+  }catch(e){}
+}
+demoBoot(); /* build: v6 statement */
 </script>
 </body>
 </html>
