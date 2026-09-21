@@ -228,7 +228,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.15.0 · 2026-09-21';
+const APP_VERSION='v1.15.1 · 2026-09-21';
 let curView='dashboard';
 const KRW_PER_CNY=200; // 환율(고정, 2026-09-11) : CNY = KRW / 200
 
@@ -3278,7 +3278,7 @@ async function renderKhidi(){
        <select onchange="khYear=this.value;renderKhidi()" style="padding:8px 12px;border:1px solid var(--line);border-radius:9px">${years.map(y=>`<option ${String(y)===khYear?'selected':''}>${y}</option>`).join('')}</select>
        <button class="btn ghost" onclick="khImport()">진료건 불러오기</button>
        <button class="btn ghost" onclick="khAdd()">+ 행 추가</button>
-       <button class="btn" onclick="khExport('xlsx')">사전·사후관리 양식(xlsx)</button>
+       <button class="btn" onclick="khExport('xlsx')">엑셀 내보내기(xlsx)</button>
        <button class="btn" onclick="khExport('csv')">유치실적 CSV</button></div></div>
    <div class="cards">
      <div class="stat clk" onclick="khFilter='';renderKhidi()"><div class="k">${khYear}년 보고 건수</div><div class="v">${khRows.length}<small> 건</small></div></div>
@@ -3289,7 +3289,7 @@ async function renderKhidi(){
      <div style="overflow:auto"><table class="kh-table"><thead><tr><th>구분</th><th>환자등록번호</th><th>출생년도</th><th>성별</th><th>국적</th><th>행정구역</th><th>진료일자</th><th>유형</th><th>진료과</th><th>주상병 1</th><th>주상병 2</th><th></th></tr></thead>
      <tbody>${rows||'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">보고 대상이 없습니다. "진료건 불러오기"로 '+khYear+'년 외국인 환자 진료 건을 가져오거나 행을 추가하세요.</td></tr>'}</tbody></table></div>${natOpts}<div id="kh_pop" class="kh-pop" style="display:none"></div></div>
    <div class="muted" style="font-size:12px;line-height:1.7">※ 국적명·진료과명·상병코드는 진흥원 배포 리스트(2025 실적보고 기준) 그대로입니다. 건강검진은 유형 '외래' + 검진 상병코드(Z00~), 미용·성형은 KD991~KD999를 사용합니다.<br>
-   ※ 사전·사후관리 현황보고 양식(xlsx)은 구분이 '사전상담'/'사후관리'인 행만, 유치실적 CSV는 '진료' 행을 내보냅니다. 환자등록번호는 여권번호가 아닌 병원 내부 식별번호(최대 13자리)를 사용하세요.</div>`;
+   ※ 엑셀(xlsx)은 시트 2개 — ① 사전·사후관리 현황보고 양식(진흥원 양식 그대로, 구분이 '사전상담'/'사후관리'인 행) ② 유치실적(진료) 전체. CSV는 '진료' 행만 내보냅니다. 환자등록번호는 여권번호가 아닌 병원 내부 식별번호(최대 13자리)를 사용하세요.</div>`;
 }
 function khSet(id,k,v){const r=khRows.find(x=>x.id===id);if(!r)return;r[k]=(k==='birth_year')?(v?+v:null):(v||null);khDirty[id]=1;const b=el('khsv_'+id);if(b)b.style.display='';}
 async function khSave(id){const r=khRows.find(x=>x.id===id);if(!r)return;
@@ -3334,7 +3334,8 @@ async function khExport(kind){
   if(!window.XLSX){await new Promise((ok,ng)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';s.onload=ok;s.onerror=ng;document.head.appendChild(s);}).catch(()=>{alert('엑셀 모듈 로드 실패 — 네트워크를 확인하세요');});}
   if(!window.XLSX)return;
   const rows=khRows.filter(r=>r.category==='사전상담'||r.category==='사후관리');
-  if(!rows.length){alert('구분이 "사전상담" 또는 "사후관리"인 행이 없습니다.');return;}
+  const visits=khRows.filter(r=>r.category==='진료');
+  if(!khRows.length){alert(khYear+'년 보고 대상 행이 없습니다. "진료건 불러오기" 또는 "행 추가"로 먼저 입력하세요.');return;}
   // 진흥원 배포 양식과 동일한 3행 헤더 + 데이터
   const aoa=[['항목','구분','환자등록번호','출생년도','성별','국적명','진료일자','진료과명','주상병명1','주상병명2'],
     ['체크사항','사전상담/\n사후관리','최대13자리\n(환자를 분류할 수 있는 임의의 번호 또는 코드)','YYYY\n(숫자 4자리)','남/여','한글\n(리스트4번 파일)','YYYY-MM-DD','1가지만 입력\n(유치실적 보고 진료과명 참고)','* 유치실적 보고를 위해 안내된 진료유형 및 진료과명 리스트 참고','* 유치실적 보고를 위해 안내된 진료유형 및 진료과명 리스트 참고, 진단명 2개이상일 경우에 기입'],
@@ -3342,7 +3343,12 @@ async function khExport(kind){
   rows.forEach(r=>aoa.push(['',r.category,r.reg_no||'',r.birth_year||'',r.gender||'',r.nationality||'',r.visit_date||'',r.dept||'',r.dx1||'',r.dx2||'']));
   const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:10},{wch:12},{wch:22},{wch:10},{wch:6},{wch:12},{wch:12},{wch:16},{wch:28},{wch:28}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'사전사후관리 현황보고 양식');
-  XLSX.writeFile(wb,`${H}_${khYear}_사전사후관리_현황보고.xlsx`);logAudit('사전사후관리 양식 내보내기',rows.length+'건');
+  // 2번 시트: 유치실적(진료) 전체 — 진흥원 실적보고 시스템 입력용
+  const aoa2=[['환자등록번호','출생년도','성별','국적명','행정구역','진료일자','진료유형','진료과명','주상병코드1','주상병명1','주상병코드2','주상병명2']];
+  visits.forEach(r=>aoa2.push([r.reg_no||'',r.birth_year||'',r.gender||'',r.nationality||'',r.region||'',r.visit_date||'',r.visit_type||'',r.dept||'',r.dx1||'',r.dx1_name||'',r.dx2||'',r.dx2_name||'']));
+  const ws2=XLSX.utils.aoa_to_sheet(aoa2);ws2['!cols']=[{wch:16},{wch:9},{wch:6},{wch:12},{wch:12},{wch:12},{wch:8},{wch:16},{wch:12},{wch:28},{wch:12},{wch:28}];
+  XLSX.utils.book_append_sheet(wb,ws2,'유치실적(진료)');
+  XLSX.writeFile(wb,`${H}_${khYear}_유치실적보고.xlsx`);logAudit('유치실적 xlsx 내보내기','사전사후 '+rows.length+'건 · 진료 '+visits.length+'건');
 }
 
 /* ============ 통계 ============ */
