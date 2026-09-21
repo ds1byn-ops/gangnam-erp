@@ -1076,7 +1076,6 @@ async function demoDelete(id){
   refreshLeadBadges();
 }
 /* 신규(status=new) 문의 수를 좌측 메뉴 뱃지로 표시 — 데모/왕홍병원/가이드 */
-async 
 /* ============ B2C 고객 후기 승인 (b2c_reviews · followkorea.co.kr/b2c) — 2026-09-21 ============ */
 const RV_ST={pending:'대기',approved:'게시중',rejected:'거절'};
 async function renderB2cRvAdmin(){
@@ -1121,7 +1120,7 @@ async function b2cRvDel(id){
   renderB2cRvAdmin(); refreshLeadBadges();
 }
 
-function refreshLeadBadges(){
+async function refreshLeadBadges(){
   if(!state.platformMaster) return;
   try{
     const {data}=await db.from('demo_requests').select('source').eq('status','new');
