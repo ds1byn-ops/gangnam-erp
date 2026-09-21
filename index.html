@@ -6,6 +6,7 @@
 <title>강남펄스 ERP</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"></script>
+<script src="./khidi/codes.js"></script>
 <style>
   :root{
     --brand:#0f766e; --brand-2:#14b8a6; --ink:#0f172a; --muted:#64748b;
@@ -45,6 +46,10 @@
   .page-head .sub{color:var(--muted);font-size:13px;margin-top:2px}
   .btn{background:var(--brand);color:#fff;border:none;padding:9px 16px;border-radius:9px;font-weight:700}
   .btn.sm{padding:6px 11px;font-size:12px;border-radius:7px}
+  .kh-table td{padding:5px 6px;vertical-align:top}.kh-table input,.kh-table select{padding:5px 6px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;background:#fff}
+  .kh-table tr.kh-miss td:first-child{box-shadow:inset 3px 0 0 #e11d48}.kh-dxn{font-size:11px;color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+  .panel{position:relative}.kh-pop{position:absolute;z-index:30;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.12);max-height:260px;overflow:auto;width:340px}
+  .kh-poph{font-size:11px;color:var(--muted);padding:6px 10px;border-bottom:1px solid var(--line)}.kh-popi{padding:7px 10px;font-size:12.5px;cursor:pointer;border-bottom:1px solid #f1f5f9}.kh-popi:hover{background:#f1f5f9}.kh-popi b{color:var(--brand,#1F3864);margin-right:6px}
   .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
   .btn.danger{background:#fee2e2;color:var(--danger)}
   .btn.ok{background:#16a34a}
@@ -187,6 +192,7 @@
         <a data-view="billing">수납 · 영수증</a>
         <div class="grp">매출 · 정산</div>
         <a data-view="stats">통계</a>
+        <a data-view="khidi">유치실적 보고</a>
         <a data-view="marketing">마케팅 리포트</a>
         <a data-view="settlement">에이전시 정산</a>
         <a data-view="refsettle">소개자 정산</a>
@@ -222,7 +228,7 @@
 const SB_URL="https://utbhlvybdutepnkvboko.supabase.co";
 const SB_KEY="sb_publishable_LdLPNdjrD49iuOVLK8KVEA_SGgg9mkj";
 const db=supabase.createClient(SB_URL,SB_KEY);
-const APP_VERSION='v1.14.0 · 2026-09-14';
+const APP_VERSION='v1.15.0 · 2026-09-21';
 let curView='dashboard';
 const KRW_PER_CNY=200; // 환율(고정, 2026-09-11) : CNY = KRW / 200
 
@@ -233,9 +239,9 @@ const state={hospital_id:null,hospital_name:'강남펄스',staff:null,procedures
 const PLAN_LABEL={basic:'기본',advanced:'고급',premium:'프리미엄'};
 const PLAN_PRICE={basic:50000,advanced:100000,premium:150000};
 const TIER_MENUS={
-  basic:['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing','staff','settings','marketing'],
-  advanced:['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','marketing'],
-  premium:['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','audit','marketing']
+  basic:['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing','staff','settings','marketing','khidi'],
+  advanced:['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','marketing','khidi'],
+  premium:['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing','staff','settings','stats','agencies','referrers','packages','settlement','refsettle','audit','marketing','khidi']
 };
 
 const won=n=>'₩'+Number(n||0).toLocaleString('ko-KR');
@@ -419,7 +425,7 @@ async function boot(){
   el('appVer').textContent=APP_VERSION;
   el('whoName').textContent=staff.name;
   el('whoRole').textContent=({owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'})[staff.role]||staff.role;
-  const _allm=['dashboard','calendar','reception','inbox','patients','quote','platq','charts','tasks','files','billing','stats','marketing','settlement','agencies','packages','referrers','refsettle','staff','settings','audit','subscription'];
+  const _allm=['dashboard','calendar','reception','inbox','patients','quote','platq','charts','tasks','files','billing','stats','khidi','marketing','settlement','agencies','packages','referrers','refsettle','staff','settings','audit','subscription'];
   let _allowed=(staff.role==='owner')?_allm.slice():((Array.isArray(staff.menu_perms)&&staff.menu_perms.length)?staff.menu_perms.slice():roleMenus(staff.role));
   if(staff.role!=='owner')_allowed=_allowed.filter(k=>k!=='staff'&&k!=='settings'&&k!=='audit'&&k!=='subscription');
   try{ const {data:pa}=await db.from('platform_admins').select('id,role').eq('id',user.id).maybeSingle(); state.isPlatformAdmin=!!pa; state.platformMaster=!!(pa&&(pa.role||'master')==='master'); }catch(e){ state.isPlatformAdmin=false; state.platformMaster=false; }
@@ -495,7 +501,7 @@ function agencyCsv(){
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,inbox:renderInbox,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),viralreq:()=>renderDemoRequests('viral_marketing_lp','바이럴 병원문의'),b2creq:()=>renderDemoRequests('b2c_quote_lead','B2C 맞춤견적'),b2crv:renderB2cRvAdmin,guidereq:renderGuideRequests,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,inbox:renderInbox,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,khidi:renderKhidi,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),viralreq:()=>renderDemoRequests('viral_marketing_lp','바이럴 병원문의'),b2creq:()=>renderDemoRequests('b2c_quote_lead','B2C 맞춤견적'),b2crv:renderB2cRvAdmin,guidereq:renderGuideRequests,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
 
 /* ============ 상담 인박스 (인스타·페북 DM + 수기상담) ============ */
 const INB_CH_LABEL={instagram:'인스타',facebook:'페이스북',whatsapp:'왓츠앱',manual:'수기'};
@@ -3234,6 +3240,111 @@ async function makeRefSettle(id,rev){const r=Number(el('rr_'+id).value||0);const
 async function rfTax(id){await db.from('referrer_settlements').update({tax_issued:true,updated_at:new Date().toISOString()}).eq('id',id);logAudit('세금계산서 발행(소개자)');renderRefSettle();}
 async function rfPay(id){await db.from('referrer_settlements').update({status:'paid',paid_at:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);logAudit('소개자 정산 지급완료');renderRefSettle();}
 
+/* ============ 유치실적 보고 (KHIDI · 한국보건산업진흥원) ============ */
+let khYear=String(new Date().getFullYear()), khFilter='', khRows=[], khIcd=null, khDirty={};
+const KH_CAT=['진료','사전상담','사후관리'];
+const KH_REQ=['reg_no','birth_year','gender','nationality','visit_date','dept','dx1'];
+function khMissing(r){return KH_REQ.filter(k=>!r[k]);}
+async function khLoadIcd(){ if(khIcd)return khIcd; try{ const res=await fetch('./khidi/icd.json',{cache:'force-cache'}); khIcd=await res.json(); }catch(e){ khIcd=[]; } return khIcd; }
+function khSearchIcd(q){ q=(q||'').trim(); if(!q||!khIcd)return []; const Q=q.toUpperCase(); const byCode=khIcd.filter(x=>x[0].startsWith(Q)); const byName=/^[A-Z]/.test(Q)?[]:khIcd.filter(x=>x[1].includes(q)); return byCode.concat(byName).slice(0,40); }
+async function renderKhidi(){
+  const m=el('main');m.innerHTML='<div class="loading">불러오는 중…</div>';
+  khLoadIcd();
+  const {data,error}=await db.from('khidi_reports').select('*').eq('hospital_id',state.hospital_id).eq('year',+khYear).order('visit_date',{ascending:false}).order('created_at',{ascending:false});
+  if(error){m.innerHTML='<div class="panel" style="padding:20px">불러오기 실패: '+esc(error.message)+'</div>';return;}
+  khRows=data||[]; khDirty={};
+  const miss=khRows.filter(r=>khMissing(r).length).length;
+  const nats=new Set(khRows.map(r=>r.nationality).filter(Boolean));
+  const years=[];for(let y=new Date().getFullYear();y>=2024;y--)years.push(y);
+  const list=khRows.filter(r=>!khFilter||khFilter==='miss'&&khMissing(r).length||khFilter==='pre'&&r.category==='사전상담'||khFilter==='post'&&r.category==='사후관리'||khFilter==='visit'&&r.category==='진료');
+  const natOpts='<datalist id="kh_natlist">'+KHIDI_NAT.map(n=>`<option value="${esc(n[0])}">${esc(n[1])}</option>`).join('')+'</datalist>';
+  const deptOpts=v=>'<option value="">-</option>'+KHIDI_DEPT.map(d=>`<option ${d===v?'selected':''}>${esc(d)}</option>`).join('');
+  const rows=list.map(r=>{const ms=khMissing(r);const bad=k=>ms.includes(k)?' style="border-color:#e11d48;background:#fff1f2"':'';const regs=KHIDI_REGION[r.nationality]||null;
+    return `<tr id="khr_${r.id}" class="${ms.length?'kh-miss':''}">
+      <td><select onchange="khSet('${r.id}','category',this.value)">${KH_CAT.map(c=>`<option ${c===r.category?'selected':''}>${c}</option>`).join('')}</select></td>
+      <td><input value="${esc(r.reg_no||'')}" maxlength="13" placeholder="차트번호"${bad('reg_no')} oninput="khSet('${r.id}','reg_no',this.value)" style="width:96px"></td>
+      <td><input type="number" value="${r.birth_year||''}" min="1900" max="2026" placeholder="YYYY"${bad('birth_year')} oninput="khSet('${r.id}','birth_year',this.value)" style="width:64px"></td>
+      <td><select${bad('gender')} onchange="khSet('${r.id}','gender',this.value)"><option value="">-</option><option ${r.gender==='남'?'selected':''}>남</option><option ${r.gender==='여'?'selected':''}>여</option></select></td>
+      <td><input list="kh_natlist" value="${esc(r.nationality||'')}"${bad('nationality')} onchange="khSet('${r.id}','nationality',this.value);renderKhidi()" style="width:88px"></td>
+      <td>${regs?`<input list="kh_reg_${r.id}" value="${esc(r.region||'')}" onchange="khSet('${r.id}','region',this.value)" style="width:96px"><datalist id="kh_reg_${r.id}">${regs.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`:'<span class="muted">-</span>'}</td>
+      <td><input type="date" value="${r.visit_date||''}"${bad('visit_date')} onchange="khSet('${r.id}','visit_date',this.value)"></td>
+      <td><select onchange="khSet('${r.id}','visit_type',this.value)"><option ${r.visit_type==='외래'?'selected':''}>외래</option><option ${r.visit_type==='입원'?'selected':''}>입원</option></select></td>
+      <td><select${bad('dept')} onchange="khSet('${r.id}','dept',this.value)" style="max-width:120px">${deptOpts(r.dept)}</select></td>
+      <td><div class="kh-dx"><input value="${esc(r.dx1||'')}" placeholder="코드/병명 검색"${bad('dx1')} oninput="khDxSearch(this,'${r.id}','dx1')" onfocus="khDxSearch(this,'${r.id}','dx1')" style="width:88px"><div class="kh-dxn" title="${esc(r.dx1_name||'')}">${esc(r.dx1_name||'')}</div></div></td>
+      <td><div class="kh-dx"><input value="${esc(r.dx2||'')}" placeholder="선택" oninput="khDxSearch(this,'${r.id}','dx2')" onfocus="khDxSearch(this,'${r.id}','dx2')" style="width:88px"><div class="kh-dxn" title="${esc(r.dx2_name||'')}">${esc(r.dx2_name||'')}</div></div></td>
+      <td class="right" style="white-space:nowrap"><button class="btn sm" id="khsv_${r.id}" onclick="khSave('${r.id}')" style="display:none">저장</button> <button class="btn sm ghost" onclick="khDel('${r.id}')">삭제</button></td></tr>`;}).join('');
+  m.innerHTML=`<div class="page-head"><div><h2>유치실적 보고 (KHIDI)</h2><div class="sub">외국인환자 유치 의료기관 실적보고 · 사전·사후관리 현황보고 (한국보건산업진흥원 양식)</div></div>
+     <div style="display:flex;gap:8px;flex-wrap:wrap">
+       <select onchange="khYear=this.value;renderKhidi()" style="padding:8px 12px;border:1px solid var(--line);border-radius:9px">${years.map(y=>`<option ${String(y)===khYear?'selected':''}>${y}</option>`).join('')}</select>
+       <button class="btn ghost" onclick="khImport()">진료건 불러오기</button>
+       <button class="btn ghost" onclick="khAdd()">+ 행 추가</button>
+       <button class="btn" onclick="khExport('xlsx')">사전·사후관리 양식(xlsx)</button>
+       <button class="btn" onclick="khExport('csv')">유치실적 CSV</button></div></div>
+   <div class="cards">
+     <div class="stat clk" onclick="khFilter='';renderKhidi()"><div class="k">${khYear}년 보고 건수</div><div class="v">${khRows.length}<small> 건</small></div></div>
+     <div class="stat clk" onclick="khFilter='miss';renderKhidi()" title="필수 항목 누락"><div class="k">입력 미완료</div><div class="v" style="color:${miss?'#e11d48':'inherit'}">${miss}<small> 건</small></div></div>
+     <div class="stat clk" onclick="khFilter='pre';renderKhidi()"><div class="k">사전상담 / 사후관리</div><div class="v">${khRows.filter(r=>r.category==='사전상담').length}<small> / </small>${khRows.filter(r=>r.category==='사후관리').length}</div></div>
+     <div class="stat"><div class="k">국적 수</div><div class="v">${nats.size}<small> 개국</small></div></div></div>
+   <div class="panel"><div class="ph">보고 대상 목록 <span class="muted" style="font-weight:400;font-size:12px">${khFilter?'필터: '+({miss:'입력 미완료',pre:'사전상담',post:'사후관리',visit:'진료'})[khFilter]+' · <a href="#" onclick="khFilter=&#39;&#39;;renderKhidi();return false">전체</a>':'전체'} · 빨간 칸 = 필수 누락</span></div>
+     <div style="overflow:auto"><table class="kh-table"><thead><tr><th>구분</th><th>환자등록번호</th><th>출생년도</th><th>성별</th><th>국적</th><th>행정구역</th><th>진료일자</th><th>유형</th><th>진료과</th><th>주상병 1</th><th>주상병 2</th><th></th></tr></thead>
+     <tbody>${rows||'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">보고 대상이 없습니다. "진료건 불러오기"로 '+khYear+'년 외국인 환자 진료 건을 가져오거나 행을 추가하세요.</td></tr>'}</tbody></table></div>${natOpts}<div id="kh_pop" class="kh-pop" style="display:none"></div></div>
+   <div class="muted" style="font-size:12px;line-height:1.7">※ 국적명·진료과명·상병코드는 진흥원 배포 리스트(2025 실적보고 기준) 그대로입니다. 건강검진은 유형 '외래' + 검진 상병코드(Z00~), 미용·성형은 KD991~KD999를 사용합니다.<br>
+   ※ 사전·사후관리 현황보고 양식(xlsx)은 구분이 '사전상담'/'사후관리'인 행만, 유치실적 CSV는 '진료' 행을 내보냅니다. 환자등록번호는 여권번호가 아닌 병원 내부 식별번호(최대 13자리)를 사용하세요.</div>`;
+}
+function khSet(id,k,v){const r=khRows.find(x=>x.id===id);if(!r)return;r[k]=(k==='birth_year')?(v?+v:null):(v||null);khDirty[id]=1;const b=el('khsv_'+id);if(b)b.style.display='';}
+async function khSave(id){const r=khRows.find(x=>x.id===id);if(!r)return;
+  const {id:_i,created_at:_c,...rest}=r;rest.updated_at=new Date().toISOString();
+  const {error}=await db.from('khidi_reports').update(rest).eq('id',id);
+  if(error){alert('저장 실패: '+error.message);return;}delete khDirty[id];const b=el('khsv_'+id);if(b)b.style.display='none';
+  const tr=el('khr_'+id);if(tr)tr.classList.toggle('kh-miss',!!khMissing(r).length);}
+async function khDel(id){if(!confirm('이 행을 삭제할까요?'))return;await db.from('khidi_reports').delete().eq('id',id);logAudit('유치실적 행 삭제');renderKhidi();}
+async function khAdd(){const {error}=await db.from('khidi_reports').insert({hospital_id:state.hospital_id,year:+khYear,category:'진료',visit_type:'외래',nationality:'중국'});if(error){alert('추가 실패: '+error.message);return;}renderKhidi();}
+async function khImport(){
+  const ys=khYear+'-01-01',ye=(+khYear+1)+'-01-01';
+  const [{data:orders},{data:pats}]=await Promise.all([
+    db.from('orders').select('id,patient_id,order_date,doctor,status').eq('hospital_id',state.hospital_id).gte('order_date',ys).lt('order_date',ye).neq('status','cancelled').neq('status','quote'),
+    db.from('patients').select('id,name,nationality,birth_date,gender,external_chart_no').eq('hospital_id',state.hospital_id)]);
+  const pm=Object.fromEntries((pats||[]).map(p=>[p.id,p]));
+  const have=new Set(khRows.map(r=>r.order_id).filter(Boolean));
+  const dom=/^(대한민국|한국|korea|kr|내국인)$/i;
+  const ins=[];(orders||[]).forEach(o=>{if(have.has(o.id))return;const p=pm[o.patient_id];if(!p)return;if(p.nationality&&dom.test(p.nationality.trim()))return;
+    ins.push({hospital_id:state.hospital_id,year:+khYear,patient_id:p.id,order_id:o.id,category:'진료',reg_no:(p.external_chart_no||p.id.replace(/-/g,'').slice(0,13)),birth_year:p.birth_date?+p.birth_date.slice(0,4):null,gender:p.gender||null,nationality:p.nationality||null,visit_date:String(o.order_date).slice(0,10),visit_type:'외래'});});
+  if(!ins.length){alert('새로 가져올 진료건이 없습니다. (이미 등록됐거나 '+khYear+'년 확정·완료 주문이 없음)');return;}
+  if(!confirm(khYear+'년 외국인 환자 진료(확정·완료 주문) '+ins.length+'건을 보고 목록에 추가할까요?\n진료과·주상병은 가져온 뒤 입력해야 합니다.'))return;
+  for(let i=0;i<ins.length;i+=200){const {error}=await db.from('khidi_reports').insert(ins.slice(i,i+200));if(error){alert('가져오기 실패: '+error.message);break;}}
+  logAudit('유치실적 진료건 가져오기',ins.length+'건');renderKhidi();
+}
+async function khDxSearch(inp,id,k){
+  await khLoadIcd();const q=inp.value;const pop=el('kh_pop');const res=q?khSearchIcd(q):KHIDI_QUICK;
+  if(!res.length){pop.style.display='none';return;}
+  pop.innerHTML=(q?'':'<div class="kh-poph">자주 쓰는 코드 (미용성형 KD99x · 검진 Z00x)</div>')+res.map(x=>`<div class="kh-popi" onmousedown="khDxPick('${id}','${k}','${esc(x[0])}','${esc(x[1]).replace(/'/g,'&#39;')}')"><b>${esc(x[0])}</b> ${esc(x[1])}</div>`).join('');
+  const rc=inp.getBoundingClientRect(),pc=pop.parentElement.getBoundingClientRect();pop.style.left=(rc.left-pc.left)+'px';pop.style.top=(rc.bottom-pc.top+4)+'px';pop.style.display='block';
+  inp.onblur=()=>setTimeout(()=>{pop.style.display='none';},150);
+}
+function khDxPick(id,k,code,name){khSet(id,k,code);khSet(id,k+'_name',name);const tr=el('khr_'+id);if(tr){const cell=tr.querySelectorAll('.kh-dx')[k==='dx1'?0:1];cell.querySelector('input').value=code;cell.querySelector('.kh-dxn').textContent=name;}el('kh_pop').style.display='none';}
+async function khExport(kind){
+  const H=state.hospital_name||'병원';
+  if(kind==='csv'){
+    const rows=khRows.filter(r=>r.category==='진료');
+    const head=['환자등록번호','출생년도','성별','국적명','행정구역','진료일자','진료유형','진료과명','주상병코드1','주상병명1','주상병코드2','주상병명2'];
+    const q=c=>`"${(c==null?'':String(c)).replace(/"/g,'""')}"`;
+    const csv='﻿'+[head].concat(rows.map(r=>[r.reg_no,r.birth_year,r.gender,r.nationality,r.region,r.visit_date,r.visit_type,r.dept,r.dx1,r.dx1_name,r.dx2,r.dx2_name])).map(a=>a.map(q).join(',')).join('\n');
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`${H}_${khYear}_유치실적보고.csv`;a.click();logAudit('유치실적 CSV 내보내기',rows.length+'건');return;
+  }
+  if(!window.XLSX){await new Promise((ok,ng)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';s.onload=ok;s.onerror=ng;document.head.appendChild(s);}).catch(()=>{alert('엑셀 모듈 로드 실패 — 네트워크를 확인하세요');});}
+  if(!window.XLSX)return;
+  const rows=khRows.filter(r=>r.category==='사전상담'||r.category==='사후관리');
+  if(!rows.length){alert('구분이 "사전상담" 또는 "사후관리"인 행이 없습니다.');return;}
+  // 진흥원 배포 양식과 동일한 3행 헤더 + 데이터
+  const aoa=[['항목','구분','환자등록번호','출생년도','성별','국적명','진료일자','진료과명','주상병명1','주상병명2'],
+    ['체크사항','사전상담/\n사후관리','최대13자리\n(환자를 분류할 수 있는 임의의 번호 또는 코드)','YYYY\n(숫자 4자리)','남/여','한글\n(리스트4번 파일)','YYYY-MM-DD','1가지만 입력\n(유치실적 보고 진료과명 참고)','* 유치실적 보고를 위해 안내된 진료유형 및 진료과명 리스트 참고','* 유치실적 보고를 위해 안내된 진료유형 및 진료과명 리스트 참고, 진단명 2개이상일 경우에 기입'],
+    ['실적입력 →','','','','','','','','','']];
+  rows.forEach(r=>aoa.push(['',r.category,r.reg_no||'',r.birth_year||'',r.gender||'',r.nationality||'',r.visit_date||'',r.dept||'',r.dx1||'',r.dx2||'']));
+  const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:10},{wch:12},{wch:22},{wch:10},{wch:6},{wch:12},{wch:12},{wch:16},{wch:28},{wch:28}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'사전사후관리 현황보고 양식');
+  XLSX.writeFile(wb,`${H}_${khYear}_사전사후관리_현황보고.xlsx`);logAudit('사전사후관리 양식 내보내기',rows.length+'건');
+}
+
 /* ============ 통계 ============ */
 let statMonth=null,statTab='sales',statFrom='',statTo='';
 const REPORT_CSS=`.repdoc{max-width:800px;margin:0 auto;color:#1f2937;font-family:'Malgun Gothic','맑은 고딕',sans-serif}
@@ -3448,9 +3559,9 @@ function exportAuditCSV(){const rows=(state._audit||[]).map(l=>[new Date(l.creat
 
 /* ============ 직원 계정·권한 ============ */
 const ROLE_LABEL={owner:'원장',manager:'매니저',desk:'데스크',viewer:'열람'};
-const MENUS=[{k:'dashboard',label:'대시보드'},{k:'calendar',label:'예약 캘린더'},{k:'reception',label:'접수 현황'},{k:'inbox',label:'상담 인박스'},{k:'patients',label:'환자 CRM'},{k:'quote',label:'상담·견적'},{k:'charts',label:'진료차트'},{k:'tasks',label:'할일'},{k:'files',label:'자료실'},{k:'billing',label:'수납·매출'},{k:'stats',label:'통계'},{k:'marketing',label:'마케팅 리포트'},{k:'settlement',label:'에이전시 정산'},{k:'agencies',label:'에이전시 관리'},{k:'packages',label:'패키지 관리'},{k:'referrers',label:'왕홍·소개자'},{k:'refsettle',label:'소개자 정산'},{k:'staff',label:'직원 관리'},{k:'settings',label:'병원 설정'},{k:'audit',label:'관리자 로그'}];
+const MENUS=[{k:'dashboard',label:'대시보드'},{k:'calendar',label:'예약 캘린더'},{k:'reception',label:'접수 현황'},{k:'inbox',label:'상담 인박스'},{k:'patients',label:'환자 CRM'},{k:'quote',label:'상담·견적'},{k:'charts',label:'진료차트'},{k:'tasks',label:'할일'},{k:'files',label:'자료실'},{k:'billing',label:'수납·매출'},{k:'stats',label:'통계'},{k:'khidi',label:'유치실적 보고'},{k:'marketing',label:'마케팅 리포트'},{k:'settlement',label:'에이전시 정산'},{k:'agencies',label:'에이전시 관리'},{k:'packages',label:'패키지 관리'},{k:'referrers',label:'왕홍·소개자'},{k:'refsettle',label:'소개자 정산'},{k:'staff',label:'직원 관리'},{k:'settings',label:'병원 설정'},{k:'audit',label:'관리자 로그'}];
 const ROLE_DESC='원장: 모든 메뉴·병원설정·직원관리 접근(전권). 매니저: 직원관리·병원설정 제외 전체 접근·편집(정산·통계 포함). 데스크: 접수·예약·환자·상담견적·진료차트·수납 등 일선 업무. 열람: 조회 전용(데이터 편집 불가).';
-function roleMenus(role){const all=MENUS.map(x=>x.k);if(role==='owner')return all;const noAdmin=all.filter(k=>k!=='staff'&&k!=='settings');if(role==='desk')return ['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing'];if(role==='viewer')return ['dashboard','stats','patients','billing'];return noAdmin;}
+function roleMenus(role){const all=MENUS.map(x=>x.k);if(role==='owner')return all;const noAdmin=all.filter(k=>k!=='staff'&&k!=='settings');if(role==='desk')return ['dashboard','calendar','reception','inbox','patients','quote','charts','tasks','files','billing','khidi'];if(role==='viewer')return ['dashboard','stats','patients','billing'];return noAdmin;}
 function menuCheckboxes(sel){return MENUS.filter(x=>x.k!=='staff'&&x.k!=='settings'&&x.k!=='audit').map(x=>`<label style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:5px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px"><input type="checkbox" value="${x.k}" ${sel.includes(x.k)?'checked':''}> ${x.label}</label>`).join('');}
 function permModal(id){const s=(state._staff||[]).find(x=>x.id===id);if(!s)return;
   const sel=(Array.isArray(s.menu_perms)&&s.menu_perms.length)?s.menu_perms:roleMenus(s.role);
