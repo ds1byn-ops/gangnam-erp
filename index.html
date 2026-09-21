@@ -206,6 +206,7 @@
         <a data-view="wanghongreq" class="platform-only" data-off="1" style="display:none">왕홍병원 신청<span class="nvb" id="bdg_wanghongreq"></span></a>
         <a data-view="viralreq" class="platform-only" data-off="1" style="display:none">바이럴 병원문의<span class="nvb" id="bdg_viralreq"></span></a>
         <a data-view="b2creq" class="platform-only" style="display:none">B2C 맞춤견적<span class="nvb" id="bdg_b2creq"></span></a>
+        <a data-view="b2crv" class="platform-only" style="display:none">B2C 후기<span class="nvb" id="bdg_b2crv"></span></a>
         <a data-view="campaigns" class="platform-only" style="display:none">캠페인 관리 (팔로우코리아)</a>
         <a data-view="dispatch" class="platform-only" style="display:none">콜보드 (통역·가이드)</a>
       </nav>
@@ -494,7 +495,7 @@ function agencyCsv(){
 
 el('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a)navTo(a.dataset.view);});
 function navTo(v){curView=v;toggleSide(false);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===v));
-  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,inbox:renderInbox,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),viralreq:()=>renderDemoRequests('viral_marketing_lp','바이럴 병원문의'),b2creq:()=>renderDemoRequests('b2c_quote_lead','B2C 맞춤견적'),guidereq:renderGuideRequests,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
+  ({dashboard:renderDashboard,calendar:renderCalendar,reception:renderReception,inbox:renderInbox,patients:renderPatients,quote:renderQuote,charts:renderCharts,billing:renderBilling,platq:renderPlatformQuotes,settlement:renderSettlement,agencies:renderAgencies,packages:renderPackages,referrers:renderReferrers,refsettle:renderRefSettle,settings:renderSettings,staff:renderStaff,stats:renderStats,audit:renderAudit,subscription:renderSubscription,platform:renderPlatform,demoreq:()=>renderDemoRequests('landing','데모 신청'),wanghongreq:()=>renderDemoRequests('meta_ads_wanghong_lp','왕홍병원 신청'),viralreq:()=>renderDemoRequests('viral_marketing_lp','바이럴 병원문의'),b2creq:()=>renderDemoRequests('b2c_quote_lead','B2C 맞춤견적'),b2crv:renderB2cRvAdmin,guidereq:renderGuideRequests,campaigns:renderCampaigns,dispatch:renderDispatch,marketing:renderMarketing,plathome:renderPlatHome,tasks:renderTasks,files:renderFiles}[v])();}
 
 /* ============ 상담 인박스 (인스타·페북 DM + 수기상담) ============ */
 const INB_CH_LABEL={instagram:'인스타',facebook:'페이스북',whatsapp:'왓츠앱',manual:'수기'};
@@ -1025,13 +1026,59 @@ async function demoDelete(id){
   refreshLeadBadges();
 }
 /* 신규(status=new) 문의 수를 좌측 메뉴 뱃지로 표시 — 데모/왕홍병원/가이드 */
-async function refreshLeadBadges(){
+async 
+/* ============ B2C 고객 후기 승인 (b2c_reviews · followkorea.co.kr/b2c) — 2026-09-21 ============ */
+const RV_ST={pending:'대기',approved:'게시중',rejected:'거절'};
+async function renderB2cRvAdmin(){
+  const m=el('main');
+  if(!state.platformMaster){ m.innerHTML='<div class="page-head"><div><h2>접근 불가</h2></div></div><div class="muted" style="padding:20px">플랫폼 마스터만 접근할 수 있습니다.</div>'; return; }
+  m.innerHTML='<div class="loading">불러오는 중…</div>';
+  const {data,error}=await db.from('b2c_reviews').select('*').order('created_at',{ascending:false});
+  if(error){ m.innerHTML='<div class="page-head"><div><h2>B2C 후기</h2></div></div><div class="muted" style="padding:20px;color:var(--danger)">불러오기 실패: '+esc(error.message)+'</div>'; return; }
+  const list=(data||[]).slice().sort(function(a,b){ const ap=a.status==='pending'?0:1, bp=b.status==='pending'?0:1; if(ap!==bp)return ap-bp; return new Date(b.created_at)-new Date(a.created_at); });
+  state._b2crv=list;
+  const pend=list.filter(function(r){return r.status==='pending';}).length;
+  const stars=function(n){ var s=''; for(var i=1;i<=5;i++)s+=(i<=n?'★':'☆'); return '<span style="color:#d97706;letter-spacing:1px">'+s+'</span>'; };
+  const stBadge=function(st){ const c=st==='approved'?'#166534':(st==='pending'?'#d97706':'#9ca3af'); return '<span style="font-weight:700;color:'+c+'">'+(RV_ST[st]||st)+'</span>'; };
+  const rows=list.length?list.map(function(r){
+    return '<tr'+(r.status==='rejected'?' style="opacity:.55"':'')+'>'
+      +'<td style="white-space:nowrap">'+fdate(r.created_at)+'</td>'
+      +'<td><b>'+esc(r.name||'-')+'</b><div class="muted" style="font-size:11px">'+esc(r.lang||'')+'</div></td>'
+      +'<td>'+esc(r.hospital||'-')+'</td>'
+      +'<td style="white-space:nowrap">'+stars(r.rating||0)+'</td>'
+      +'<td style="max-width:380px"><div style="font-size:12px;line-height:1.6;max-height:64px;overflow:auto;white-space:pre-wrap">'+esc(r.content||'')+'</div></td>'
+      +'<td>'+stBadge(r.status)+'</td>'
+      +'<td class="right" style="white-space:nowrap">'
+      +(r.status!=='approved'?'<button class="btn sm" style="background:#166534;border-color:#166534;color:#fff" onclick="b2cRvSet(\''+r.id+'\',\'approved\')">승인</button> ':'')
+      +(r.status!=='rejected'?'<button class="btn sm ghost" onclick="b2cRvSet(\''+r.id+'\',\'rejected\')">거절</button> ':'')
+      +'<button class="btn sm ghost" onclick="b2cRvDel(\''+r.id+'\')">삭제</button></td>'
+      +'</tr>';
+  }).join(''):'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">아직 후기가 없습니다.</td></tr>';
+  m.innerHTML='<div class="page-head"><div><h2>B2C 고객 후기</h2><div class="sub">followkorea.co.kr/b2c 후기 승인 관리 · 총 '+list.length+'건'+(pend?' · <b style="color:#d97706">대기 '+pend+'건</b>':'')+'</div></div><div style="display:flex;gap:8px">'+plBack()+'<button class="btn ghost" onclick="renderB2cRvAdmin()">새로고침</button></div></div>'
+    +'<div class="panel"><div class="pb"><table><thead><tr><th>작성일</th><th>작성자</th><th>병원</th><th>평점</th><th>내용</th><th>상태</th><th class="right"></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
+    +'<div class="panel"><div class="pb" style="padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.8">· <b>승인</b>한 후기만 b2c 사이트에 게시됩니다(작성자명은 자동 마스킹). · 대가 표기 없는 리워드 후기·비방·허위 의심 건은 거절하세요. · 게시된 후기를 광고 소재(SNS·배너)로 재사용하는 것은 의료법상 금지입니다.</div></div>';
+}
+async function b2cRvSet(id,st){
+  const {error}=await db.from('b2c_reviews').update({status:st}).eq('id',id);
+  if(error){alert('변경 실패: '+error.message);return;}
+  logAudit('B2C 후기 '+(RV_ST[st]||st),id.slice(0,8));
+  renderB2cRvAdmin(); refreshLeadBadges();
+}
+async function b2cRvDel(id){
+  if(!confirm('이 후기를 삭제할까요? 되돌릴 수 없습니다.'))return;
+  const {error}=await db.from('b2c_reviews').delete().eq('id',id);
+  if(error){alert('삭제 실패: '+error.message);return;}
+  renderB2cRvAdmin(); refreshLeadBadges();
+}
+
+function refreshLeadBadges(){
   if(!state.platformMaster) return;
   try{
     const {data}=await db.from('demo_requests').select('source').eq('status','new');
     const c={demoreq:0,wanghongreq:0,guidereq:0,viralreq:0,b2creq:0};
     (data||[]).forEach(function(r){ if(r.source==='landing')c.demoreq++; else if(r.source==='meta_ads_wanghong_lp')c.wanghongreq++; else if(r.source==='guide_recruit')c.guidereq++; else if(r.source==='viral_marketing_lp')c.viralreq++; else if(r.source==='b2c_quote_lead')c.b2creq++; });
     Object.keys(c).forEach(function(k){ var b=el('bdg_'+k); if(!b)return; if(c[k]>0){ b.textContent=c[k]>99?'99+':c[k]; b.style.display='inline-block'; } else { b.style.display='none'; } });
+    try{ const {count}=await db.from('b2c_reviews').select('id',{count:'exact',head:true}).eq('status','pending'); const rb=el('bdg_b2crv'); if(rb){ if(count>0){rb.textContent=count>99?'99+':count; rb.style.display='inline-block';} else rb.style.display='none'; } }catch(_e2){}
   }catch(_e){}
 }
 /* ============ 가이드 신청 (중화권 통역 가이드 모집 · demo_requests source=guide_recruit) ============ */
@@ -1760,6 +1807,7 @@ async function renderPlatHome(){
     +tile('dispatch','콜보드','통역·가이드 배차')
     +tile('demoreq','데모 신청','강남펄스 랜딩 리드')
     +tile('b2creq','B2C 맞춤견적','followkorea.co.kr/b2c 견적 리드')
+    +tile('b2crv','B2C 후기','고객 후기 승인·게시 관리')
     +tile('audit','관리자 로그','전체 조작 이력')
     +'</div>'
     +'<div style="font-weight:800;font-size:13px;margin:6px 0 8px;color:#475569">외부 사이트</div>'
