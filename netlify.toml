@@ -15,6 +15,8 @@
 [[headers]]
   for = "/*"
   [headers.values]
+    # 검색엔진·AI 색인 차단 (2026-11-19)
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
