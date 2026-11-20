@@ -3833,25 +3833,21 @@ const w=window.open('','_blank','width=820,height=920');
   w.document.write(html);w.document.close();w.focus();setTimeout(function(){w.print();},350);logAudit('거래명세서 출력',a.name);closeModal();
 }
 
-/* ── 체험 데모 자동 로그인 (gnpulse.kr/demo → ?demo=1) ──
-   데모 계정(demo@gnpulse.kr)은 가짜 데이터 병원 "서울라인의원 (데모)" 전용 manager.
+/* ── 체험 데모 (?demo=1, gnpulse.kr/demo 진입점) ──
+   보안 정리(2026-11-20): 데모 계정 비밀번호를 이 파일에 두지 않는다.
+   → 자동 로그인을 제거했다. 데모는 데모 계정으로 로그인한 세션에서만 열리고,
+     로그인 전이면 아래 안내만 표시한다.
+   데모 계정은 가짜 데이터 병원 "서울라인의원 (데모)" 전용 manager.
    RLS가 hospital_id로 격리하므로 실제 병원 데이터에는 접근 불가. */
 const DEMO_MODE=new URLSearchParams(location.search).get('demo')==='1';
 async function demoBoot(){
-  if(DEMO_MODE){
-    try{ sessionStorage.setItem('gp_demo','1') }catch(e){}
-    // 데모 계정은 여러 명이 공유하므로, 매번 새로 로그인해 각 브라우저가 독립된 access token을 갖게 한다.
-    // (기존 세션 재사용 시 다른 접속자의 refresh-token 회전으로 튕기는 문제 → 항상 fresh sign-in)
-    await db.auth.signInWithPassword({email:'demo@gnpulse.kr',password:'pulse-demo-2026'}).catch(function(){});
-    // 리프레시 회전 등으로 로그아웃되면 조용히 재로그인 (데모 중 세션 끊김 방지)
-    db.auth.onAuthStateChange(function(ev){
-      if(ev==='SIGNED_OUT' && sessionStorage.getItem('gp_demo')==='1'){
-        db.auth.signInWithPassword({email:'demo@gnpulse.kr',password:'pulse-demo-2026'})
-          .then(function(r){ if(!r.error) location.reload(); });
-      }
-    });
-  }
   await boot();
+  // 로그인 전(자동 로그인 제거 이후) ?demo=1 로 들어온 방문자에게 일반 로그인 안내
+  try{
+    if(DEMO_MODE&&el('login')&&el('login').style.display!=='none'&&el('loginErr')&&!el('loginErr').textContent){
+      el('loginErr').innerHTML='체험 데모는 담당자가 안내한 데모 계정으로 로그인해 주세요. 계정이 없으면 <a href="https://gnpulse.kr/demo/#demo" target="_blank" rel="noopener">데모 신청</a>에서 요청하실 수 있습니다.';
+    }
+  }catch(e){}
   // 데모 병원 접속 중이면 상단 배너 표시 (config.demo 병원 + 비관리자)
   try{
     if(state.config&&state.config.demo&&!state.isPlatformAdmin&&!document.getElementById('demoBar')){
